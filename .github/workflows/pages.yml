@@ -1,0 +1,64 @@
+# Static deployment: crawls every 10 minutes and publishes the site plus a
+# fresh snapshot to GitHub Pages. For second-by-second updates, run the Node
+# server instead (see README).
+name: Crawl and publish
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Restore crawl state
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: crawl-state-${{ github.run_id }}
+          restore-keys: crawl-state-
+      - name: Crawl
+        run: npm run build:static
+        env:
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+          RSSHUB_URL: ${{ secrets.RSSHUB_URL }}
+          NITTER_INSTANCES: ${{ secrets.NITTER_INSTANCES }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Save crawl state
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: crawl-state-${{ github.run_id }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

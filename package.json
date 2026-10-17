@@ -1,0 +1,21 @@
+{
+  "name": "frontier-wire",
+  "version": "0.1.0",
+  "description": "A fast, single-page wire of the latest AI news from labs, press, X, Reddit, Hacker News and Polymarket, plus a feed of things people built with AI.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --disable-warning=UNDICI-EHPA src/server.js",
+    "dev": "node --disable-warning=UNDICI-EHPA --watch src/server.js",
+    "crawl": "node --disable-warning=UNDICI-EHPA scripts/crawl-once.js",
+    "build:static": "node --disable-warning=UNDICI-EHPA scripts/crawl-once.js --static",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^4.5.0",
+    "undici": "^6.21.0"
+  }
+}

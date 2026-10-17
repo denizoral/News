@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frontier Wire</title>
+  <meta name="description" content="The latest AI news from labs, press, X, Reddit and Hacker News in one place, with live Polymarket odds and a feed of things people built with AI." />
+  <meta name="color-scheme" content="light dark" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to stories</a>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <a class="wordmark" href="#news" aria-label="Frontier Wire home">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M2 22h6l4-12 6 18 4-10h8" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Frontier Wire</span>
+      </a>
+      <nav class="tabs" aria-label="Sections">
+        <a href="#news" data-view="news">News</a>
+        <a href="#builds" data-view="builds">Built with AI</a>
+        <a href="#markets" data-view="markets">Markets</a>
+      </nav>
+      <div class="tools">
+        <label class="search">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m13 13 4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <input id="q" type="search" placeholder="Search" autocomplete="off" aria-label="Search stories" />
+          <kbd>/</kbd>
+        </label>
+        <span class="live" id="live" role="status" aria-live="polite"><i></i><span>Connecting</span></span>
+        <button class="theme" id="theme" type="button" aria-label="Toggle dark mode">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2a8 8 0 1 0 8 8 6 6 0 0 1-8-8Z" fill="currentColor"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <button class="new-pill" id="newPill" type="button" hidden></button>
+
+  <main id="main">
+    <!-- News -->
+    <section class="view" data-view="news" aria-label="News">
+      <div class="lead-wrap" id="lead"></div>
+      <div class="layout">
+        <div class="river-col">
+          <div class="filters" role="group" aria-label="Filter stories">
+            <div class="chips" id="topicChips"></div>
+            <div class="chips chips-quiet" id="kindChips"></div>
+          </div>
+          <div id="river" class="river"></div>
+          <button class="more" id="moreStories" type="button" hidden>Show more stories</button>
+        </div>
+        <aside class="rail" aria-label="Markets and social">
+          <section class="rail-block">
+            <h2>Markets moving</h2>
+            <p class="rail-note">AI questions on Polymarket with the biggest odds change in the last day.</p>
+            <ol class="mini-markets" id="railMarkets"></ol>
+            <a class="rail-link" href="#markets">All markets</a>
+          </section>
+          <section class="rail-block">
+            <h2>On X and Bluesky</h2>
+            <ol class="posts" id="railPosts"></ol>
+          </section>
+          <section class="rail-block">
+            <h2>Trending open models</h2>
+            <ol class="models" id="railModels"></ol>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Builds -->
+    <section class="view" data-view="builds" aria-label="Built with AI" hidden>
+      <div class="view-head">
+        <h1>Built with AI</h1>
+        <p>Projects people shipped this week: Show HN posts, Reddit showcases, new repos gaining stars, Hugging Face demos and Product Hunt launches.</p>
+      </div>
+      <div class="chips" id="buildChips" role="group" aria-label="Filter builds"></div>
+      <div class="builds" id="buildGrid"></div>
+    </section>
+
+    <!-- Markets -->
+    <section class="view" data-view="markets" aria-label="Markets" hidden>
+      <div class="view-head">
+        <h1>What the market expects</h1>
+        <p>Live Polymarket odds on AI questions. Where a market lines up with a story in the feed, the story is linked underneath.</p>
+      </div>
+      <div class="chips" id="marketSort" role="group" aria-label="Sort markets"></div>
+      <div class="market-list" id="marketList"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p id="footStatus"></p>
+    <details>
+      <summary>Sources</summary>
+      <div id="sourceTable"></div>
+    </details>
+  </footer>
+
+  <template id="tplEmpty"><p class="empty"></p></template>
+  <script src="app.js" type="module"></script>
+</body>
+</html>

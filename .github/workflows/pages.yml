@@ -44,6 +44,7 @@ jobs:
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          X_EMBED_PER_RUN: 8
       - name: Save crawl state
         uses: actions/cache/save@v4
         with:

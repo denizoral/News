@@ -54,3 +54,15 @@ test('parseFeed reads RSS and Atom', () => {
   const atom = parseFeed('<feed><entry><title>T</title><link rel="alternate" href="https://e.com/2"/><updated>2024-01-01T00:00:00Z</updated></entry></feed>');
   assert.equal(atom[0].url, 'https://e.com/2');
 });
+
+test('embed timeline parsing skips replies and retweets', async () => {
+  const { parseEmbedTimeline, embedQueue } = await import('../src/sources/x.js');
+  const tweet = (id, extra = {}) => ({ content: { tweet: { id_str: id, full_text: `New open-weight model released today with strong reasoning ${id}`, created_at: 'Sat Oct 17 12:00:00 +0000 2026', favorite_count: 10, retweet_count: 2, user: { screen_name: 'karpathy', name: 'Andrej Karpathy' }, entities: {}, ...extra } } });
+  const data = { props: { pageProps: { timeline: { entries: [tweet('1'), tweet('2', { in_reply_to_status_id_str: '9' }), tweet('3', { retweeted_status: {} })] } } } };
+  const html = `<html><script id="__NEXT_DATA__" type="application/json">${JSON.stringify(data)}</script></html>`;
+  const items = parseEmbedTimeline(html, 'karpathy');
+  assert.deepEqual(items.map((i) => i.id), ['x:1']);
+  assert.equal(items[0].url, 'https://x.com/karpathy/status/1');
+  assert.throws(() => parseEmbedTimeline('<html></html>', 'x'));
+  assert.ok(embedQueue().length > 0);
+});

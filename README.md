@@ -19,7 +19,7 @@ a pill instead of reshuffling the page under you.
 
 | Source | How | Cadence |
 | --- | --- | --- |
-| **X** (45 curated accounts: labs, leaders, researchers, leak trackers) | X API v2, RSSHub, Nitter or the public embed endpoint, whichever works | 2 min |
+| **X** (44 curated accounts: labs, leaders, researchers, leak trackers) | Public embed timelines by default (free); X API v2, RSSHub or Nitter if configured | 2 min, a few accounts per run |
 | **Polymarket** | Gamma API: `ai`, `openai`, `tech` tags plus 14 targeted searches | 90 s |
 | **Hacker News** | Algolia search across 12 AI queries plus the front page | 2 min |
 | **Reddit** | 9 news subs and 8 builder subs (OAuth, JSON or RSS fallback) | 3 min |
@@ -35,17 +35,27 @@ nothing else needs to change.
 
 ### Getting X posts
 
-X has no free feed, so the X source tries four strategies in order and sticks
-with the first that works:
+X's API is paid (pay-per-use, no free tier for new developers), so by default
+the site reads X's **public embed timelines**, the free endpoint behind
+embedded profile timelines on other websites. It needs no key, but X rate-limits it
+hard, so the crawler is careful with it:
 
-1. `X_BEARER_TOKEN`: official API v2 recent search, packing all accounts into a
-   few `from:` queries. Most reliable.
+- Each run (every 2 minutes) fetches only a few accounts (`X_EMBED_PER_RUN`,
+  default 4), most overdue first. Labs and scoop accounts are revisited about every
+  10 minutes, other people about every 25.
+- Requests are spaced out and alternate between two embed hosts.
+- When X answers "too many requests", the X source backs off for 2 minutes,
+  doubling up to 30, and keeps showing the posts it already has.
+
+It works best from a home or office connection; cloud servers are often
+rate-limited outright. The footer's **Sources** panel shows how many accounts
+are loaded and when the next retry is.
+
+For a steadier feed, set one of these and it is used first:
+
+1. `X_BEARER_TOKEN`: official API v2 recent search (paid).
 2. `RSSHUB_URL`: a self-hosted [RSSHub](https://docs.rsshub.app) with X cookies.
 3. `NITTER_INSTANCES`: one or more Nitter instances, comma separated.
-4. The public embed timeline endpoint. No setup, but heavily rate limited.
-
-The footer's **Sources** panel shows which strategy is active and what each
-source returned on its last run.
 
 ### Optional keys
 

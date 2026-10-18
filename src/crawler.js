@@ -1,7 +1,7 @@
 import { SCHEDULE } from './config.js';
 import { fetchFeeds, fetchGoogleNews, fetchScraped } from './sources/rss.js';
 import { fetchHackerNews, fetchReddit, fetchBluesky } from './sources/community.js';
-import { fetchX, xStatus } from './sources/x.js';
+import { fetchX, xStatus, embedStatus } from './sources/x.js';
 import { fetchPolymarket } from './sources/polymarket.js';
 import { fetchHuggingFace, fetchGitHub, fetchProductHunt, fetchShowHN, fetchOpenRouter } from './sources/builds.js';
 
@@ -37,7 +37,7 @@ export async function runSource(store, name) {
       error: ok ? null : out.errors?.[0]?.error,
       lastRun: Date.now(),
       ms: Date.now() - started,
-      ...(name === 'x' ? { strategy: xStatus.strategy } : {}),
+      ...(name === 'x' ? { strategy: xStatus.strategy, ...(xStatus.strategy !== 'api' ? embedStatus() : {}) } : {}),
     };
     if (process.env.DEBUG && out.errors?.length) console.warn(`[${name}]`, out.errors.slice(0, 3));
   } catch (err) {

@@ -96,23 +96,105 @@ async function viaFeeds(urlFor) {
   return results.flat();
 }
 
-async function viaSyndication() {
-  const { results, errors } = await pool(X_ACCOUNTS, 2, async (a) => {
-    const html = await getText(`https://syndication.twitter.com/srv/timeline-profile/screen-name/${a.handle}`, { timeout: 10000, retries: 0 });
-    const json = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/)?.[1];
-    if (!json) return [];
-    const entries = JSON.parse(json)?.props?.pageProps?.timeline?.entries || [];
-    return entries
-      .map((e) => e.content?.tweet)
-      .filter((t) => t && !t.retweeted_status && !t.in_reply_to_status_id_str)
-      .map((t) => toItem({
-        id: t.id_str, handle: t.user?.screen_name || a.handle, name: t.user?.name, avatar: t.user?.profile_image_url_https,
-        text: t.full_text || t.text, createdAt: Date.parse(t.created_at), likes: t.favorite_count, reposts: t.retweet_count,
-        replies: t.reply_count, link: t.entities?.urls?.[0]?.expanded_url, image: t.entities?.media?.[0]?.media_url_https,
-      }));
+// ---- Embed timelines (free, no key) ----
+// The endpoint behind X's embedded profile timelines. It rate-limits hard, so we
+// never sweep all accounts at once: each run fetches a few accounts, most
+// overdue first, with labs and scoop accounts revisited more often. Posts are
+// cached per account so every run still returns the full set.
+
+const EMBED_HOSTS = ['https://syndication.twitter.com', 'https://cdn.syndication.twimg.com'];
+const EMBED_PER_RUN = Number(process.env.X_EMBED_PER_RUN) || 4;
+const EMBED_GAP_MS = 2500;
+const REVISIT_MIN = { lab: 10, scoops: 10, people: 25 };
+
+const embed = {
+  cache: new Map(), // handle -> { items, fetchedAt }
+  backoffUntil: 0,
+  backoffMs: 0,
+  hostIndex: 0,
+  ok: 0,
+  failed: 0,
+};
+
+export function parseEmbedTimeline(html, fallbackHandle) {
+  const json = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/)?.[1];
+  if (!json) throw new Error('embed page had no timeline data');
+  const entries = JSON.parse(json)?.props?.pageProps?.timeline?.entries || [];
+  return entries
+    .map((e) => e.content?.tweet)
+    .filter((t) => t && !t.retweeted_status && !t.in_reply_to_status_id_str)
+    .map((t) => toItem({
+      id: t.id_str, handle: t.user?.screen_name || fallbackHandle, name: t.user?.name, avatar: t.user?.profile_image_url_https,
+      text: t.full_text || t.text, createdAt: Date.parse(t.created_at), likes: t.favorite_count, reposts: t.retweet_count,
+      replies: t.reply_count, link: t.entities?.urls?.find((u) => !/x\.com|twitter\.com/.test(u.expanded_url || ''))?.expanded_url,
+      image: t.entities?.media?.[0]?.media_url_https,
+    }));
+}
+
+// Accounts ordered by how overdue they are, relative to their revisit interval.
+export function embedQueue(now = Date.now()) {
+  return X_ACCOUNTS
+    .map((a) => {
+      const last = embed.cache.get(a.handle)?.fetchedAt || 0;
+      // Random jitter breaks ties, so fresh processes (e.g. the static build,
+      // which starts with an empty cache) don't always start with the same accounts.
+      return { a, overdue: (now - last) / ((REVISIT_MIN[a.group] || 25) * 60e3) + Math.random() * 0.01 };
+    })
+    .filter((x) => x.overdue >= 1)
+    .sort((x, y) => y.overdue - x.overdue)
+    .map((x) => x.a);
+}
+
+async function fetchEmbed(handle) {
+  // Alternate hosts; each has its own limit bucket.
+  const host = EMBED_HOSTS[embed.hostIndex++ % EMBED_HOSTS.length];
+  const html = await getText(`${host}/srv/timeline-profile/screen-name/${handle}?showReplies=false`, {
+    timeout: 10000,
+    retries: 0,
+    headers: { referer: 'https://platform.twitter.com/', accept: 'text/html' },
   });
-  if (!results.flat().length) throw new Error(errors[0]?.error || 'syndication returned nothing');
-  return results.flat();
+  return parseEmbedTimeline(html, handle);
+}
+
+async function viaSyndication() {
+  const now = Date.now();
+  const errors = [];
+  if (now >= embed.backoffUntil) {
+    for (const a of embedQueue(now).slice(0, EMBED_PER_RUN)) {
+      try {
+        const items = await fetchEmbed(a.handle);
+        embed.cache.set(a.handle, { items, fetchedAt: Date.now() });
+        embed.ok++;
+        embed.backoffMs = 0;
+      } catch (err) {
+        embed.failed++;
+        errors.push(`${a.handle}: ${err.message}`);
+        if (/429|cooling down/.test(err.message)) {
+          // Rate limited: back off exponentially (2 min up to 30 min) and stop this run.
+          embed.backoffMs = Math.min(30 * 60e3, Math.max(120e3, embed.backoffMs * 2));
+          embed.backoffUntil = Date.now() + embed.backoffMs;
+          break;
+        }
+        // Other failures (suspended or renamed account): skip it until its next turn.
+        embed.cache.set(a.handle, { items: embed.cache.get(a.handle)?.items || [], fetchedAt: Date.now() });
+      }
+      await new Promise((r) => setTimeout(r, EMBED_GAP_MS));
+    }
+  }
+  const items = [...embed.cache.values()].flatMap((c) => c.items);
+  if (!items.length) {
+    const wait = embed.backoffUntil > now ? ` (rate limited, retrying in ${Math.max(1, Math.round((embed.backoffUntil - Date.now()) / 60e3))} min)` : '';
+    throw new Error((errors[0] || 'embed timelines returned nothing') + wait);
+  }
+  return items;
+}
+
+export function embedStatus() {
+  return {
+    accountsCached: [...embed.cache.values()].filter((c) => c.items.length).length,
+    accountsTotal: X_ACCOUNTS.length,
+    rateLimitedUntil: embed.backoffUntil > Date.now() ? embed.backoffUntil : null,
+  };
 }
 
 export async function fetchX() {
@@ -122,7 +204,7 @@ export async function fetchX() {
   for (const inst of (process.env.NITTER_INSTANCES || '').split(',').map((s) => s.trim()).filter(Boolean)) {
     strategies.push([`nitter:${inst}`, () => viaFeeds((h) => `${inst.replace(/\/$/, '')}/${h}/rss`)]);
   }
-  strategies.push(['syndication', viaSyndication]);
+  strategies.push(['embed', viaSyndication]);
 
   // Try the last strategy that worked first.
   strategies.sort(([a], [b]) => (a === xStatus.strategy ? -1 : b === xStatus.strategy ? 1 : 0));

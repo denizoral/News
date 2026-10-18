@@ -425,14 +425,14 @@ function renderFoot() {
   const ok = Object.values(src).filter((s) => s.ok).length;
   $('#footStatus').textContent = `${state.data.stories.length} stories, ${state.data.builds.length} projects and ${state.data.markets.length} markets from ${ok} of ${Object.keys(src).length} live sources. Rebuilt ${ago(state.data.generatedAt)}.`;
   $('#sourceTable').innerHTML = `<table>${Object.entries(src).map(([k, s]) => `<tr>
-    <td>${esc(SOURCE_LABELS[k] || k)}${s.strategy ? ` (via ${esc(s.strategy)})` : ''}</td>
+    <td>${esc(SOURCE_LABELS[k] || k)}${s.strategy ? ` (via ${esc(s.strategy)})` : ''}${s.accountsTotal ? `, ${s.accountsCached} of ${s.accountsTotal} accounts` : ''}</td>
     <td class="${s.ok ? 'ok' : 'bad'}">${s.ok ? `${s.count} items` : 'unavailable'}</td>
     <td>${s.lastRun ? ago(s.lastRun) : ''}</td>
     <td>${!s.ok && s.error ? esc(hint(k, s.error)) : ''}</td></tr>`).join('')}</table>`;
 }
 
 function hint(k, err) {
-  if (k === 'x') return 'Set X_BEARER_TOKEN, RSSHUB_URL or NITTER_INSTANCES on the server to pull X posts.';
+  if (k === 'x') return /rate limited/.test(err) ? `X embed timelines are rate limiting this server. ${err.match(/retrying in \d+ min/)?.[0] || 'Retrying soon'}.` : 'X embed timelines returned nothing. Setting X_BEARER_TOKEN, RSSHUB_URL or NITTER_INSTANCES gives a steadier feed.';
   if (k === 'reddit') return 'Reddit blocks this server. Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET.';
   if (k === 'github') return 'GitHub rate-limited this server. Set GITHUB_TOKEN.';
   return err.slice(0, 120);

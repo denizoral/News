@@ -1,3 +1,5 @@
+import { createSearch, spiderLine } from './search.js';
+
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
 
@@ -49,6 +51,10 @@ function highlight(text) {
   const re = new RegExp(`(${state.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig');
   return t.replace(re, '<mark>$1</mark>');
 }
+
+// ---------- Search engine ----------
+// Created after the helpers below are defined (function declarations hoist).
+let searchUi = null;
 
 // ---------- Data ----------
 
@@ -441,9 +447,9 @@ function hint(k, err) {
 // ---------- Render + routing ----------
 
 function render() {
-  if (!state.data) return;
   for (const v of $$('.view')) v.hidden = v.dataset.view !== state.view;
   $$('.tabs a').forEach((a) => (a.dataset.view === state.view ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+  if (!state.data) return;
   if (state.view === 'news') renderNews();
   if (state.view === 'builds') renderBuilds();
   if (state.view === 'markets') renderMarkets();
@@ -453,6 +459,12 @@ function render() {
 }
 
 function route() {
+  if (state.mode === 'api' && /^#(search|doc\/)/.test(location.hash)) {
+    state.view = searchUi.route(location.hash);
+    render();
+    window.scrollTo({ top: 0 });
+    return;
+  }
   const v = location.hash.replace('#', '');
   state.view = ['news', 'builds', 'markets'].includes(v) ? v : 'news';
   document.title = { news: 'Frontier Wire', builds: 'Built with AI · Frontier Wire', markets: 'AI markets · Frontier Wire' }[state.view];
@@ -493,6 +505,9 @@ $('#newPill').addEventListener('click', () => {
 
 let qTimer;
 $('#q').addEventListener('input', (e) => {
+  // With the server, the box is a search engine (see search.js); statically
+  // hosted, it filters what's on screen.
+  if (state.mode !== 'static') return;
   clearTimeout(qTimer);
   qTimer = setTimeout(() => { state.q = e.target.value.trim(); state.limit = 60; render(); }, 120);
 });
@@ -500,7 +515,7 @@ $('#q').addEventListener('input', (e) => {
 document.addEventListener('keydown', (e) => {
   const typing = /input|textarea/i.test(document.activeElement?.tagName);
   if (e.key === '/' && !typing) { e.preventDefault(); $('#q').focus(); return; }
-  if (e.key === 'Escape' && typing) { $('#q').value = ''; state.q = ''; $('#q').blur(); render(); return; }
+  if (e.key === 'Escape' && typing) { if (state.mode === 'static') { $('#q').value = ''; state.q = ''; render(); } $('#q').blur(); return; }
   if (typing || state.view !== 'news') return;
   if (e.key === 'j' || e.key === 'k') {
     const links = $$('.story h3 a, .lead h1 a');
@@ -538,7 +553,14 @@ setInterval(() => {
 }, 30e3);
 
 // Boot
+searchUi = createSearch({ esc, ago, time, fav, pct, compact });
+async function updateSpiderLine() {
+  if (state.mode !== 'api') return;
+  $('#footSpider').textContent = await spiderLine(compact);
+}
+setInterval(updateSpiderLine, 30e3);
 $('#river').innerHTML = Array.from({ length: 8 }, () => '<div class="skeleton"></div>').join('');
 route();
 await refresh();
+updateSpiderLine();
 connect();

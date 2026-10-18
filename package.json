@@ -5,7 +5,7 @@
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "scripts": {
     "start": "node --disable-warning=UNDICI-EHPA src/server.js",
@@ -15,7 +15,9 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "@mozilla/readability": "^0.6.0",
     "fast-xml-parser": "^4.5.0",
+    "linkedom": "^0.18.13",
     "undici": "^6.21.0"
   }
 }

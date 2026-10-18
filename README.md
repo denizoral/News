@@ -66,6 +66,65 @@ Copy `.env.example` to `.env`. Everything is optional:
   a free "script" app at reddit.com/prefs/apps fixes that.
 - `GITHUB_TOKEN`: higher GitHub search limits.
 
+## Search engine
+
+Besides the feed, Frontier Wire runs its own crawler and search engine. Type in
+the search box: suggestions appear as you type, and Enter opens a results page.
+
+**What gets stored.** Everything, permanently, in one SQLite file
+(`data/wire.db`): every headline, post, project, model and market the
+aggregator sees, plus the full text of every page the spider crawls. Images are
+saved to `data/media/`, named by the SHA-256 of their bytes so a picture used by
+ten articles is stored once. A disk budget (`MEDIA_MAX_GB`, default 5) deletes
+the oldest images first.
+
+**The spider** is a focused crawler, not a whole-web one:
+
+- It starts from ~30 AI news hubs (lab blogs, tech press, newsletters) in
+  `src/config.js`, rechecks them every 15 minutes and reads their sitemaps every
+  30, so new articles are found within minutes.
+- It also fetches the full page behind every link the aggregator finds.
+- It follows links freely inside those hubs, and one hop out to other sites when
+  the link text is about AI.
+- It obeys robots.txt (including Crawl-delay), identifies itself as
+  `FrontierWireBot`, waits at least 2 seconds between requests to the same
+  site, and caps each site at 600 pages a day.
+- It pulls the article text with Mozilla Readability, plus title, author, date and
+  images from Open Graph, JSON-LD and meta tags. It skips `noindex` pages and
+  exact duplicates.
+- The queue lives in the database, so a restart picks up where it left off.
+
+**Ranking** is BM25 full-text relevance (title counts 10× the body, with
+stemming so "models" matches "model"), adjusted for how many other sites link to
+the page, engagement, and freshness. The All tab puts matching prediction
+markets and images in their own boxes above the web results.
+
+**Query syntax**
+
+| Query | Meaning |
+| --- | --- |
+| `claude opus` | pages with both words |
+| `"open weights"` | exact phrase |
+| `nvidia -gaming` | exclude a word |
+| `gemini OR claude` | either word |
+| `site:theverge.com` | one site and its subdomains |
+| `type:news`, `type:posts`, `type:markets` | one kind of result |
+| `intitle:agents` | word must be in the title |
+
+Tabs cover All, News, Images, Posts, Projects, Models and Markets, with filters
+for time (day, week, month, year) and sorting by best match or newest.
+
+**API:** `GET /api/search?q=&type=&time=&sort=&page=`, `GET /api/suggest?q=`,
+`GET /api/doc?id=`, `GET /api/spider` (crawl stats), `GET /media/<hash>.<ext>`.
+
+**Stored copies.** The full text of crawled pages is stored and searchable, but
+the "Stored copy" reader view is off by default (`CACHED_COPIES=off`) because
+showing other sites' full articles on a public site raises copyright issues.
+Turn it on for private use.
+
+Search needs the Node server. On the static GitHub Pages build, the search box
+filters the feed instead.
+
 ## How stories are built
 
 1. **Normalize.** Every source emits the same item shape (title, url, source,
@@ -101,7 +160,10 @@ src/
   http.js            fetch with timeouts, retries, per-host backoff, proxy support
   sources/           one module per source family
   pipeline/          text utils, classification, clustering, scoring, market matching
-  store.js           in-memory store, persistence, snapshot building
+  store.js           in-memory feed store and snapshot building
+  db.js              SQLite schema: documents, FTS5 indexes, frontier, hosts, images
+  index/             writing documents, and search (query parser, ranking, suggest)
+  spider/            crawler engine, robots.txt, page extraction, sitemaps, image store
   crawler.js         per-source scheduler
   server.js          static files, /api/snapshot, /api/stream (SSE), /api/status
 public/              the site (no build step)
@@ -109,4 +171,4 @@ scripts/crawl-once.js  one crawl, optionally writes the static snapshot
 test/                node:test unit tests (npm test)
 ```
 
-Keyboard: `/` search, `j`/`k` move between stories, `Esc` clears search.
+Keyboard: `/` search (arrow keys pick a suggestion), `j`/`k` move between stories, `Esc` clears search.

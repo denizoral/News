@@ -26,11 +26,12 @@
         <a href="#markets" data-view="markets">Markets</a>
       </nav>
       <div class="tools">
-        <label class="search">
+        <form class="search" role="search" id="searchForm" onsubmit="return false">
           <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m13 13 4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <input id="q" type="search" placeholder="Search" autocomplete="off" aria-label="Search stories" />
+          <input id="q" type="search" placeholder="Search everything" autocomplete="off" aria-label="Search" role="combobox" aria-expanded="false" aria-controls="suggest" aria-autocomplete="list" />
           <kbd>/</kbd>
-        </label>
+          <ul class="suggest" id="suggest" role="listbox" aria-label="Suggestions" hidden></ul>
+        </form>
         <span class="live" id="live" role="status" aria-live="polite"><i></i><span>Connecting</span></span>
         <button class="theme" id="theme" type="button" aria-label="Toggle dark mode">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2a8 8 0 1 0 8 8 6 6 0 0 1-8-8Z" fill="currentColor"/></svg>
@@ -92,10 +93,30 @@
       <div class="chips" id="marketSort" role="group" aria-label="Sort markets"></div>
       <div class="market-list" id="marketList"></div>
     </section>
+    <!-- Search -->
+    <section class="view" data-view="search" aria-label="Search results" hidden>
+      <div class="search-head" id="searchHead"></div>
+      <nav class="chips search-tabs" id="searchTabs" aria-label="Result types"></nav>
+      <div class="chips chips-quiet" id="searchFilters" role="group" aria-label="Filter results"></div>
+      <div id="searchBoxes"></div>
+      <ol class="results" id="searchResults"></ol>
+      <button class="more" id="moreResults" type="button" hidden>More results</button>
+    </section>
+
+    <!-- Stored copy -->
+    <section class="view" data-view="doc" aria-label="Stored copy" hidden>
+      <article class="reader" id="docView"></article>
+    </section>
   </main>
+
+  <dialog class="img-dialog" id="imgDialog" aria-label="Image preview">
+    <button type="button" class="close" data-close aria-label="Close">×</button>
+    <div id="imgDialogBody"></div>
+  </dialog>
 
   <footer class="foot">
     <p id="footStatus"></p>
+    <p id="footSpider"></p>
     <details>
       <summary>Sources</summary>
       <div id="sourceTable"></div>

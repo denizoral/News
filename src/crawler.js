@@ -4,6 +4,13 @@ import { fetchHackerNews, fetchReddit, fetchBluesky } from './sources/community.
 import { fetchX, xStatus, embedStatus } from './sources/x.js';
 import { fetchPolymarket } from './sources/polymarket.js';
 import { fetchHuggingFace, fetchGitHub, fetchProductHunt, fetchShowHN, fetchOpenRouter } from './sources/builds.js';
+import { ingestAggregatorItems, ingestMarkets } from './index/documents.js';
+
+// The spider (optional) receives every URL the aggregator finds.
+let spider = null;
+export function attachSpider(s) {
+  spider = s;
+}
 
 export const SOURCES = {
   x: fetchX,
@@ -27,6 +34,14 @@ export async function runSource(store, name) {
     const out = await SOURCES[name]();
     if (name === 'polymarket') store.setMarkets(out.markets);
     const added = out.items ? store.ingest(name, out.items) : 0;
+    // Everything also goes into the permanent search index.
+    try {
+      if (out.items?.length) ingestAggregatorItems(out.items);
+      if (out.markets?.length) ingestMarkets(out.markets);
+      if (spider && out.items?.length) spider.enqueueFromItems(out.items.filter((i) => (i.section || 'news') === 'news'));
+    } catch (err) {
+      console.warn(`[index] ${name}: ${err.message}`);
+    }
     const count = out.markets?.length ?? out.items?.length ?? 0;
     const ok = count > 0 || !out.errors?.length;
     store.sourceStatus[name] = {

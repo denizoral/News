@@ -147,3 +147,56 @@ export const SCHEDULE = {
 };
 
 export const RETENTION_HOURS = 72;
+
+// ---- Spider (focused web crawler) ----
+// Hubs are section pages recrawled often to discover new articles. Their hosts
+// are "trusted": the spider follows any link within them. Off-site links are
+// followed only when their anchor text is about AI, and only one hop out.
+export const SPIDER = {
+  hubs: [
+    'https://www.theverge.com/ai-artificial-intelligence',
+    'https://techcrunch.com/category/artificial-intelligence/',
+    'https://arstechnica.com/ai/',
+    'https://venturebeat.com/category/ai/',
+    'https://www.technologyreview.com/topic/artificial-intelligence/',
+    'https://www.wired.com/tag/artificial-intelligence/',
+    'https://the-decoder.com/',
+    'https://www.404media.co/',
+    'https://www.semafor.com/vertical/tech',
+    'https://www.axios.com/technology',
+    'https://www.cnbc.com/ai-artificial-intelligence/',
+    'https://www.reuters.com/technology/artificial-intelligence/',
+    'https://www.zdnet.com/topic/artificial-intelligence/',
+    'https://www.engadget.com/ai/',
+    'https://www.marktechpost.com/',
+    'https://www.unite.ai/',
+    'https://openai.com/news/',
+    'https://www.anthropic.com/news',
+    'https://deepmind.google/discover/blog/',
+    'https://blog.google/technology/ai/',
+    'https://ai.meta.com/blog/',
+    'https://mistral.ai/news',
+    'https://x.ai/news',
+    'https://huggingface.co/blog',
+    'https://blogs.nvidia.com/',
+    'https://machinelearning.apple.com/',
+    'https://www.microsoft.com/en-us/research/blog/',
+    'https://simonwillison.net/',
+    'https://www.latent.space/',
+    'https://www.interconnects.ai/',
+    'https://jack-clark.net/',
+    'https://epoch.ai/blog',
+  ],
+  // Also crawl every article URL the aggregator finds (except these wrappers).
+  skipHosts: ['news.google.com', 'x.com', 'twitter.com', 'bsky.app', 'reddit.com', 'news.ycombinator.com', 'youtube.com', 'youtu.be', 'facebook.com', 'instagram.com', 'linkedin.com', 'tiktok.com', 'polymarket.com', 'producthunt.com', 'github.com', 'huggingface.co/spaces', 'openrouter.ai'],
+  concurrency: Number(process.env.SPIDER_CONCURRENCY) || 6,
+  hostDelayMs: Number(process.env.SPIDER_HOST_DELAY_MS) || 2000,
+  hostDailyBudget: Number(process.env.SPIDER_HOST_BUDGET) || 600,
+  hubRecrawlMin: 15,
+  sitemapRecrawlMin: 30,
+  maxDepth: 3,
+  maxPageBytes: 4 * 1024 * 1024,
+  imageConcurrency: 3,
+  // The lead image always; others only if they have alt text or a caption.
+  imagesPerPage: 3,
+};

@@ -10,8 +10,9 @@
 
 import { EventEmitter } from 'node:events';
 import { get } from '../http.js';
+import { BlockedUrlError } from '../security/ssrf.js';
 import { q, tx } from '../db.js';
-import { SPIDER } from '../config.js';
+import { settings } from '../settings.js';
 import { canonicalUrl, hostOf } from '../pipeline/text.js';
 import { isAiRelated } from '../pipeline/classify.js';
 import { parseRobots, isAllowed, crawlDelay, BOT_TOKEN } from './robots.js';
@@ -29,14 +30,32 @@ const today = () => new Date().toISOString().slice(0, 10);
 export class Spider extends EventEmitter {
   constructor(opts = {}) {
     super();
-    this.cfg = { ...SPIDER, ...opts };
-    this.trusted = new Set(this.cfg.hubs.map((u) => bare(new URL(u).hostname)));
+    this.overrides = opts; // tests pass fixed values here
     this.inflight = new Set(); // hosts with a request in progress
     this.active = 0;
     this.imgActive = 0;
     this.hostCache = new Map();
     this.running = false;
     this.stats = { fetched: 0, indexed: 0, duplicates: 0, blocked: 0, errors: 0, images: 0, startedAt: Date.now(), recent: [] };
+  }
+
+  // Live configuration from the admin dashboard, rebuilt when settings change.
+  get cfg() {
+    if (this._cfgVersion !== settings.version) {
+      this._cfg = { ...settings.spider(), ...this.overrides };
+      if (!(this._cfg.hostRules instanceof Map)) this._cfg.hostRules = new Map();
+      this._trusted = new Set(this._cfg.hubs.map((u) => bare(new URL(u).hostname)));
+      this._cfgVersion = settings.version;
+    }
+    return this._cfg;
+  }
+
+  get trusted() {
+    return this.cfg && this._trusted;
+  }
+
+  rule(host) {
+    return this.cfg.hostRules.get(bare(host)) || null;
   }
 
   // ---------- frontier ----------
@@ -71,6 +90,11 @@ export class Spider extends EventEmitter {
 
   seed() {
     tx(() => {
+      // Starting pages removed in the dashboard stop being rechecked.
+      const current = new Set(this.cfg.hubs.map((u) => canonicalUrl(u)));
+      for (const r of q("SELECT url FROM frontier WHERE kind = 'hub'").all()) {
+        if (!current.has(r.url)) q("UPDATE frontier SET kind = 'page', status = 'done' WHERE url = ?").run(r.url);
+      }
       for (const u of this.cfg.hubs) {
         const url = canonicalUrl(u);
         q(`INSERT INTO frontier (url, host, kind, priority, depth, status, next_at, discovered_at, via) VALUES (?, ?, 'hub', 10, 0, 'queued', ?, ?, 'seed')
@@ -121,11 +145,13 @@ export class Spider extends EventEmitter {
     let text = '';
     let status = 0;
     try {
-      const res = await fetch(`${scheme}//${h.host}/robots.txt`, { headers: { 'user-agent': BOT_UA }, signal: AbortSignal.timeout(10000), redirect: 'follow' });
+      const res = await get(`${scheme}//${h.host}/robots.txt`, { headers: { 'user-agent': BOT_UA }, timeout: 10000, retries: 0, publicOnly: true });
       status = res.status;
-      text = res.ok ? (await res.text()).slice(0, 500000) : '';
-    } catch {
-      status = 599;
+      text = (await res.text()).slice(0, 500000);
+    } catch (err) {
+      // A 4xx means "no robots.txt": everything allowed. Network trouble is treated as 5xx.
+      status = err.status && err.status < 500 ? err.status : 599;
+      if (err instanceof BlockedUrlError) throw err;
     }
     h.robots_status = status;
     if (status >= 500) {
@@ -155,6 +181,11 @@ export class Spider extends EventEmitter {
     this.running = true;
     q("UPDATE frontier SET status = 'queued' WHERE status = 'fetching'").run();
     this.seed();
+    this.onSettings = (changes) => {
+      if (changes.some((c) => c.key === 'crawler.hubs')) this.seed();
+      this.cands = null;
+    };
+    settings.on('change', this.onSettings);
     this.timer = setInterval(() => this.tick(), 500);
     this.imgTimer = setInterval(() => this.imageTick(), 1000);
     this.timer.unref?.();
@@ -163,12 +194,13 @@ export class Spider extends EventEmitter {
 
   stop() {
     this.running = false;
+    if (this.onSettings) settings.off('change', this.onSettings);
     clearInterval(this.timer);
     clearInterval(this.imgTimer);
   }
 
   tick() {
-    if (!this.running || this.active >= this.cfg.concurrency) return;
+    if (!this.running || !this.cfg.enabled || this.active >= this.cfg.concurrency) return;
     const now = Date.now();
     // Candidates are the best two ready URLs per host, so one big sitemap
     // can't starve every other site. Refreshed every few seconds.
@@ -184,7 +216,13 @@ export class Spider extends EventEmitter {
       if (this.inflight.has(row.host)) continue;
       const h = this.host(row.host);
       if (h.next_allowed_at > now) continue;
-      if (h.fetched_today >= this.cfg.hostDailyBudget && row.kind !== 'hub') {
+      const rule = this.rule(row.host);
+      if (rule?.blocked) {
+        this.cands.splice(this.cands.indexOf(row), 1);
+        q("UPDATE frontier SET status = 'blocked', error = 'Blocked by a site rule' WHERE url = ?").run(row.url);
+        continue;
+      }
+      if (h.fetched_today >= (rule?.dailyBudget ?? this.cfg.hostDailyBudget) && row.kind !== 'hub') {
         q('UPDATE frontier SET next_at = ? WHERE url = ?').run(now + 3600e3, row.url);
         continue;
       }
@@ -202,6 +240,11 @@ export class Spider extends EventEmitter {
   }
 
   fail(row, h, err) {
+    if (err instanceof BlockedUrlError) {
+      this.stats.blocked++;
+      q("UPDATE frontier SET status = 'blocked', error = ?, fetched_at = ? WHERE url = ?").run(err.message.slice(0, 300), Date.now(), row.url);
+      return;
+    }
     this.stats.errors++;
     h.errors++;
     const attempts = row.attempts + 1;
@@ -230,12 +273,12 @@ export class Spider extends EventEmitter {
   async process(row, h) {
     const scheme = new URL(row.url).protocol;
     await this.ensureRobots(h, scheme);
-    if (!isAllowed(h.parsed, row.url, BOT_TOKEN)) {
+    if (!isAllowed(h.parsed, row.url, BOT_TOKEN) || this.ruleDisallows(row.url)) {
       this.stats.blocked++;
       return this.done(row, { status: 'blocked', httpStatus: 0 });
     }
 
-    const delay = Math.max(this.cfg.hostDelayMs, h.crawl_delay_ms || 0);
+    const delay = Math.max(this.cfg.hostDelayMs, h.crawl_delay_ms || 0, this.rule(h.host)?.minDelayMs || 0);
     h.next_allowed_at = Date.now() + delay;
     h.fetched_today++;
 
@@ -245,7 +288,7 @@ export class Spider extends EventEmitter {
 
     let res;
     try {
-      res = await get(row.url, { timeout: 20000, retries: 0, headers });
+      res = await get(row.url, { timeout: 20000, retries: 0, headers, publicOnly: true });
     } catch (err) {
       if (/HTTP 304/.test(err.message)) return this.done(row, { httpStatus: 304 });
       throw err;
@@ -290,6 +333,14 @@ export class Spider extends EventEmitter {
     });
   }
 
+  // Extra paths blocked from the dashboard, using robots.txt pattern syntax.
+  ruleDisallows(url) {
+    const rule = this.rule(new URL(url).hostname);
+    if (!rule?.disallow?.length) return false;
+    if (rule._parsed?.src !== rule.disallow) rule._parsed = { src: rule.disallow, robots: parseRobots(`User-agent: *\n${rule.disallow.map((p) => `Disallow: ${p}`).join('\n')}`) };
+    return !isAllowed(rule._parsed.robots, url, BOT_TOKEN);
+  }
+
   isAiHost(host) {
     // Hosts whose whole output is about AI; everything they publish is relevant.
     return /(openai|anthropic|deepmind|huggingface|mistral|x\.ai|the-decoder|marktechpost|unite\.ai|simonwillison|latent\.space|interconnects|jack-clark|epoch\.ai|machinelearning\.apple)/.test(host);
@@ -314,7 +365,7 @@ export class Spider extends EventEmitter {
           else if (aiAnchor && depth <= 2) this.enqueue(link.url, { kind: 'page', priority: 3.5, depth, via: row.url });
         } else if (sameHost) {
           if (article && aiAnchor && depth <= 2) this.enqueue(link.url, { kind: 'article', priority: 4.5, depth, via: row.url });
-        } else if (fromTrusted && article && aiAnchor) {
+        } else if (fromTrusted && article && aiAnchor && this.cfg.followExternal) {
           // One hop off the trusted set, and no further.
           this.enqueue(link.url, { kind: 'article', priority: 5 + (this.trusted.has(toHost) ? 1 : 0), depth: this.cfg.maxDepth, via: row.url });
         }
@@ -370,7 +421,7 @@ export class Spider extends EventEmitter {
   // ---------- images ----------
 
   imageTick() {
-    if (!this.running) return;
+    if (!this.running || !this.cfg.enabled) return;
     const slots = this.cfg.imageConcurrency - this.imgActive;
     if (slots <= 0) return;
     const rows = q("SELECT * FROM images WHERE status = 'queued' ORDER BY discovered_at DESC LIMIT ?").all(slots);
@@ -392,6 +443,65 @@ export class Spider extends EventEmitter {
     }
   }
 
+  // ---------- admin operations ----------
+
+  // Add a URL at top priority (it still goes through robots.txt and the SSRF guard).
+  crawlNow(url, via) {
+    const u = canonicalUrl(url);
+    const host = new URL(u).hostname;
+    q(`INSERT INTO frontier (url, host, kind, priority, depth, status, next_at, discovered_at, via) VALUES (?, ?, 'article', 100, 0, 'queued', ?, ?, ?)
+       ON CONFLICT(url) DO UPDATE SET status = 'queued', priority = 100, next_at = excluded.next_at, attempts = 0, error = NULL`).run(u, host, Date.now(), Date.now(), via);
+    this.cands = null;
+    return u;
+  }
+
+  purgeHost(host) {
+    const h = bare(String(host).toLowerCase());
+    const r = q("DELETE FROM frontier WHERE (host = ? OR host = ?) AND status = 'queued' AND kind != 'hub'").run(h, `www.${h}`);
+    this.cands = null;
+    return Number(r.changes);
+  }
+
+  requeueErrors(host = null) {
+    const r = host
+      ? q("UPDATE frontier SET status = 'queued', attempts = 0, error = NULL, next_at = ? WHERE status = 'error' AND (host = ? OR host = ?)").run(Date.now(), bare(host), `www.${bare(host)}`)
+      : q("UPDATE frontier SET status = 'queued', attempts = 0, error = NULL, next_at = ? WHERE status = 'error'").run(Date.now());
+    this.cands = null;
+    return Number(r.changes);
+  }
+
+  // Forget a host's cached robots.txt so it's fetched again before the next request.
+  refreshRobots(host) {
+    const h = this.host(host);
+    h.robots_fetched_at = 0;
+    this.saveHost(h);
+  }
+
+  queueSummary() {
+    const now = Date.now();
+    return {
+      byStatus: Object.fromEntries(q('SELECT status, COUNT(*) AS n FROM frontier GROUP BY status').all().map((r) => [r.status, r.n])),
+      byKind: Object.fromEntries(q("SELECT kind, COUNT(*) AS n FROM frontier WHERE status = 'queued' GROUP BY kind").all().map((r) => [r.kind, r.n])),
+      readyNow: q("SELECT COUNT(*) AS n FROM frontier WHERE status = 'queued' AND next_at <= ?").get(now).n,
+      topHosts: q("SELECT host, COUNT(*) AS n FROM frontier WHERE status = 'queued' GROUP BY host ORDER BY n DESC LIMIT 15").all(),
+      next: q("SELECT url, kind, priority, depth, via FROM frontier WHERE status = 'queued' AND next_at <= ? ORDER BY priority DESC LIMIT 25").all(now),
+      recentErrors: q("SELECT url, error, http_status, fetched_at FROM frontier WHERE status IN ('error', 'blocked') AND fetched_at IS NOT NULL ORDER BY fetched_at DESC LIMIT 25").all(),
+    };
+  }
+
+  hosts({ search = '', limit = 100 } = {}) {
+    const like = `%${search.replace(/[%_]/g, '')}%`;
+    return q(`SELECT h.host, h.pages, h.errors, h.fetched_today, h.day, h.robots_status, h.robots_fetched_at, h.crawl_delay_ms,
+        (SELECT COUNT(*) FROM frontier f WHERE f.host = h.host AND f.status = 'queued') AS queued
+      FROM hosts h WHERE h.host LIKE ? ORDER BY h.pages DESC LIMIT ?`).all(like, Math.min(500, limit))
+      .map((r) => ({ ...r, rule: this.rule(r.host), trusted: this.trusted.has(bare(r.host)) }));
+  }
+
+  robotsFor(host) {
+    const row = q('SELECT robots, robots_status, robots_fetched_at FROM hosts WHERE host = ?').get(host);
+    return row || null;
+  }
+
   // ---------- stats ----------
 
   status() {
@@ -403,7 +513,7 @@ export class Spider extends EventEmitter {
     const img = q("SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b FROM images WHERE status = 'stored'").get();
     const hosts = q('SELECT COUNT(*) AS n FROM hosts').get().n;
     const perMin = this.stats.recent.filter((t) => t > now - 60e3).length;
-    const v = { running: this.running, frontier: f, docs, crawledPages: crawled, images: { stored: img.n, bytes: img.b }, hosts, pagesPerMinute: perMin, session: { ...this.stats, recent: undefined } };
+    const v = { running: this.running, paused: !this.cfg.enabled, frontier: f, docs, crawledPages: crawled, images: { stored: img.n, bytes: img.b }, hosts, pagesPerMinute: perMin, session: { ...this.stats, recent: undefined } };
     this._st = { at: now, v };
     return v;
   }

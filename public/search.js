@@ -201,7 +201,7 @@ export function createSearch({ esc, ago, time, fav, pct, compact }) {
         ${odds ? `<div class="odd"><span class="odd-label">${esc(r.meta.binary ? 'Yes' : odds.label)}</span><span class="pct">${pct(odds.yes)}</span><span class="rule"><i style="width:${(odds.yes * 100).toFixed(1)}%"></i></span></div>` : ''}
         ${extra.length ? `<div class="r-extra">${extra.join('')}</div>` : ''}
       </div>
-      ${r.image ? `<img class="r-img" src="${esc(r.image)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+      ${r.image ? `<img class="r-img" src="${esc(r.image)}" alt="" loading="lazy" data-fallback="remove">` : ''}
     </li>`;
   }
 

@@ -1,4 +1,7 @@
 node_modules
 data
 .git
+.env
+.env.*
 public/data
+test

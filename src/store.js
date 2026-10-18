@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { RETENTION_HOURS } from './config.js';
+import { settings } from './settings.js';
+import { q } from './db.js';
+import { canonicalUrl } from './pipeline/text.js';
 import { clusterItems, scoreStory, matchMarkets } from './pipeline/cluster.js';
 
 const STATE_FILE = path.resolve(process.env.DATA_DIR || 'data', 'state.json');
@@ -71,7 +73,7 @@ export class Store extends EventEmitter {
 
   prune() {
     const now = Date.now();
-    const cutoff = now - RETENTION_HOURS * 3600e3;
+    const cutoff = now - settings.get('storage.feedRetentionHours') * 3600e3;
     for (const [id, it] of this.items) {
       // Trending lists (models, demos, repos) stay while their source still lists them.
       const stillListed = (it.lastSeen || it.firstSeen || 0) > now - 3 * 3600e3;
@@ -90,15 +92,44 @@ export class Store extends EventEmitter {
     this._timer = setTimeout(() => this.rebuild(), 400);
   }
 
+  // Moderation from the dashboard: hidden, pinned and edited documents, by URL.
+  loadModeration() {
+    try {
+      this.moderation = new Map(q('SELECT url, title, description, hidden, pinned, locked FROM docs WHERE hidden = 1 OR pinned = 1 OR locked = 1').all().map((r) => [r.url, r]));
+    } catch {
+      this.moderation = new Map();
+    }
+  }
+
+  modFor(item) {
+    if (!this.moderation) this.loadModeration();
+    for (const u of [item.url, item.linkUrl]) {
+      if (!u) continue;
+      const m = this.moderation.get(canonicalUrl(u));
+      if (m) return m;
+    }
+    return null;
+  }
+
   rebuild() {
     const now = Date.now();
-    const all = [...this.items.values()];
+    this.loadModeration();
+    const all = [...this.items.values()].filter((i) => !this.modFor(i)?.hidden);
     const newsItems = all.filter((i) => (i.section || 'news') === 'news');
 
     const stories = clusterItems(newsItems);
     matchMarkets(stories, this.markets);
-    for (const s of stories) s.score = scoreStory(s, now);
-    stories.sort((a, b) => b.score - a.score);
+    for (const s of stories) {
+      s.score = scoreStory(s, now);
+      const m = this.modFor(s);
+      if (m?.locked) {
+        s.title = m.title || s.title;
+        s.summary = m.description || s.summary;
+      }
+      if (m?.pinned) s.pinned = true;
+    }
+    // Pinned stories lead, then everything by score.
+    stories.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.score - a.score);
     const topStories = stories.slice(0, 400).map(({ _group, weakEntities, ...s }) => s);
 
     // Markets: attach the stories that point at each one.
@@ -111,7 +142,10 @@ export class Store extends EventEmitter {
       .map(({ text, ...m }) => ({ ...m, stories: (marketStories.get(m.id) || []).slice(0, 3) }))
       .sort((a, b) => b.volume24h - a.volume24h);
 
-    const builds = dedupeBuilds(all.filter((i) => i.section === 'builds'), now);
+    const builds = dedupeBuilds(all.filter((i) => i.section === 'builds'), now).map((b) => {
+      const m = this.modFor(b);
+      return m?.locked ? { ...b, title: m.title || b.title, summary: m.description || b.summary } : b;
+    });
     const models = all
       .filter((i) => i.section === 'models')
       .sort((a, b) => (b.engagement?.trending || 0) - (a.engagement?.trending || 0))
@@ -122,7 +156,7 @@ export class Store extends EventEmitter {
       .slice(0, 80);
 
     this.version++;
-    this.snapshot = { version: this.version, generatedAt: now, stories: topStories, builds, markets, social, models, status: this.status() };
+    this.snapshot = { version: this.version, generatedAt: now, site: settings.publicSite(), stories: topStories, builds, markets, social, models, status: this.status() };
     this.emit('update', this.snapshot);
   }
 

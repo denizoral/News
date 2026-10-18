@@ -1,125 +1,293 @@
+// HTTP server: public site and API, admin dashboard, background jobs.
+//
+// Hardening for public traffic: security headers and CSP on every response,
+// GET/HEAD only outside the admin API, per-IP rate limits on search, a short
+// cache for repeated searches, caps on live connections, request timeouts,
+// and no stack traces in responses. Static files are served from memory with
+// ETags and gzip.
+
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { Store } from './store.js';
-import { crawlAll, startScheduler, attachSpider } from './crawler.js';
+import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
 import { openDb } from './db.js';
+import { settings } from './settings.js';
 import { Spider } from './spider/engine.js';
 import { MEDIA_DIR } from './spider/media.js';
 import { universal, searchImages, suggest, getDoc } from './index/search.js';
+import { startRetention } from './index/retention.js';
+import { createAdminRouter } from './admin/routes.js';
+import { pruneSessions } from './admin/auth.js';
+import { contentEvents } from './admin/content.js';
+import { RateLimiter } from './security/ratelimit.js';
+import { clientIp, securityHeaders } from './security/httpkit.js';
 
-const PORT = Number(process.env.PORT) || 3000;
+const PROD = process.env.NODE_ENV === 'production';
 const PUBLIC = path.resolve('public');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain; charset=utf-8' };
+const MAX_QUERY = 256;
 
-const store = new Store();
-store.load();
-openDb();
-
-const spider = new Spider();
-attachSpider(spider);
-if (process.env.SPIDER !== 'off') spider.start();
-
-const clients = new Set();
-let gzCache = { version: -1, body: null };
-
-function snapshotBody() {
-  if (gzCache.version !== store.snapshot.version) {
-    const json = JSON.stringify(store.snapshot);
-    gzCache = { version: store.snapshot.version, json, body: zlib.gzipSync(json) };
+// Small TTL cache for public API responses (search, suggest).
+class TtlCache {
+  constructor(max, ttlMs) {
+    this.max = max;
+    this.ttl = ttlMs;
+    this.map = new Map();
   }
-  return gzCache;
+  get(k) {
+    const e = this.map.get(k);
+    if (!e) return null;
+    if (Date.now() > e.exp) {
+      this.map.delete(k);
+      return null;
+    }
+    return e.v;
+  }
+  set(k, v) {
+    if (this.map.size >= this.max) this.map.delete(this.map.keys().next().value);
+    this.map.set(k, { v, exp: Date.now() + this.ttl });
+  }
+  clear() {
+    this.map.clear();
+  }
 }
 
-store.on('update', (snap) => {
-  const msg = `event: update\ndata: ${JSON.stringify({ version: snap.version, generatedAt: snap.generatedAt })}\n\n`;
-  for (const res of clients) res.write(msg);
-});
+export function createApp({ store, spider }) {
+  const admin = createAdminRouter({ store, spider, runNow: (name) => runNow(store, name), sourceNames: Object.keys(SOURCES) });
+  const perMin = () => settings.get('limits.searchPerMinute');
+  const searchLimiter = new RateLimiter({ capacity: perMin(), refillPerSec: perMin() / 60, maxKeys: 200000 });
+  const cache = new TtlCache(5000, 30e3);
+  const streams = new Map(); // ip -> count
+  let streamTotal = 0;
+  const clients = new Set();
 
-function sendJSON(req, res, status, body, extra = {}) {
-  const gz = /gzip/.test(req.headers['accept-encoding'] || '');
-  const payload = typeof body === 'string' ? body : JSON.stringify(body);
-  res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', ...(gz ? { 'content-encoding': 'gzip' } : {}), ...extra });
-  res.end(gz ? zlib.gzipSync(payload) : payload);
-}
-
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://x');
-
-  if (url.pathname === '/api/snapshot') {
-    const { json, body } = snapshotBody();
-    const etag = `"v${store.snapshot.version}"`;
-    if (req.headers['if-none-match'] === etag) return res.writeHead(304).end();
-    if (/gzip/.test(req.headers['accept-encoding'] || '')) {
-      res.writeHead(200, { 'content-type': 'application/json', 'content-encoding': 'gzip', etag, 'cache-control': 'no-cache' });
-      return res.end(body);
-    }
-    res.writeHead(200, { 'content-type': 'application/json', etag, 'cache-control': 'no-cache' });
-    return res.end(json);
-  }
-
-  // Search API. A bad query must never take the server down.
-  try {
-    if (url.pathname === '/api/search') {
-      const p = Object.fromEntries(url.searchParams);
-      const out = p.type === 'images' ? searchImages(p.q || '', p) : universal(p.q || '', p);
-      return sendJSON(req, res, 200, out);
-    }
-    if (url.pathname === '/api/suggest') return sendJSON(req, res, 200, suggest(url.searchParams.get('q') || ''));
-    if (url.pathname === '/api/doc') {
-      const doc = getDoc(url.searchParams.get('id'));
-      return doc ? sendJSON(req, res, 200, doc, { 'x-robots-tag': 'noindex' }) : sendJSON(req, res, 404, { error: 'No document with that id.' });
-    }
-    if (url.pathname === '/api/spider') return sendJSON(req, res, 200, spider.status());
-  } catch (err) {
-    return sendJSON(req, res, 400, { error: `Couldn't run that search: ${err.message}`, results: [], total: 0 });
-  }
-
-  if (url.pathname.startsWith('/media/')) {
-    const name = url.pathname.slice(7);
-    if (!/^[a-f0-9]{64}\.(jpg|png|gif|webp|avif)$/.test(name)) return res.writeHead(404).end();
-    const file = path.join(MEDIA_DIR, name.slice(0, 2), name.slice(2, 4), name);
-    return fs.readFile(file, (err, data) => {
-      if (err) return res.writeHead(404).end();
-      const ext = name.split('.').pop();
-      res.writeHead(200, { 'content-type': `image/${ext === 'jpg' ? 'jpeg' : ext}`, 'cache-control': 'public, max-age=31536000, immutable' });
-      res.end(data);
-    });
-  }
-
-  if (url.pathname === '/api/status') return sendJSON(req, res, 200, { ...store.status(), version: store.snapshot.version, generatedAt: store.snapshot.generatedAt });
-
-  if (url.pathname === '/api/stream') {
-    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
-    res.write(`retry: 5000\nevent: hello\ndata: ${JSON.stringify({ version: store.snapshot.version })}\n\n`);
-    clients.add(res);
-    const ping = setInterval(() => res.write(': ping\n\n'), 25e3);
-    req.on('close', () => {
-      clearInterval(ping);
-      clients.delete(res);
-    });
-    return;
-  }
-
-  // Static files
-  let file = path.join(PUBLIC, decodeURIComponent(url.pathname));
-  if (!file.startsWith(PUBLIC)) return res.writeHead(403).end();
-  if (url.pathname === '/' || !path.extname(file)) file = path.join(PUBLIC, 'index.html');
-  fs.readFile(file, (err, data) => {
-    if (err) return res.writeHead(404).end('Not found');
-    const type = TYPES[path.extname(file)] || 'application/octet-stream';
-    const compress = /text|javascript|json|svg/.test(type) && /gzip/.test(req.headers['accept-encoding'] || '');
-    res.writeHead(200, { 'content-type': type, 'cache-control': 'no-cache', ...(compress ? { 'content-encoding': 'gzip' } : {}) });
-    res.end(compress ? zlib.gzipSync(data) : data);
+  settings.on('change', (changes) => {
+    if (changes.some((c) => c.key === 'limits.searchPerMinute')) searchLimiter.configure({ capacity: perMin(), refillPerSec: perMin() / 60 });
+    cache.clear();
   });
-});
+  contentEvents.on('change', () => cache.clear());
 
-server.listen(PORT, () => console.log(`Frontier Wire on http://localhost:${PORT}`));
+  // Snapshot is pre-serialized and pre-compressed once per version.
+  let snap = { version: -1 };
+  const snapshot = () => {
+    if (snap.version !== store.snapshot.version) {
+      const json = JSON.stringify(store.snapshot);
+      snap = { version: store.snapshot.version, json, gz: zlib.gzipSync(json), etag: `"v${store.snapshot.version}-${crypto.createHash('sha1').update(json).digest('hex').slice(0, 10)}"` };
+    }
+    return snap;
+  };
+  store.on('update', (s) => {
+    const msg = `event: update\ndata: ${JSON.stringify({ version: s.version, generatedAt: s.generatedAt })}\n\n`;
+    for (const res of clients) res.write(msg);
+  });
 
-crawlAll(store)
-  .then(() => {
-    store.save();
-    startScheduler(store);
-  })
-  .catch((e) => console.error('initial crawl failed', e));
+  // Static files, cached in memory (re-read in development).
+  const statics = new Map();
+  function staticFile(rel) {
+    const hit = PROD && statics.get(rel);
+    if (hit) return hit;
+    const file = path.join(PUBLIC, rel);
+    if (file !== PUBLIC && !file.startsWith(PUBLIC + path.sep)) return null;
+    let data;
+    try {
+      if (!fs.statSync(file).isFile()) return null;
+      data = fs.readFileSync(file);
+    } catch {
+      return null;
+    }
+    const type = TYPES[path.extname(file)] || 'application/octet-stream';
+    const entry = { data, type, gz: /text|javascript|json|svg/.test(type) ? zlib.gzipSync(data) : null, etag: `"${crypto.createHash('sha1').update(data).digest('hex').slice(0, 16)}"` };
+    if (PROD) statics.set(rel, entry);
+    return entry;
+  }
+
+  function send(req, res, status, body, type, extra = {}) {
+    res.writeHead(status, { 'content-type': type, ...extra });
+    res.end(req.method === 'HEAD' ? undefined : body);
+  }
+
+  function json(req, res, status, obj, extra = {}) {
+    const s = typeof obj === 'string' ? obj : JSON.stringify(obj);
+    const useGz = s.length > 1024 && /gzip/.test(req.headers['accept-encoding'] || '');
+    res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache', vary: 'Accept-Encoding', ...(useGz ? { 'content-encoding': 'gzip' } : {}), ...extra });
+    res.end(req.method === 'HEAD' ? undefined : useGz ? zlib.gzipSync(s) : s);
+  }
+
+  function limited(req, res) {
+    const r = searchLimiter.take(clientIp(req));
+    if (r.ok) return false;
+    json(req, res, 429, { error: 'Too many searches from your connection. Try again shortly.' }, { 'retry-after': String(r.retryAfter) });
+    return true;
+  }
+
+  // Search-type endpoints share limits, input caps and the cache.
+  function cachedApi(req, res, url, compute) {
+    if (limited(req, res)) return;
+    const qv = url.searchParams.get('q') || '';
+    if (qv.length > MAX_QUERY) return json(req, res, 400, { error: `Searches can be at most ${MAX_QUERY} characters.` });
+    const page = Number(url.searchParams.get('page') || 1);
+    if (!Number.isInteger(page) || page < 1 || page > 50) return json(req, res, 400, { error: 'Page must be between 1 and 50.' });
+    const key = url.pathname + url.search;
+    let body = cache.get(key);
+    if (!body) {
+      body = JSON.stringify(compute(Object.fromEntries(url.searchParams)));
+      cache.set(key, body);
+    }
+    json(req, res, 200, body, { 'cache-control': 'public, max-age=15' });
+  }
+
+  function handle(req, res) {
+    let url;
+    try {
+      url = new URL(req.url, 'http://localhost');
+      decodeURIComponent(url.pathname); // reject malformed escapes up front
+    } catch {
+      res.writeHead(400, { 'content-type': 'text/plain' });
+      return res.end('Bad request');
+    }
+
+    if (admin(req, res, url)) return;
+
+    securityHeaders(res);
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { allow: 'GET, HEAD', 'content-type': 'text/plain' });
+      return res.end('Method not allowed');
+    }
+
+    const p = url.pathname;
+    if (p === '/healthz') return json(req, res, 200, { ok: true, version: store.snapshot.version });
+    if (p === '/api/snapshot') {
+      const s = snapshot();
+      if (req.headers['if-none-match'] === s.etag) return res.writeHead(304, { etag: s.etag }).end();
+      const gz = /gzip/.test(req.headers['accept-encoding'] || '');
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', etag: s.etag, 'cache-control': 'public, max-age=5', vary: 'Accept-Encoding', ...(gz ? { 'content-encoding': 'gzip' } : {}) });
+      return res.end(req.method === 'HEAD' ? undefined : gz ? s.gz : s.json);
+    }
+    if (p === '/api/search') return cachedApi(req, res, url, (o) => (o.type === 'images' ? searchImages(o.q || '', o) : universal(o.q || '', o)));
+    if (p === '/api/suggest') return cachedApi(req, res, url, (o) => suggest(o.q || ''));
+    if (p === '/api/doc') {
+      if (limited(req, res)) return;
+      const doc = getDoc(url.searchParams.get('id'));
+      return doc ? json(req, res, 200, doc, { 'x-robots-tag': 'noindex' }) : json(req, res, 404, { error: 'No document with that id.' });
+    }
+    if (p === '/api/spider') return json(req, res, 200, spider.status(), { 'cache-control': 'public, max-age=10' });
+    if (p === '/api/status') return json(req, res, 200, { ...store.status(), version: store.snapshot.version, generatedAt: store.snapshot.generatedAt });
+
+    if (p === '/api/stream') {
+      const ip = clientIp(req);
+      const mine = streams.get(ip) || 0;
+      if (mine >= settings.get('limits.streamPerIp') || streamTotal >= settings.get('limits.streamTotal')) {
+        return json(req, res, 429, { error: 'Too many live connections.' }, { 'retry-after': '30' });
+      }
+      streams.set(ip, mine + 1);
+      streamTotal++;
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+      res.write(`retry: 5000\nevent: hello\ndata: ${JSON.stringify({ version: store.snapshot.version })}\n\n`);
+      clients.add(res);
+      const ping = setInterval(() => res.write(': ping\n\n'), 25e3);
+      req.on('close', () => {
+        clearInterval(ping);
+        clients.delete(res);
+        streamTotal--;
+        const n = (streams.get(ip) || 1) - 1;
+        if (n) streams.set(ip, n);
+        else streams.delete(ip);
+      });
+      return;
+    }
+
+    if (p.startsWith('/api/')) return json(req, res, 404, { error: 'Not found.' });
+
+    if (p === '/robots.txt') {
+      return send(req, res, 200, settings.get('site.robotsTxt'), 'text/plain; charset=utf-8', { 'cache-control': 'public, max-age=300' });
+    }
+
+    if (p.startsWith('/media/')) {
+      const name = p.slice(7);
+      if (!/^[a-f0-9]{64}\.(jpg|png|gif|webp|avif)$/.test(name)) return send(req, res, 404, 'Not found', 'text/plain');
+      const file = path.join(MEDIA_DIR, name.slice(0, 2), name.slice(2, 4), name);
+      const ext = name.split('.').pop();
+      const stream = fs.createReadStream(file);
+      stream.on('open', () => res.writeHead(200, { 'content-type': `image/${ext === 'jpg' ? 'jpeg' : ext}`, 'cache-control': 'public, max-age=31536000, immutable', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox" }));
+      stream.on('error', () => { if (!res.headersSent) send(req, res, 404, 'Not found', 'text/plain'); else res.destroy(); });
+      if (req.method === 'HEAD') return stream.on('open', () => { stream.destroy(); res.end(); });
+      return stream.pipe(res);
+    }
+
+    // Static site. Unknown paths without an extension get the app shell.
+    const rel = decodeURIComponent(p) === '/' ? 'index.html' : decodeURIComponent(p).replace(/^\/+/, '');
+    let f = staticFile(rel);
+    if (!f && !path.extname(rel)) f = staticFile('index.html');
+    if (!f) return send(req, res, 404, 'Not found', 'text/plain; charset=utf-8');
+    if (req.headers['if-none-match'] === f.etag) return res.writeHead(304, { etag: f.etag }).end();
+    const gz = f.gz && /gzip/.test(req.headers['accept-encoding'] || '');
+    res.writeHead(200, { 'content-type': f.type, etag: f.etag, 'cache-control': PROD && rel !== 'index.html' ? 'public, max-age=300' : 'no-cache', vary: 'Accept-Encoding', ...(gz ? { 'content-encoding': 'gzip' } : {}) });
+    res.end(req.method === 'HEAD' ? undefined : gz ? f.gz : f.data);
+  }
+
+  const server = http.createServer((req, res) => {
+    try {
+      handle(req, res);
+    } catch (err) {
+      console.error('[http]', err);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'content-type': 'text/plain' });
+        res.end('Something went wrong');
+      } else res.destroy();
+    }
+  });
+  // Slow-loris and idle-connection protection.
+  server.headersTimeout = 15000;
+  server.requestTimeout = 30000;
+  server.keepAliveTimeout = 5000;
+  server.maxHeadersCount = 100;
+  return server;
+}
+
+function main() {
+  const PORT = Number(process.env.PORT) || 3000;
+  openDb();
+  settings.load();
+  const store = new Store();
+  store.load();
+  // Web-only processes (several on one machine, sharing the database file)
+  // run with SPIDER=off AGGREGATOR=off; exactly one process should crawl.
+  const background = process.env.AGGREGATOR !== 'off';
+  const spider = new Spider();
+  attachSpider(spider);
+  if (process.env.SPIDER !== 'off') spider.start();
+  contentEvents.on('change', () => store.scheduleRebuild());
+
+  const server = createApp({ store, spider });
+  server.listen(PORT, process.env.HOST || '0.0.0.0', () => console.log(`Frontier Wire on http://localhost:${PORT}`));
+
+  setInterval(pruneSessions, 10 * 60e3).unref();
+  if (background) {
+    startRetention();
+    crawlAll(store)
+      .then(() => {
+        store.save();
+        startScheduler(store);
+      })
+      .catch((e) => console.error('initial crawl failed', e));
+  } else {
+    // Pick up the feed the background process saves.
+    setInterval(() => { store.load(); }, 30e3).unref();
+  }
+
+  const shutdown = () => {
+    console.log('Shutting down');
+    spider.stop();
+    try { store.save(); } catch { /* best effort */ }
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) main();

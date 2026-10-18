@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { EnvHttpProxyAgent, setGlobalDispatcher } from 'undici';
+import { assertPublicUrl, publicOnlyDispatcher, BlockedUrlError } from './security/ssrf.js';
 
 // Load .env when present (Node 21.7+).
 if (fs.existsSync('.env')) process.loadEnvFile('.env');
@@ -21,18 +22,18 @@ export class HttpError extends Error {
   }
 }
 
-export async function get(url, { timeout = 15000, headers = {}, retries = 1 } = {}) {
+export async function get(url, { timeout = 15000, headers = {}, retries = 1, publicOnly = false } = {}) {
   const host = new URL(url).host;
   const until = hostCooldown.get(host);
   if (until && until > Date.now()) throw new Error(`cooling down ${host}`);
 
   for (let attempt = 0; ; attempt++) {
     try {
-      const res = await fetch(url, {
+      const init = {
         headers: { 'user-agent': UA, accept: '*/*', 'accept-language': 'en-US,en;q=0.9', ...headers },
         signal: AbortSignal.timeout(timeout),
-        redirect: 'follow',
-      });
+      };
+      const res = publicOnly ? await fetchPublic(url, init) : await fetch(url, { ...init, redirect: 'follow' });
       if (res.status === 429 || res.status === 503) {
         const retryAfter = Number(res.headers.get('retry-after')) || 120;
         hostCooldown.set(host, Date.now() + Math.min(retryAfter, 900) * 1000);
@@ -40,11 +41,28 @@ export async function get(url, { timeout = 15000, headers = {}, retries = 1 } = 
       if (!res.ok) throw new HttpError(res.status, url);
       return res;
     } catch (err) {
-      const retriable = !(err instanceof HttpError) || err.status >= 500;
+      const retriable = !(err instanceof HttpError || err instanceof BlockedUrlError) || err.status >= 500;
       if (attempt >= retries || !retriable) throw err;
       await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
     }
   }
+}
+
+// Untrusted URLs (anything the crawler found): every hop must resolve to a
+// public address, redirects are followed by hand so each target is checked.
+async function fetchPublic(url, init) {
+  let current = url;
+  for (let hop = 0; hop <= 5; hop++) {
+    await assertPublicUrl(current);
+    const res = await fetch(current, { ...init, redirect: 'manual', ...(publicOnlyDispatcher ? { dispatcher: publicOnlyDispatcher } : {}) });
+    if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+      await res.body?.cancel();
+      current = new URL(res.headers.get('location'), current).toString();
+      continue;
+    }
+    return res;
+  }
+  throw new HttpError(310, url);
 }
 
 export const getText = async (url, opts) => (await get(url, opts)).text();

@@ -14,19 +14,21 @@
 </head>
 <body>
   <a class="skip" href="#main">Skip to stories</a>
+  <div class="banner" id="banner" hidden></div>
   <header class="masthead">
     <div class="masthead-inner">
-      <a class="wordmark" href="#news" aria-label="Frontier Wire home">
+      <a class="wordmark" href="#news" aria-label="Home">
         <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M2 22h6l4-12 6 18 4-10h8" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Frontier Wire</span>
+        <span id="siteName">Frontier Wire</span>
       </a>
+      <p class="tagline" id="tagline" hidden></p>
       <nav class="tabs" aria-label="Sections">
         <a href="#news" data-view="news">News</a>
         <a href="#builds" data-view="builds">Built with AI</a>
         <a href="#markets" data-view="markets">Markets</a>
       </nav>
       <div class="tools">
-        <form class="search" role="search" id="searchForm" onsubmit="return false">
+        <form class="search" role="search" id="searchForm">
           <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m13 13 4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           <input id="q" type="search" placeholder="Search everything" autocomplete="off" aria-label="Search" role="combobox" aria-expanded="false" aria-controls="suggest" aria-autocomplete="list" />
           <kbd>/</kbd>

@@ -12,12 +12,14 @@
     "dev": "node --disable-warning=UNDICI-EHPA --watch src/server.js",
     "crawl": "node --disable-warning=UNDICI-EHPA scripts/crawl-once.js",
     "build:static": "node --disable-warning=UNDICI-EHPA scripts/crawl-once.js --static",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "admin": "node --disable-warning=UNDICI-EHPA scripts/admin.js"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
-    "fast-xml-parser": "^4.5.0",
+    "fast-xml-parser": "^5.11.2",
     "linkedom": "^0.18.13",
+    "qrcode": "^1.5.4",
     "undici": "^6.21.0"
   }
 }

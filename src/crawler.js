@@ -1,4 +1,4 @@
-import { SCHEDULE } from './config.js';
+import { settings } from './settings.js';
 import { fetchFeeds, fetchGoogleNews, fetchScraped } from './sources/rss.js';
 import { fetchHackerNews, fetchReddit, fetchBluesky } from './sources/community.js';
 import { fetchX, xStatus, embedStatus } from './sources/x.js';
@@ -64,21 +64,19 @@ export async function runSource(store, name) {
 
 export async function crawlAll(store) {
   // Markets first so the first rebuild can already correlate.
-  await runSource(store, 'polymarket');
-  await Promise.all(Object.keys(SOURCES).filter((n) => n !== 'polymarket').map((n) => runSource(store, n)));
+  const on = (n) => settings.get(`sources.${n}.enabled`);
+  if (on('polymarket')) await runSource(store, 'polymarket');
+  await Promise.all(Object.keys(SOURCES).filter((n) => n !== 'polymarket' && on(n)).map((n) => runSource(store, n)));
   store.prune();
   store.rebuild();
 }
 
+// Each source runs on its own timer. Interval and on/off come from settings,
+// read before every run, so dashboard changes apply without a restart.
+const timers = new Map();
+
 export function startScheduler(store) {
-  for (const [name, seconds] of Object.entries(SCHEDULE)) {
-    if (!SOURCES[name]) continue;
-    const jitter = Math.random() * 10e3;
-    setInterval(async () => {
-      await runSource(store, name);
-      store.scheduleRebuild();
-    }, seconds * 1000 + jitter).unref();
-  }
+  for (const name of Object.keys(SOURCES)) scheduleNext(store, name, Math.random() * 10e3);
   setInterval(() => {
     store.prune();
     try {
@@ -87,4 +85,34 @@ export function startScheduler(store) {
       console.warn('[store] save failed', e.message);
     }
   }, 60e3).unref();
+  // Settings changes take effect on the next run; shorten a pending wait if the new interval is shorter.
+  settings.on('change', (changes) => {
+    for (const c of changes) {
+      const m = c.key.match(/^sources\.(\w+)\.(enabled|intervalSec)$/);
+      if (m && SOURCES[m[1]]) scheduleNext(store, m[1], 1000);
+    }
+  });
+}
+
+function scheduleNext(store, name, delay) {
+  clearTimeout(timers.get(name));
+  const t = setTimeout(async () => {
+    if (settings.get(`sources.${name}.enabled`)) {
+      await runSource(store, name);
+      store.scheduleRebuild();
+    } else {
+      store.sourceStatus[name] = { ...(store.sourceStatus[name] || {}), ok: true, paused: true };
+    }
+    scheduleNext(store, name, settings.get(`sources.${name}.intervalSec`) * 1000 + Math.random() * 5e3);
+  }, delay);
+  t.unref();
+  timers.set(name, t);
+}
+
+// "Run now" from the dashboard.
+export async function runNow(store, name) {
+  if (!SOURCES[name]) return false;
+  await runSource(store, name);
+  store.scheduleRebuild();
+  return true;
 }

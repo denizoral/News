@@ -13,6 +13,9 @@
 // inbound links from other sites, engagement and freshness.
 
 import { q } from '../db.js';
+import { settings } from '../settings.js';
+
+const copiesOn = () => settings.get('storage.cachedCopies');
 
 const TYPE_ALIASES = { news: 'article', article: 'article', articles: 'article', posts: 'post', post: 'post', social: 'post', builds: 'build', build: 'build', projects: 'build', models: 'model', model: 'model', markets: 'market', market: 'market' };
 const TIME = { day: 86400e3, week: 7 * 86400e3, month: 30 * 86400e3, year: 365 * 86400e3 };
@@ -65,7 +68,8 @@ function markSnippet(s) {
 }
 
 function filters(p, opts, { skipType = false } = {}) {
-  const where = [];
+  // Moderated (hidden) documents never reach the public site.
+  const where = opts.includeHidden ? [] : ['d.hidden = 0'];
   const args = [];
   const type = skipType ? null : p.type || TYPE_ALIASES[opts.type] || null;
   if (type) {
@@ -105,7 +109,7 @@ function shape(r, now) {
     image: r.image_hash ? `media/${r.image_hash}` : r.image_url || null,
     words: r.word_count,
     crawled: !!r.fetched_at,
-    cached: !!r.fetched_at && !r.noarchive && process.env.CACHED_COPIES === 'on',
+    cached: !!r.fetched_at && !r.noarchive && copiesOn(),
     inlinks: r.inlinks || 0,
     meta,
     _age: (now - (r.published_at || r.first_seen)) / 86400e3,
@@ -215,7 +219,7 @@ export function searchImages(input, opts = {}) {
   const perPage = Math.min(80, Number(opts.perPage) || 40);
   const p = parseQuery(input);
   const match = toMatch(p);
-  const where = ["im.status = 'stored'"];
+  const where = ["im.status = 'stored'", 'NOT EXISTS (SELECT 1 FROM docs dd WHERE dd.id = im.doc_id AND dd.hidden = 1)'];
   const args = [];
   if (p.site) {
     where.push('(im.site = ? OR im.site LIKE ?)');
@@ -258,7 +262,7 @@ export function suggest(input, limit = 8) {
   const expr = `title : (${parts.join(' ')})`;
   try {
     return q(`SELECT d.id, d.title, d.url, d.type, d.site FROM docs_fts JOIN docs d ON d.id = docs_fts.rowid
-      WHERE docs_fts MATCH ? ORDER BY bm25(docs_fts, 10.0, 1.0, 0.0, 0.0, 0.0) + (COALESCE(d.published_at, d.first_seen) < ?) LIMIT ?`)
+      WHERE docs_fts MATCH ? AND d.hidden = 0 ORDER BY bm25(docs_fts, 10.0, 1.0, 0.0, 0.0, 0.0) + (COALESCE(d.published_at, d.first_seen) < ?) LIMIT ?`)
       .all(expr, Date.now() - 14 * 86400e3, limit)
       .map((r) => ({ id: r.id, title: r.title, url: r.url, type: r.type, site: r.site }));
   } catch {
@@ -268,8 +272,8 @@ export function suggest(input, limit = 8) {
 
 export function getDoc(id) {
   const r = q('SELECT d.*, COALESCE(i.n, 0) AS inlinks FROM docs d LEFT JOIN inlinks i ON i.url = d.url WHERE d.id = ?').get(Number(id));
-  if (!r) return null;
-  const allowCopy = process.env.CACHED_COPIES === 'on' && !r.noarchive && r.fetched_at;
+  if (!r || r.hidden) return null;
+  const allowCopy = copiesOn() && !r.noarchive && r.fetched_at;
   const images = q("SELECT hash, ext, alt, caption, width, height FROM images WHERE doc_id = ? AND status = 'stored' LIMIT 8").all(r.id)
     .map((i) => ({ src: `media/${i.hash}.${i.ext}`, alt: i.alt, caption: i.caption, width: i.width, height: i.height }));
   return {

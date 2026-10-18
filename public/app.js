@@ -190,7 +190,7 @@ function engagementHtml(story) {
 
 function storyHtml(s, { showThumb = true, dek = true } = {}) {
   const read = state.read.has(s.id) ? ' read' : '';
-  const thumb = showThumb && s.image ? `<img class="thumb" src="${esc(s.image)}" alt="" loading="lazy" onerror="this.remove()">` : '';
+  const thumb = showThumb && s.image ? `<img class="thumb" src="${esc(s.image)}" alt="" loading="lazy" data-fallback="remove">` : '';
   const hot = s.sources.length >= 4 ? `<span class="hot">Developing</span>` : '';
   return `<article class="story${read}${thumb ? ' has-thumb' : ''}" data-id="${esc(s.id)}">
     <h3><a href="${esc(s.url)}" target="_blank" rel="noopener" data-read="${esc(s.id)}">${highlight(s.title)}</a></h3>
@@ -241,7 +241,7 @@ function renderChips() {
   const topics = ['All', ...Object.keys(counts).sort((a, b) => counts[b] - counts[a])];
   $('#topicChips').innerHTML = topics.map((t) =>
     `<button class="chip" type="button" data-topic="${esc(t)}" aria-pressed="${state.topic === t}">${esc(t)}${t !== 'All' ? `<span class="n">${counts[t]}</span>` : ''}</button>`).join('') +
-    `<span style="flex:1"></span>` +
+    `<span class="spacer"></span>` +
     [['top', 'Top'], ['latest', 'Latest']].map(([k, l]) => `<button class="chip" type="button" data-sort="${k}" aria-pressed="${state.sort === k}">${l}</button>`).join('');
   $('#kindChips').innerHTML = KINDS.map(([k, l]) => `<button class="chip" type="button" data-kind="${k}" aria-pressed="${state.kind === k}">${l}</button>`).join('');
 }
@@ -254,7 +254,7 @@ function pickLead(stories) {
 
 function renderLead(lead, rising) {
   if (!lead) return ($('#lead').innerHTML = '');
-  const img = lead.image ? `<a class="lead-img" href="${esc(lead.url)}" target="_blank" rel="noopener" tabindex="-1"><img src="${esc(lead.image)}" alt="" onerror="this.parentNode.remove()"></a>` : '';
+  const img = lead.image ? `<a class="lead-img" href="${esc(lead.url)}" target="_blank" rel="noopener" tabindex="-1"><img src="${esc(lead.image)}" alt="" data-fallback="remove-parent"></a>` : '';
   $('#lead').innerHTML = `
     <article class="lead story" data-id="${esc(lead.id)}">
       ${img}
@@ -446,7 +446,35 @@ function hint(k, err) {
 
 // ---------- Render + routing ----------
 
+// Site settings from the admin dashboard: name, tagline, banner, sections.
+function applySite(site) {
+  if (!site) return;
+  $('#siteName').textContent = site.name;
+  $('.wordmark').setAttribute('aria-label', `${site.name} home`);
+  const tag = $('#tagline');
+  tag.textContent = site.tagline || '';
+  tag.hidden = !site.tagline;
+  const b = $('#banner');
+  b.hidden = !site.banner;
+  b.replaceChildren();
+  if (site.banner) {
+    if (site.bannerLink) {
+      const a = document.createElement('a');
+      a.href = site.bannerLink;
+      a.rel = 'noopener';
+      a.textContent = site.banner;
+      b.append(a);
+    } else b.textContent = site.banner;
+  }
+  $('.tabs a[data-view="builds"]').hidden = !site.showBuilds;
+  $('.tabs a[data-view="markets"]').hidden = !site.showMarkets;
+  $('.rail-block:first-child').hidden = !site.showMarkets;
+  state.sections = { builds: site.showBuilds, markets: site.showMarkets };
+}
+
 function render() {
+  applySite(state.data?.site);
+  if ((state.view === 'builds' && state.sections?.builds === false) || (state.view === 'markets' && state.sections?.markets === false)) state.view = 'news';
   for (const v of $$('.view')) v.hidden = v.dataset.view !== state.view;
   $$('.tabs a').forEach((a) => (a.dataset.view === state.view ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   if (!state.data) return;
@@ -467,7 +495,8 @@ function route() {
   }
   const v = location.hash.replace('#', '');
   state.view = ['news', 'builds', 'markets'].includes(v) ? v : 'news';
-  document.title = { news: 'Frontier Wire', builds: 'Built with AI · Frontier Wire', markets: 'AI markets · Frontier Wire' }[state.view];
+  const name = state.data?.site?.name || 'Frontier Wire';
+  document.title = { news: name, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}` }[state.view];
   render();
   window.scrollTo({ top: 0 });
 }
@@ -551,6 +580,16 @@ setInterval(() => {
   for (const t of $$('time[data-ts]')) t.textContent = ago(+t.dataset.ts);
   updateLive();
 }, 30e3);
+
+// Images that fail to load are removed instead of showing a broken icon.
+// (Delegated listener: inline onerror handlers are blocked by the CSP.)
+document.addEventListener('error', (e) => {
+  const el = e.target;
+  if (el.tagName !== 'IMG' || !el.dataset.fallback) return;
+  if (el.dataset.fallback === 'remove-parent') el.parentNode?.remove();
+  else el.remove();
+}, true);
+$('#searchForm').addEventListener('submit', (e) => e.preventDefault());
 
 // Boot
 searchUi = createSearch({ esc, ago, time, fav, pct, compact });

@@ -134,6 +134,60 @@ CREATE TRIGGER IF NOT EXISTS images_au AFTER UPDATE OF alt, caption, page_title,
 END;
 
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
+
+-- Runtime settings edited from the admin dashboard (JSON values).
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  updated_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS admin_users (
+  id INTEGER PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  pw_hash TEXT NOT NULL,
+  role TEXT NOT NULL,                       -- owner | admin | editor | viewer
+  totp_secret TEXT,                         -- encrypted at rest
+  totp_enabled INTEGER NOT NULL DEFAULT 0,
+  totp_last_step INTEGER NOT NULL DEFAULT 0,  -- blocks code replay
+  recovery_codes TEXT,                      -- JSON array of SHA-256 hashes
+  disabled INTEGER NOT NULL DEFAULT 0,
+  must_change_password INTEGER NOT NULL DEFAULT 0,
+  failed_logins INTEGER NOT NULL DEFAULT 0,
+  locked_until INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  created_by TEXT,
+  last_login_at INTEGER,
+  password_changed_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  id_hash TEXT PRIMARY KEY,                 -- SHA-256 of the cookie token; the token itself is never stored
+  user_id INTEGER NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+  csrf TEXT NOT NULL,
+  mfa_ok INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  ip TEXT,
+  ua TEXT
+);
+CREATE INDEX IF NOT EXISTS admin_sessions_user ON admin_sessions(user_id);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY,
+  at INTEGER NOT NULL,
+  user_id INTEGER,
+  username TEXT,
+  action TEXT NOT NULL,
+  target TEXT,
+  detail TEXT,
+  ip TEXT,
+  ua TEXT
+);
+CREATE INDEX IF NOT EXISTS audit_at ON audit_log(at DESC);
+CREATE INDEX IF NOT EXISTS audit_action ON audit_log(action, at DESC);
 `;
 
 let db = null;
@@ -144,7 +198,21 @@ export function openDb(file = path.resolve(process.env.DATA_DIR || 'data', 'wire
   db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000; PRAGMA temp_store = MEMORY; PRAGMA cache_size = -64000;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+// Columns added after the first release. SQLite has no ADD COLUMN IF NOT EXISTS.
+function migrate(d) {
+  const cols = new Set(d.prepare('PRAGMA table_info(docs)').all().map((c) => c.name));
+  const add = (name, ddl) => { if (!cols.has(name)) d.exec(`ALTER TABLE docs ADD COLUMN ${ddl}`); };
+  add('hidden', 'hidden INTEGER NOT NULL DEFAULT 0');   // removed from the site and search by a moderator
+  add('pinned', 'pinned INTEGER NOT NULL DEFAULT 0');   // kept at the top of the feed
+  add('locked', 'locked INTEGER NOT NULL DEFAULT 0');   // edited by a person; crawlers must not overwrite title/description
+  add('edited_at', 'edited_at INTEGER');
+  add('edited_by', 'edited_by TEXT');
+  d.exec('CREATE INDEX IF NOT EXISTS docs_moderation ON docs(hidden, pinned, locked)');
+  d.exec('PRAGMA foreign_keys = ON');
 }
 
 export function getDb() {

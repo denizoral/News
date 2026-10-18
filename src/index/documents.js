@@ -10,7 +10,7 @@ const MAX_BODY = 60000;
 export function upsertDoc(doc) {
   const url = canonicalUrl(doc.url);
   const now = Date.now();
-  const prev = q('SELECT id, title, description, body, published_at, image_url, image_hash, author, fetched_at, engagement, type FROM docs WHERE url = ?').get(url);
+  const prev = q('SELECT id, title, description, body, published_at, image_url, image_hash, author, fetched_at, engagement, type, hidden, locked FROM docs WHERE url = ?').get(url);
   const body = (doc.body || '').slice(0, MAX_BODY);
   if (!prev) {
     const r = q(`INSERT INTO docs (url, type, title, description, body, site, source, author, lang, image_url, image_hash, published_at, first_seen,
@@ -21,8 +21,11 @@ export function upsertDoc(doc) {
     );
     return { id: Number(r.lastInsertRowid), created: true };
   }
+  // Removed by a moderator: the tombstone stays so feeds can't bring it back.
+  if (prev.hidden && prev.locked) return { id: prev.id, created: false };
   // Merge: keep the richer text, the earliest publish time, the best image.
-  const crawled = !!doc.fetched_at;
+  // Title and description edited by a person (locked) are never overwritten.
+  const crawled = !!doc.fetched_at && !prev.locked;
   q(`UPDATE docs SET
       type = ?, title = ?, description = ?, body = ?, author = ?, image_url = ?, image_hash = COALESCE(?, image_hash),
       published_at = ?, fetched_at = COALESCE(?, fetched_at), word_count = ?, content_hash = COALESCE(?, content_hash),
@@ -30,7 +33,7 @@ export function upsertDoc(doc) {
     WHERE id = ?`).run(
     prev.type === 'article' || doc.type === 'article' ? 'article' : doc.type,
     crawled && doc.title ? doc.title : prev.title || doc.title || '',
-    doc.replace || (doc.description || '').length > prev.description.length ? doc.description || '' : prev.description,
+    prev.locked ? prev.description : doc.replace || (doc.description || '').length > prev.description.length ? doc.description || '' : prev.description,
     body.length > prev.body.length ? body : prev.body,
     prev.author || doc.author || '',
     prev.image_url || doc.image_url || null,

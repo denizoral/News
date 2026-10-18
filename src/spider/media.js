@@ -7,10 +7,12 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { get } from '../http.js';
 import { q } from '../db.js';
+import { settings } from '../settings.js';
 
 export const MEDIA_DIR = path.resolve(process.env.DATA_DIR || 'data', 'media');
-const MAX_IMAGE_BYTES = Number(process.env.MEDIA_MAX_IMAGE_MB || 2) * 1024 * 1024;
-const BUDGET_BYTES = (Number(process.env.MEDIA_MAX_GB) || 5) * 1024 ** 3;
+// Limits are read on every use so dashboard changes apply immediately.
+const maxImageBytes = () => settings.get('storage.maxImageMb') * 1024 * 1024;
+const budgetBytes = () => settings.get('storage.mediaMaxGb') * 1024 ** 3;
 
 const MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'image/avif': 'avif' };
 
@@ -62,8 +64,8 @@ async function readLimited(res, limit) {
 }
 
 export async function downloadImage(row) {
-  const res = await get(row.url, { timeout: 20000, retries: 0, headers: { accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8', referer: row.page_url } });
-  const buf = await readLimited(res, MAX_IMAGE_BYTES);
+  const res = await get(row.url, { timeout: 20000, retries: 0, publicOnly: true, headers: { accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8', referer: row.page_url } });
+  const buf = await readLimited(res, maxImageBytes());
   const info = imageInfo(buf);
   if (!info) throw new Error('not a supported image');
   if (info.width && info.height && (info.width < 200 || info.height < 120)) {
@@ -86,6 +88,7 @@ export function storedBytes() {
 // Delete the oldest stored images until we're back under budget.
 export function enforceBudget() {
   let total = storedBytes();
+  const BUDGET_BYTES = budgetBytes();
   if (total <= BUDGET_BYTES) return 0;
   let removed = 0;
   const oldest = q("SELECT hash, ext, MAX(bytes) AS bytes FROM images WHERE status = 'stored' GROUP BY hash ORDER BY MIN(fetched_at) ASC LIMIT 500").all();

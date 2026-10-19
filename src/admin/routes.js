@@ -481,6 +481,7 @@ function securityChecks() {
   const checks = [
     { ok: prod, label: 'Running with NODE_ENV=production', fix: 'Set NODE_ENV=production so cookies are Secure and HSTS is sent.' },
     { ok: auth.COOKIE.startsWith('__Host-'), label: 'Session cookie is Secure and host-locked', fix: 'Serve over HTTPS and leave COOKIE_SECURE unset (or on).' },
+    { ok: settings.get('crawler.obeyRobots'), label: 'Crawler obeys robots.txt', fix: 'robots.txt is switched off for every site (Crawler > Settings). Sites may ban the crawler, and it can carry legal risk.' },
     { ok: auth.REQUIRE_2FA, label: 'Two-factor sign-in required', fix: 'Remove ADMIN_REQUIRE_2FA=off.' },
     { ok: !!process.env.ADMIN_ALLOWED_IPS, label: 'Admin area limited to known IP addresses', fix: 'Set ADMIN_ALLOWED_IPS to your office or VPN ranges.' },
     { ok: !!process.env.ADMIN_ENCRYPTION_KEY, label: 'Encryption key from the environment', fix: 'Set ADMIN_ENCRYPTION_KEY (openssl rand -base64 32) from your secret manager instead of the generated key file.' },

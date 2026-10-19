@@ -138,8 +138,10 @@ A dashboard at `/admin` (or `ADMIN_PATH`) runs everything without touching code:
 - **Crawler:** pause or resume, speed (parallel fetches, minimum gap per site),
   depth, pages per site per day, recheck intervals, images per page, starting
   pages, never-crawl list, and **per-site rules** (block a site, slow down, cap
-  pages a day, skip paths). Rules only make the crawler stricter: robots.txt is
-  always obeyed. Also: crawl a URL now, clear a site's queue, retry failures,
+  pages a day, skip paths). robots.txt is obeyed by default. Owners can switch it
+  off for chosen sites or for every site, behind a typed confirmation, with a
+  warning on the dashboard while it's off and an entry in the audit log. Also:
+  crawl a URL now, clear a site's queue, retry failures,
   view any site's cached robots.txt.
 - **Sources:** turn each feed on or off, set how often it runs, run it now, see
   why it's failing.

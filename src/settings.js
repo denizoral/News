@@ -36,6 +36,7 @@ const DEFS = [
   { key: 'site.robotsTxt', group: 'site', label: 'robots.txt for this site', help: 'Served at /robots.txt. Tells other crawlers what they may fetch here.', type: 'text', max: 20000, default: DEFAULT_ROBOTS, role: 'admin', validate: validateRobots },
 
   // Crawler
+  { key: 'crawler.obeyRobots', group: 'crawler', section: 'robots', label: 'Obey robots.txt on every site', help: 'When off, the crawler fetches pages even where a site\'s robots.txt says no, and ignores Crawl-delay. Per-site rules, the minimum gap per site, daily page limits and the private-address guard still apply. Owner-only.', type: 'bool', default: true, role: 'owner' },
   { key: 'crawler.enabled', group: 'crawler', section: 'status', label: 'Crawler running', help: 'Pause to stop all page and image fetches. The queue is kept.', type: 'bool', default: env('SPIDER', 'on') !== 'off', role: 'admin' },
   { key: 'crawler.concurrency', group: 'crawler', section: 'pace', label: 'Parallel fetches', help: 'Across all sites. Each site still gets one request at a time.', type: 'int', min: 1, max: 64, default: envNum('SPIDER_CONCURRENCY', SPIDER.concurrency), role: 'admin' },
   { key: 'crawler.hostDelayMs', group: 'crawler', section: 'pace', label: 'Minimum gap per site (ms)', help: "A site's robots.txt Crawl-delay wins when it's longer.", type: 'int', min: 500, max: 120000, default: envNum('SPIDER_HOST_DELAY_MS', SPIDER.hostDelayMs), role: 'admin' },
@@ -341,6 +342,7 @@ class Settings extends EventEmitter {
       maxDepth: g('maxDepth'), followExternal: g('followExternal'), hubRecrawlMin: g('hubRecrawlMin'), sitemapRecrawlMin: g('sitemapRecrawlMin'),
       imagesPerPage: g('imagesPerPage'), imageConcurrency: g('imageConcurrency'), hubs: g('hubs'), skipHosts: g('skipHosts'),
       hostRules: new Map(g('hostRules').map((r) => [r.host, r])),
+      obeyRobots: g('obeyRobots'),
       botName: g('botName'), contactUrl: g('contactUrl'), acceptLanguage: g('acceptLanguage'),
       timeoutMs: g('timeoutSec') * 1000, maxPageBytes: g('maxPageKb') * 1024, maxRedirects: g('maxRedirects'), maxAttempts: g('maxAttempts'),
       maxPagesPerMinute: g('maxPagesPerMinute'), quietHours: g('quietHours'), honorCrawlDelay: g('honorCrawlDelay'),

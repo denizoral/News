@@ -336,14 +336,14 @@ export class Spider extends EventEmitter {
     const rule = this.rule(h.host);
     await this.ensureRobots(h, scheme);
     // Owners can exempt specific sites from robots.txt (e.g. their own). Site rules still apply.
-    const robotsOk = rule?.ignoreRobots || isAllowed(h.parsed, row.url, this.botName);
+    const robotsOk = this.robotsAllows(h, row.url);
     if (!robotsOk || this.ruleDisallows(row.url)) {
       this.stats.blocked++;
       this.log(row, { outcome: 'blocked', reason: robotsOk ? 'Blocked path in a site rule' : 'Disallowed by robots.txt' });
       return this.done(row, { status: 'blocked', httpStatus: 0 });
     }
 
-    const robotsDelay = this.cfg.honorCrawlDelay && !rule?.ignoreRobots ? h.crawl_delay_ms || 0 : 0;
+    const robotsDelay = this.cfg.honorCrawlDelay && this.obeysRobots(h.host) ? h.crawl_delay_ms || 0 : 0;
     const delay = Math.max(this.cfg.hostDelayMs, robotsDelay, rule?.minDelayMs || 0);
     h.next_allowed_at = Date.now() + delay;
     h.fetched_today++;
@@ -418,6 +418,15 @@ export class Spider extends EventEmitter {
       }
     });
     return n;
+  }
+
+  // robots.txt is obeyed unless an owner switched it off globally or for this site.
+  obeysRobots(host) {
+    return this.cfg.obeyRobots && !this.rule(host)?.ignoreRobots;
+  }
+
+  robotsAllows(h, url) {
+    return !this.obeysRobots(h.host) || isAllowed(h.parsed, url, this.botName);
   }
 
   // Extra paths blocked from the dashboard, using robots.txt pattern syntax.
@@ -566,7 +575,8 @@ export class Spider extends EventEmitter {
       return report;
     }
     const allowed = isAllowed(h.parsed, report.url, this.botName);
-    step('robots.txt', allowed || !!rule?.ignoreRobots, rule?.ignoreRobots ? `robots.txt is ignored for this site by an owner rule (it would ${allowed ? 'allow' : 'block'} this URL).` : allowed ? `Allowed for ${this.botName} (HTTP ${h.robots_status}).` : `Disallowed for ${this.botName}.`);
+    const why = !this.cfg.obeyRobots ? 'robots.txt is switched off for every site' : rule?.ignoreRobots ? 'robots.txt is ignored for this site by an owner rule' : null;
+    step('robots.txt', allowed || !!why, why ? `${why} (it would ${allowed ? 'allow' : 'block'} this URL).` : allowed ? `Allowed for ${this.botName} (HTTP ${h.robots_status}).` : `Disallowed for ${this.botName}.`);
     if (this.ruleDisallows(report.url)) step('Site rule paths', false, 'This path is blocked by a per-site rule.');
     const started = Date.now();
     let res;
@@ -703,6 +713,7 @@ export class Spider extends EventEmitter {
       inflight: [...this.inflightUrls].map(([url, v]) => ({ url, host: v.host, kind: v.kind, seconds: Math.round((now - v.started) / 1000) })),
       perMinute: Array.from({ length: 60 }, (_, i) => this.minutes.get(m - 59 + i) || 0),
       userAgent: this.userAgent(),
+      obeyRobots: this.cfg.obeyRobots,
       ignoringRobots: [...this.cfg.hostRules.values()].filter((r) => r.ignoreRobots).map((r) => r.host),
       recent: this.ring.slice(0, 40),
     };

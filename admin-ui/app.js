@@ -819,7 +819,8 @@ const CRAWLER_TABS = {
           <div class="stat"><b>${compact(q.byStatus.blocked || 0)}</b><span>blocked</span></div>
           <div class="stat"><b>${compact(c.status.hosts)}</b><span>sites seen</span></div>
         </div>
-        ${live.ignoringRobots.length ? `<div class="notice warn">robots.txt is being ignored for: ${live.ignoringRobots.map(esc).join(', ')}. <a href="#crawler/settings">Change in Settings</a></div>` : ''}
+        ${!live.obeyRobots ? '<div class="notice bad"><b>robots.txt is switched off for every site.</b> The crawler fetches pages even where sites ask it not to. <a href="#crawler/settings">Change in Settings</a></div>'
+          : live.ignoringRobots.length ? `<div class="notice warn">robots.txt is being ignored for: ${live.ignoringRobots.map(esc).join(', ')}. <a href="#crawler/settings">Change in Settings</a></div>` : ''}
         <section class="card">${rateChart(live.perMinute, box.clientWidth - 38)}</section>
         <div class="grid grid-2">
           <section class="card"><h2>Fetching now <span class="muted small">(${live.inflight.length})</span></h2>
@@ -866,6 +867,14 @@ const CRAWLER_TABS = {
     api('GET', '/crawler/live').then((l) => $('#crawlState') && ($('#crawlState').textContent = `${l.state[0].toUpperCase()}${l.state.slice(1)}.`)).catch(() => {});
     const g = S.settings.filter((d) => d.group === 'crawler');
     const sec = (name) => g.filter((d) => d.section === name);
+    settingsForm(box, sec('robots'), {
+      title: 'robots.txt',
+      intro: "Sites use robots.txt to say which pages crawlers may fetch. Switching it off makes the crawler ignore that on every site. Expect some sites to block the crawler's IP, and know that in some places (such as under the EU's text-and-data-mining rules) ignoring it can carry legal risk. To make exceptions for a few sites instead, use <b>Ignore robots.txt</b> in Per-site rules below.",
+      beforeSave: async (patch) => {
+        if (patch['crawler.obeyRobots'] !== false) return true;
+        return confirmAction({ title: 'Ignore robots.txt on every site?', body: 'The crawler will fetch pages on <b>all sites</b> even where their robots.txt asks it not to, and will ignore their Crawl-delay. Your per-site rules, the minimum gap per site and daily page limits still apply.', confirm: 'Ignore robots.txt everywhere', danger: true, typeToConfirm: 'ignore robots' });
+      },
+    });
     settingsForm(box, sec('identity'), { title: 'Identity', intro: 'How the crawler introduces itself. Site owners see this in their logs and match it in robots.txt.' });
     settingsForm(box, sec('pace'), { title: 'Speed and schedule', intro: 'Times are UTC.' });
     settingsForm(box, sec('fetch'), { title: 'Fetching' });

@@ -89,3 +89,21 @@ test('Test a URL refuses private addresses', async () => {
   const addr = r.steps.find((s) => s.label === 'Address check');
   assert.ok(addr && !addr.ok, 'loopback is never fetched');
 });
+
+test('global robots.txt switch: owner-only, and it changes what is allowed', async () => {
+  const { parseRobots } = await import('../src/spider/robots.js');
+  const h = { host: 'strict.example', parsed: parseRobots('User-agent: *\nDisallow: /private/') };
+  assert.equal(spider.robotsAllows(h, 'https://strict.example/private/a'), false);
+  assert.match(set({ 'crawler.obeyRobots': false }, 'admin').errors['crawler.obeyRobots'], /owner/);
+  assert.equal(settings.get('crawler.obeyRobots'), true);
+  assert.ok(!set({ 'crawler.obeyRobots': false }, 'owner').errors);
+  assert.equal(spider.robotsAllows(h, 'https://strict.example/private/a'), true);
+  assert.equal(spider.obeysRobots('strict.example'), false);
+  assert.equal(spider.live().obeyRobots, false);
+  set({ 'crawler.obeyRobots': true });
+  assert.equal(spider.robotsAllows(h, 'https://strict.example/private/a'), false, 'obeyed again once switched back on');
+  // Site rules still apply with robots.txt off.
+  set({ 'crawler.obeyRobots': false, 'crawler.hostRules': [{ host: 'strict.example', disallow: ['/also-private/'] }] });
+  assert.equal(spider.ruleDisallows('https://strict.example/also-private/x'), true);
+  set({ 'crawler.obeyRobots': true, 'crawler.hostRules': [] });
+});

@@ -234,6 +234,13 @@ export function createAdminRouter({ store, spider, runNow, sourceNames }) {
     return { requeued };
   });
 
+  route('POST', '/crawler/dismiss-hub', { permission: 'crawler:write', limit: 1024 }, ({ req, a, body }) => {
+    const host = hostParam(body.host);
+    spider.dismissHub(host);
+    audit(req, { user: a.user, action: 'crawler.dismiss_hub', target: host });
+    return { ok: true };
+  });
+
   route('POST', '/crawler/refresh-robots', { permission: 'crawler:write', limit: 1024 }, ({ req, a, body }) => {
     const host = hostParam(body.host);
     spider.refreshRobots(host);

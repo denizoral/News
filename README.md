@@ -78,21 +78,40 @@ saved to `data/media/`, named by the SHA-256 of their bytes so a picture used by
 ten articles is stored once. A disk budget (`MEDIA_MAX_GB`, default 5) deletes
 the oldest images first.
 
-**The spider** is a focused crawler, not a whole-web one:
+**The spider** is a focused crawler, not a whole-web one. It needs no API keys:
 
-- It starts from ~30 AI news hubs (lab blogs, tech press, newsletters) in
-  `src/config.js`, rechecks them every 15 minutes and reads their sitemaps every
-  30, so new articles are found within minutes.
-- It also fetches the full page behind every link the aggregator finds.
-- It follows links freely inside those hubs, and one hop out to other sites when
-  the link text is about AI.
-- It obeys robots.txt (including Crawl-delay), identifies itself as
-  `FrontierWireBot`, waits at least 2 seconds between requests to the same
-  site, and caps each site at 600 pages a day.
-- It pulls the article text with Mozilla Readability, plus title, author, date and
-  images from Open Graph, JSON-LD and meta tags. It skips `noindex` pages and
-  exact duplicates.
-- The queue lives in the database, so a restart picks up where it left off.
+- **Where it starts:** ~30 AI news sites (lab blogs, tech press, newsletters) in
+  `src/config.js`, plus the full page behind every link the aggregator finds.
+- **How it finds new articles:**
+  - It rechecks those starting pages every 15 minutes and their sitemaps every 30.
+  - It reads the RSS/Atom feeds that pages advertise, every 20 minutes. Only
+    site-wide and AI-topic feeds are followed, not per-post comment feeds.
+  - Sites that keep producing indexed articles are promoted to starting pages
+    automatically, up to 25. You can review and dismiss them in the dashboard.
+  - It follows links freely inside starting sites, and one hop out to other
+    sites when the link is about AI.
+  - Anything that keeps yielding nothing new is checked less often, up to 8×
+    the interval, and goes back to normal as soon as it has news.
+- **How it stays polite and keeps going:**
+  - It obeys robots.txt (including Crawl-delay) and identifies itself as
+    `FrontierWireBot`.
+  - It waits at least 2 seconds between requests to the same site, and caps each
+    site at 600 pages a day.
+  - When a site rate-limits it (HTTP 429, or 503 with Retry-After), the whole
+    site rests for as long as it asks, without counting as an error.
+  - After 8 failures in a row (timeouts, server errors), a site rests for 15
+    minutes, doubling up to 6 hours.
+- **What it extracts:**
+  - The article text, using Mozilla Readability, or the JSON-LD article body when
+    the HTML is hard to parse.
+  - Title, author, date and images, from Open Graph, JSON-LD and meta tags.
+  - Character encodings are detected the way browsers do it (byte-order mark,
+    header, `<meta charset>`), including correct Windows-1252.
+- **What it skips:** `noindex` pages, exact duplicates, and pages that aren't
+  about AI. A page counts as about AI if its headline or summary says so, or the
+  body keeps coming back to it.
+- **State:** the queue lives in the database, so a restart picks up where it
+  left off. Logs go to `data/logs/server.log` (rotated at 10 MB).
 
 **Ranking** is BM25 full-text relevance (title counts 10× the body, with
 stemming so "models" matches "model"), adjusted for how many other sites link to

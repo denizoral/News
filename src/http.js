@@ -16,15 +16,25 @@ const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHT
 const hostCooldown = new Map();
 
 export class HttpError extends Error {
-  constructor(status, url) {
+  constructor(status, url, retryAfterSec = null) {
     super(`HTTP ${status} for ${url}`);
     this.status = status;
+    this.retryAfterSec = retryAfterSec;
   }
 }
 
-export async function get(url, { timeout = 15000, headers = {}, retries = 1, publicOnly = false, maxRedirects = 5 } = {}) {
+// Retry-After is either seconds or an HTTP date.
+export function parseRetryAfter(v) {
+  if (!v) return null;
+  if (/^\d+$/.test(v.trim())) return Number(v);
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? Math.max(0, Math.round((t - Date.now()) / 1000)) : null;
+}
+
+// `cooldown: false` skips the shared per-host cooldown; the crawler keeps its own.
+export async function get(url, { timeout = 15000, headers = {}, retries = 1, publicOnly = false, maxRedirects = 5, cooldown = true } = {}) {
   const host = new URL(url).host;
-  const until = hostCooldown.get(host);
+  const until = cooldown && hostCooldown.get(host);
   if (until && until > Date.now()) throw new Error(`cooling down ${host}`);
 
   for (let attempt = 0; ; attempt++) {
@@ -34,11 +44,14 @@ export async function get(url, { timeout = 15000, headers = {}, retries = 1, pub
         signal: AbortSignal.timeout(timeout),
       };
       const res = publicOnly ? await fetchPublic(url, init, maxRedirects) : await fetch(url, { ...init, redirect: 'follow' });
-      if (res.status === 429 || res.status === 503) {
-        const retryAfter = Number(res.headers.get('retry-after')) || 120;
-        hostCooldown.set(host, Date.now() + Math.min(retryAfter, 900) * 1000);
+      const retryAfter = parseRetryAfter(res.headers.get('retry-after'));
+      if (cooldown && (res.status === 429 || res.status === 503)) {
+        hostCooldown.set(host, Date.now() + Math.min(retryAfter ?? 120, 900) * 1000);
       }
-      if (!res.ok) throw new HttpError(res.status, url);
+      if (!res.ok) {
+        await res.body?.cancel().catch(() => {});
+        throw new HttpError(res.status, url, retryAfter);
+      }
       return res;
     } catch (err) {
       const retriable = !(err instanceof HttpError || err instanceof BlockedUrlError) || err.status >= 500;

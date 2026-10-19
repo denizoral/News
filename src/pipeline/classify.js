@@ -45,6 +45,15 @@ export function isAiRelated(text) {
   return AI_TERMS.test(text);
 }
 
+// How many AI-term mentions a text has, counting up to `cap`.
+const AI_TERMS_GLOBAL = new RegExp(AI_TERMS.source, 'gi');
+export function countAiTerms(text, cap = 10) {
+  let n = 0;
+  AI_TERMS_GLOBAL.lastIndex = 0;
+  while (n < cap && AI_TERMS_GLOBAL.exec(text)) n++;
+  return n;
+}
+
 export function extractEntities(text) {
   const t = ` ${text.toLowerCase()} `;
   const found = new Map();

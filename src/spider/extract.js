@@ -107,6 +107,15 @@ export function extractPage(html, pageUrl, { respectNofollow = true } = {}) {
   const lang = (document.documentElement?.getAttribute('lang') || meta(document, 'og:locale') || '').slice(0, 2).toLowerCase() || null;
   const siteName = meta(document, 'og:site_name', 'application-name') || null;
 
+  // Feeds the page advertises (<link rel="alternate" type="application/rss+xml">).
+  const feeds = [];
+  for (const l of document.querySelectorAll('link[rel~="alternate"][href]')) {
+    if (!/(rss|atom)\+xml|\/feed\+json/i.test(l.getAttribute('type') || '')) continue;
+    const u = normalizeFeedLink(l.getAttribute('href'), pageUrl);
+    if (u && !feeds.includes(u) && !/comments?\/feed|\/comments\b/i.test(u)) feeds.push(u);
+    if (feeds.length >= 5) break;
+  }
+
   // Links (before Readability, which rewrites the DOM).
   const links = [];
   if (!nofollow) {
@@ -148,7 +157,11 @@ export function extractPage(html, pageUrl, { respectNofollow = true } = {}) {
   try {
     const parsed = new Readability(document, { charThreshold: 400 }).parse();
     text = (parsed?.textContent || '').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim();
-  } catch { /* fall back to description */ }
+  } catch { /* fall back below */ }
+  // Some sites ship the full text in JSON-LD even when the HTML is hard to parse.
+  if (text.length < 400 && typeof art?.articleBody === 'string' && art.articleBody.length > text.length) {
+    text = art.articleBody.replace(/\s+\n/g, '\n').trim();
+  }
 
   const isArticle = !!art || /article/i.test(ogType) || (looksLikeArticleUrl(canonical) && text.length > 800);
   const contentHash = text.length > 300 ? crypto.createHash('sha1').update(text.slice(0, 5000).toLowerCase().replace(/\s+/g, ' ')).digest('hex') : null;
@@ -166,6 +179,7 @@ export function extractPage(html, pageUrl, { respectNofollow = true } = {}) {
     noindex,
     noarchive,
     links,
+    feeds,
     images,
     contentHash,
     site: hostOf(canonical),
@@ -180,6 +194,16 @@ function pickSrcset(srcset) {
   const sized = cands.filter((c) => c.w);
   if (!sized.length) return cands[0].url;
   return sized.sort((a, b) => Math.abs(a.w - 1200) - Math.abs(b.w - 1200))[0].url;
+}
+
+// Feed URLs end in .xml/.rss/.atom, which normalizeLink deliberately skips.
+function normalizeFeedLink(href, base) {
+  try {
+    const u = new URL(String(href).trim(), base);
+    return /^https?:$/.test(u.protocol) ? u.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeImage(src, base) {

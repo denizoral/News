@@ -60,14 +60,20 @@ const DEFS = [
   { key: 'crawler.timeoutSec', group: 'crawler', section: 'fetch', label: 'Request timeout (seconds)', type: 'int', min: 3, max: 120, default: 20, role: 'admin' },
   { key: 'crawler.maxPageKb', group: 'crawler', section: 'fetch', label: 'Largest page read (KB)', help: 'Anything longer is cut off at this size.', type: 'int', min: 64, max: 32768, default: 4096, role: 'admin' },
   { key: 'crawler.maxRedirects', group: 'crawler', section: 'fetch', label: 'Redirects followed', type: 'int', min: 0, max: 10, default: 5, role: 'admin' },
+  { key: 'crawler.hostFailureLimit', group: 'crawler', section: 'fetch', label: 'Pause a site after this many failures in a row', help: 'Timeouts, connection errors and server errors. The pause starts at 15 minutes and doubles, up to 6 hours. Rate limits (HTTP 429) are always honored separately.', type: 'int', min: 2, max: 100, default: 8, role: 'admin' },
   { key: 'crawler.maxAttempts', group: 'crawler', section: 'fetch', label: 'Attempts before giving up', help: 'For timeouts and server errors. 404s and 403s are never retried.', type: 'int', min: 1, max: 10, default: 3, role: 'admin' },
 
   // Crawler: pace and schedule
   { key: 'crawler.maxPagesPerMinute', group: 'crawler', section: 'pace', label: 'Pages per minute, all sites (0 = no cap)', type: 'int', min: 0, max: 100000, default: 0, role: 'admin' },
   { key: 'crawler.quietHours', group: 'crawler', section: 'pace', label: 'Quiet hours (UTC)', help: 'No crawling in this window, e.g. 01:00-06:00. Leave empty to crawl around the clock.', type: 'string', max: 11, default: '', role: 'admin', validate: (v) => (!v || /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/.test(v) ? null : 'Use HH:MM-HH:MM in 24-hour UTC, e.g. 01:00-06:00.') },
+  { key: 'crawler.feedRecrawlMin', group: 'crawler', section: 'pace', label: 'Recheck feeds every (min)', type: 'int', min: 2, max: 1440, default: 20, role: 'admin' },
+  { key: 'crawler.adaptiveRecrawl', group: 'crawler', section: 'pace', label: 'Adapt recheck intervals', help: 'Starting pages, sitemaps and feeds that keep yielding nothing new are checked less often (up to 8 times the interval) and go back to normal as soon as they have news.', type: 'bool', default: true, role: 'admin' },
   { key: 'crawler.honorCrawlDelay', group: 'crawler', section: 'pace', label: 'Honor Crawl-delay from robots.txt', help: 'When off, only the minimum gap per site applies.', type: 'bool', default: true, role: 'admin' },
 
   // Crawler: discovery
+  { key: 'crawler.discoverFeeds', group: 'crawler', section: 'discovery', label: 'Discover and read RSS/Atom feeds', help: 'Feeds advertised by crawled pages are checked regularly for new articles, often faster than sitemaps.', type: 'bool', default: true, role: 'admin' },
+  { key: 'crawler.feedsPerSite', group: 'crawler', section: 'discovery', label: 'Feeds followed per site', type: 'int', min: 0, max: 20, default: 3, role: 'admin' },
+  { key: 'crawler.autoHubs', group: 'crawler', section: 'where', label: 'Discovered starting sites (0 = off)', help: 'Sites that keep producing indexed articles get their homepage added as a starting page, up to this many. Review them under Sites.', type: 'int', min: 0, max: 500, default: 25, role: 'admin' },
   { key: 'crawler.useSitemaps', group: 'crawler', section: 'discovery', label: 'Read sitemaps', help: 'Sitemaps listed in robots.txt of starting sites.', type: 'bool', default: true, role: 'admin' },
   { key: 'crawler.sitemapMaxAgeDays', group: 'crawler', section: 'discovery', label: 'Sitemap entries newer than (days)', type: 'int', min: 1, max: 3650, default: 7, role: 'admin' },
   { key: 'crawler.sitemapMaxUrls', group: 'crawler', section: 'discovery', label: 'URLs taken per sitemap', type: 'int', min: 10, max: 50000, default: 300, role: 'admin' },
@@ -343,6 +349,8 @@ class Settings extends EventEmitter {
       imagesPerPage: g('imagesPerPage'), imageConcurrency: g('imageConcurrency'), hubs: g('hubs'), skipHosts: g('skipHosts'),
       hostRules: new Map(g('hostRules').map((r) => [r.host, r])),
       obeyRobots: g('obeyRobots'),
+      discoverFeeds: g('discoverFeeds'), feedsPerSite: g('feedsPerSite'), feedRecrawlMin: g('feedRecrawlMin'), adaptiveRecrawl: g('adaptiveRecrawl'),
+      autoHubs: g('autoHubs'), hostFailureLimit: g('hostFailureLimit'),
       botName: g('botName'), contactUrl: g('contactUrl'), acceptLanguage: g('acceptLanguage'),
       timeoutMs: g('timeoutSec') * 1000, maxPageBytes: g('maxPageKb') * 1024, maxRedirects: g('maxRedirects'), maxAttempts: g('maxAttempts'),
       maxPagesPerMinute: g('maxPagesPerMinute'), quietHours: g('quietHours'), honorCrawlDelay: g('honorCrawlDelay'),

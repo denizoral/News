@@ -770,7 +770,7 @@ const VIEWS = {
 
 const OUTCOMES = {
   indexed: ['ok', 'indexed'], updated: ['ok', 'updated'], hub: ['info', 'starting page'], sitemap: ['info', 'sitemap'],
-  'not-modified': ['', 'not modified'], skipped: ['', 'skipped'], duplicate: ['', 'duplicate'], blocked: ['warn', 'blocked'], error: ['bad', 'error'],
+  feed: ['info', 'feed'], 'not-modified': ['', 'not modified'], skipped: ['', 'skipped'], duplicate: ['', 'duplicate'], deferred: ['warn', 'rate limited'], blocked: ['warn', 'blocked'], error: ['bad', 'error'],
 };
 const outcomePill = (o) => `<span class="pill ${OUTCOMES[o]?.[0] || ''}">${esc(OUTCOMES[o]?.[1] || o)}</span>`;
 const logRow = (e) => `<tr><td class="num muted" title="${esc(new Date(e.at).toISOString())}">${new Date(e.at).toLocaleTimeString()}</td><td>${outcomePill(e.outcome)}</td>
@@ -827,9 +827,12 @@ const CRAWLER_TABS = {
             ${live.inflight.length ? `<div class="table-wrap"><table><tbody>${live.inflight.map((f) => `<tr><td class="trunc">${esc(f.url)}<span class="sub">${esc(f.kind)}</span></td><td class="num muted">${f.seconds}s</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nothing in flight.</p>'}
             <p class="small muted" style="margin-top:12px">Identifies itself as <code>${esc(live.userAgent)}</code></p></section>
           <section class="card"><h2>Queue by kind</h2><div class="table-wrap"><table><tbody>
-            ${Object.entries(q.byKind).map(([k, n]) => `<tr><td>${esc({ hub: 'Starting pages (rechecked)', sitemap: 'Sitemaps (rechecked)', article: 'Articles', page: 'Listing pages' }[k] || k)}</td><td class="num">${fmt(n)}</td></tr>`).join('') || '<tr><td class="muted">Empty.</td></tr>'}
+            ${Object.entries(q.byKind).map(([k, n]) => `<tr><td>${esc({ hub: 'Starting pages (rechecked)', sitemap: 'Sitemaps (rechecked)', feed: 'RSS/Atom feeds (rechecked)', article: 'Articles', page: 'Listing pages' }[k] || k)}</td><td class="num">${fmt(n)}</td></tr>`).join('') || '<tr><td class="muted">Empty.</td></tr>'}
           </tbody></table></div><p style="margin-top:10px"><a href="#crawler/sites">Queues by site</a></p></section>
         </div>
+        ${live.resting.length ? `<section class="card"><h2>Resting sites <span class="muted small">(${live.resting.length})</span></h2>
+          <p class="muted small">These sites failed several times in a row (timeouts or server errors), so the crawler is giving them a break. It tries again automatically when the time is up.</p>
+          <div class="table-wrap"><table><tbody>${live.resting.map((r) => `<tr><td>${esc(r.host)}</td><td class="muted">${fmt(r.failures)} failures in a row</td><td class="num muted">until ${new Date(r.until).toLocaleTimeString()}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
         <section class="card"><div class="row"><h2 style="margin:0">Latest activity</h2><span class="spacer"></span><a href="#crawler/log">Full log</a></div>
           ${live.recent.length ? logTable(live.recent.slice(0, 15)) : '<p class="muted" style="margin-top:10px">No fetches since the server started.</p>'}</section>`;
     };
@@ -905,9 +908,10 @@ const CRAWLER_TABS = {
           ${c.queue.topHosts.map((h) => `<tr><td>${esc(h.host)}</td><td class="num">${fmt(h.n)}</td><td>${writable ? `<button class="btn small" data-purge="${esc(h.host)}">Clear queue</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">Nothing queued.</td></tr>'}
         </tbody></table></div></section>
         <section class="card"><h2>Recent failures</h2>${writable ? '<p><button class="btn small" id="requeueAll">Retry all failed pages</button></p>' : ''}<div class="table-wrap"><table><tbody>
-          ${c.queue.recentErrors.slice(0, 10).map((r) => `<tr><td class="trunc"><span>${esc(r.url)}</span><span class="sub">${esc(r.error || `HTTP ${r.http_status}`)}</span></td><td class="num muted">${ago(r.fetched_at)}</td></tr>`).join('') || '<tr><td class="muted">No failures.</td></tr>'}
+          ${c.queue.recentErrors.slice(0, 10).map((r) => `<tr><td class="trunc"><span>${esc(r.url)}</span><span class="sub">${esc(r.error || (r.http_status ? `HTTP ${r.http_status}` : 'Blocked'))}</span></td><td class="num muted">${ago(r.fetched_at)}</td></tr>`).join('') || '<tr><td class="muted">No failures.</td></tr>'}
         </tbody></table></div></section>
       </div>
+      <section class="card" id="autoHubCard"></section>
       <section class="card"><h2>Sites</h2><p class="muted small">The 30 most-crawled sites. Filter to find any other.</p><form class="row" id="hostSearch"><input type="search" name="q" placeholder="Filter by host" aria-label="Filter sites"><button class="btn">Filter</button></form><div id="hostList" style="margin-top:10px"></div></section>`;
     $('#crawlNow', box)?.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -938,10 +942,20 @@ const CRAWLER_TABS = {
         });
       }
     });
+    const live = await api('GET', '/crawler/live');
+    $('#autoHubCard', box).innerHTML = `<h2>Discovered starting sites <span class="muted small">(${live.autoHubs.length})</span></h2>
+      <p class="muted small">Sites that kept producing indexed articles were added as starting pages automatically (change how many under Settings &gt; Where to crawl). Dismiss one to stop rechecking it; it won't be added again.</p>
+      ${live.autoHubs.length ? `<div class="table-wrap"><table><thead><tr><th>Site</th><th>Articles when added</th><th>Added</th><th></th></tr></thead><tbody>${live.autoHubs.map((a) => `<tr><td><a href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${esc(a.host)}</a></td><td class="num">${fmt(a.articles)}</td><td class="num muted">${ago(a.addedAt)}</td><td>${writable ? `<button class="btn small" data-dismiss="${esc(a.host)}">Dismiss</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">None yet. Sites are considered every 30 minutes once they have 5 indexed articles from the last week.</p>'}`;
+    box.addEventListener('click', async (e) => {
+      const d = e.target.closest('[data-dismiss]');
+      if (!d || !(await confirmAction({ title: `Dismiss ${d.dataset.dismiss}?`, body: 'It stops being rechecked as a starting page and will not be added again. Links to it are still followed normally.', confirm: 'Dismiss' }))) return;
+      await act(() => api('POST', '/crawler/dismiss-hub', { host: d.dataset.dismiss }), 'Dismissed.');
+      route();
+    });
     const loadHosts = async (qv = '') => {
       const r = await api('GET', `/crawler/hosts?q=${encodeURIComponent(qv)}&limit=30`);
       $('#hostList', box).innerHTML = `<div class="table-wrap"><table><thead><tr><th>Site</th><th>Pages</th><th>Today</th><th>Queued</th><th>Errors</th><th>robots.txt</th><th></th></tr></thead><tbody>
-        ${r.hosts.map((h) => `<tr><td>${esc(h.host)} ${h.trusted ? '<span class="pill info">starting site</span>' : ''}${h.rule?.blocked ? '<span class="pill bad">blocked</span>' : ''}${h.rule?.ignoreRobots ? '<span class="pill warn">ignores robots.txt</span>' : h.rule && !h.rule.blocked ? '<span class="pill">custom rule</span>' : ''}</td>
+        ${r.hosts.map((h) => `<tr><td>${esc(h.host)} ${h.trusted ? '<span class="pill info">starting site</span>' : ''}${h.rule?.blocked ? '<span class="pill bad">blocked</span>' : ''}${h.rule?.ignoreRobots ? '<span class="pill warn">ignores robots.txt</span>' : h.rule && !h.rule.blocked ? '<span class="pill">custom rule</span>' : ''}${h.restingUntil ? `<span class="pill warn" title="${fmt(h.failStreak)} failures in a row">resting until ${new Date(h.restingUntil).toLocaleTimeString()}</span>` : ''}</td>
           <td class="num">${fmt(h.pages)}</td><td class="num">${fmt(h.fetched_today)}</td><td class="num">${fmt(h.queued)}</td><td class="num">${fmt(h.errors)}</td>
           <td>${h.robots_status ? `<span class="pill ${h.robots_status < 400 ? 'ok' : h.robots_status < 500 ? '' : 'bad'}">${h.robots_status}</span>` : ''}${h.crawl_delay_ms ? `<span class="muted small">delay ${h.crawl_delay_ms / 1000}s</span>` : ''}</td>
           <td><button class="btn small" data-robots="${esc(h.host)}">View robots.txt</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No sites match.</td></tr>'}
@@ -971,6 +985,7 @@ const CRAWLER_TABS = {
             <tr><th>Canonical URL</th><td class="mono small">${esc(x.canonical)}</td></tr><tr><th>Published</th><td>${x.publishedAt ? when(x.publishedAt) : 'unknown'}</td></tr>
             <tr><th>Author</th><td>${esc(x.author || 'unknown')}</td></tr><tr><th>Language</th><td>${esc(x.lang || 'unknown')}</td></tr>
             <tr><th>Words</th><td>${fmt(x.words)}${x.isArticle ? ' (looks like an article)' : ''}</td></tr><tr><th>Links found</th><td>${fmt(x.links)}</td></tr>
+            <tr><th>Feeds advertised</th><td>${x.feeds?.length ? x.feeds.map((f) => `<div class="mono small">${esc(f)}</div>`).join('') : 'none'}</td></tr>
             <tr><th>Images</th><td>${x.images.map((i) => `<div class="small"><a href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">${esc(i.url.slice(0, 90))}</a>${i.alt ? ` <span class="muted">${esc(i.alt.slice(0, 80))}</span>` : ''}</div>`).join('') || 'none'}</td></tr>
           </tbody></table></div>${x.textPreview ? `<details style="margin-top:10px"><summary class="muted small">Start of the extracted text</summary><pre class="robots">${esc(x.textPreview)}</pre></details>` : ''}` : ''}`;
       } catch (err) {

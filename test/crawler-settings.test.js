@@ -59,7 +59,7 @@ test('URL patterns, query stripping and the queue cap', () => {
 });
 
 test('indexing decisions follow the settings', () => {
-  const page = (over = {}) => ({ title: 'A new open model from a lab', description: 'Benchmarks for the new model', text: 'word '.repeat(300) + 'large language model', lang: 'en', isArticle: true, published_at: Date.now(), site: 'news.example', url: 'https://news.example/x', contentHash: null, ...over });
+  const page = (over = {}) => ({ title: 'A new open-weight LLM from a lab', description: 'Benchmarks for the new model', text: 'word '.repeat(300) + 'large language model', lang: 'en', isArticle: true, published_at: Date.now(), site: 'news.example', url: 'https://news.example/x', contentHash: null, ...over });
   assert.equal(spider.decide(page()).ok, true);
   assert.match(spider.decide(page({ text: 'too short' })).reason, /Too short/);
   assert.match(spider.decide(page({ title: 'Local football results', description: 'Scores', text: 'goal '.repeat(300) })).reason, /Not about AI/);

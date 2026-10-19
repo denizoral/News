@@ -244,6 +244,24 @@ export function resetDb() {
   return openDb(':memory:');
 }
 
+// Folds the write-ahead log back into the database and truncates it. Without
+// this, a busy crawler can grow the WAL to tens of MB, and the next start
+// after an unclean stop spends seconds replaying it.
+export function checkpoint() {
+  try {
+    return getDb().prepare('PRAGMA wal_checkpoint(TRUNCATE)').get();
+  } catch {
+    return null; // busy readers: try again next time
+  }
+}
+
+export function closeDb() {
+  if (!db) return;
+  checkpoint();
+  db.close();
+  db = null;
+}
+
 export function tx(fn) {
   const d = getDb();
   d.exec('BEGIN');

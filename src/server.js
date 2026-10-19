@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Store } from './store.js';
 import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
-import { openDb } from './db.js';
+import { openDb, checkpoint, closeDb } from './db.js';
 import { settings } from './settings.js';
 import { Spider } from './spider/engine.js';
 import { MEDIA_DIR } from './spider/media.js';
@@ -25,6 +25,7 @@ import { pruneSessions } from './admin/auth.js';
 import { contentEvents } from './admin/content.js';
 import { RateLimiter } from './security/ratelimit.js';
 import { clientIp, securityHeaders } from './security/httpkit.js';
+import { startFileLog } from './logfile.js';
 
 const PROD = process.env.NODE_ENV === 'production';
 const PUBLIC = path.resolve('public');
@@ -250,6 +251,7 @@ export function createApp({ store, spider }) {
 
 function main() {
   const PORT = Number(process.env.PORT) || 3000;
+  startFileLog();
   openDb();
   settings.load();
   const store = new Store();
@@ -266,6 +268,7 @@ function main() {
   server.listen(PORT, process.env.HOST || '0.0.0.0', () => console.log(`Frontier Wire on http://localhost:${PORT}`));
 
   setInterval(pruneSessions, 10 * 60e3).unref();
+  setInterval(checkpoint, 5 * 60e3).unref();
   if (background) {
     startRetention();
     crawlAll(store)
@@ -279,12 +282,22 @@ function main() {
     setInterval(() => { store.load(); }, 30e3).unref();
   }
 
+  let stopping = false;
   const shutdown = () => {
+    if (stopping) return;
+    stopping = true;
     console.log('Shutting down');
     spider.stop();
     try { store.save(); } catch { /* best effort */ }
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 5000).unref();
+    // Stop accepting, let in-flight requests finish, then cut long-lived
+    // connections (live updates never end by themselves).
+    server.close(() => {
+      closeDb();
+      process.exit(0);
+    });
+    server.closeIdleConnections();
+    setTimeout(() => server.closeAllConnections(), 2000).unref();
+    setTimeout(() => { closeDb(); process.exit(0); }, 5000).unref();
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);

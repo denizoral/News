@@ -249,6 +249,9 @@ test('admin API: sign-in, 2FA, CSRF, roles, validation, brute force', async (t) 
     assert.equal((await viewer.call('GET', '/api/admin/users')).status, 403);
     assert.equal((await viewer.call('GET', '/api/admin/audit')).status, 403);
     assert.equal((await viewer.call('POST', '/api/admin/crawler/crawl', { url: 'https://example.com/' })).status, 403);
+    assert.equal((await viewer.call('GET', '/api/admin/crawler/live')).status, 200, 'viewers can watch the crawler');
+    assert.equal((await viewer.call('GET', '/api/admin/crawler/log')).status, 200);
+    assert.equal((await viewer.call('POST', '/api/admin/crawler/inspect', { url: 'https://example.com/' })).status, 403, 'but not make it fetch');
 
     const editor = client();
     await editor.call('POST', '/api/admin/login', { username: 'editor1', password: 'editor one strong passphrase' });

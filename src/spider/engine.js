@@ -15,14 +15,14 @@ import { q, tx } from '../db.js';
 import { settings } from '../settings.js';
 import { canonicalUrl, hostOf } from '../pipeline/text.js';
 import { isAiRelated } from '../pipeline/classify.js';
-import { parseRobots, isAllowed, crawlDelay, BOT_TOKEN } from './robots.js';
+import { parseRobots, isAllowed, crawlDelay } from './robots.js';
 import { extractPage, looksLikeArticleUrl } from './extract.js';
 import { parseSitemap } from './sitemaps.js';
 import { downloadImage, enforceBudget } from './media.js';
 import { upsertDoc, findByContentHash, addInlinks } from '../index/documents.js';
 
-export const BOT_UA = `Mozilla/5.0 (compatible; ${BOT_TOKEN}/0.2; +https://github.com/denizoral/News)`;
-const MAX_QUEUED = 250000;
+const LOG_RING = 500;
+const ALWAYS_STRIPPED = /^(utm_|fbclid$|gclid$|mc_cid$|mc_eid$|igshid$|ref_src$)/i;
 
 const bare = (h) => h.replace(/^www\./, '');
 const today = () => new Date().toISOString().slice(0, 10);
@@ -37,6 +37,10 @@ export class Spider extends EventEmitter {
     this.hostCache = new Map();
     this.running = false;
     this.stats = { fetched: 0, indexed: 0, duplicates: 0, blocked: 0, errors: 0, images: 0, startedAt: Date.now(), recent: [] };
+    this.inflightUrls = new Map(); // url -> { host, kind, started }
+    this.ring = []; // newest crawl-log entries, for the live view
+    this.minutes = new Map(); // minute -> fetches, last hour
+    this.idleReason = null;
   }
 
   // Live configuration from the admin dashboard, rebuilt when settings change.
@@ -54,6 +58,14 @@ export class Spider extends EventEmitter {
     return this.cfg && this._trusted;
   }
 
+  get botName() {
+    return this.cfg.botName || 'FrontierWireBot';
+  }
+
+  userAgent() {
+    return `Mozilla/5.0 (compatible; ${this.botName}/0.3; +${this.cfg.contactUrl || 'https://github.com/denizoral/News'})`;
+  }
+
   rule(host) {
     return this.cfg.hostRules.get(bare(host)) || null;
   }
@@ -68,18 +80,34 @@ export class Spider extends EventEmitter {
   enqueue(url, { kind = 'article', priority = 5, depth = 0, via = null, nextAt = Date.now() } = {}) {
     let u;
     try {
-      u = canonicalUrl(url);
+      u = this.cleanUrl(canonicalUrl(url));
       if (!/^https?:\/\//.test(u) || this.isSkipped(u)) return false;
     } catch {
       return false;
     }
+    // Starting pages and sitemaps are configured explicitly; patterns filter what they lead to.
+    if (kind !== 'hub' && kind !== 'sitemap' && !this.urlAllowedByPatterns(u)) return false;
     const host = new URL(u).hostname;
-    if (priority < 4 && this.queuedCount() > MAX_QUEUED) return false;
+    if (priority < 4 && this.queuedCount() > this.cfg.maxQueue) return false;
     // Rediscovery nudges priority up: things many pages link to get crawled sooner.
     q(`INSERT INTO frontier (url, host, kind, priority, depth, status, next_at, discovered_at, via) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)
        ON CONFLICT(url) DO UPDATE SET priority = MAX(priority, excluded.priority) + 0.2, depth = MIN(depth, excluded.depth)
        WHERE status = 'queued'`).run(u, host, kind, priority, depth, nextAt, Date.now(), via);
     return true;
+  }
+
+  cleanUrl(u) {
+    const strip = this.cfg.stripQueryParams || [];
+    const url = new URL(u);
+    if (strip.includes('*')) url.search = '';
+    else for (const k of [...url.searchParams.keys()]) if (ALWAYS_STRIPPED.test(k) || strip.includes(k.toLowerCase())) url.searchParams.delete(k);
+    return url.toString().replace(/\?$/, '');
+  }
+
+  urlAllowedByPatterns(u) {
+    const { includePatterns: inc = [], excludePatterns: exc = [] } = this.cfg;
+    if (exc.some((m) => m(u))) return false;
+    return !inc.length || inc.some((m) => m(u));
   }
 
   queuedCount() {
@@ -145,7 +173,7 @@ export class Spider extends EventEmitter {
     let text = '';
     let status = 0;
     try {
-      const res = await get(`${scheme}//${h.host}/robots.txt`, { headers: { 'user-agent': BOT_UA }, timeout: 10000, retries: 0, publicOnly: true });
+      const res = await get(`${scheme}//${h.host}/robots.txt`, { headers: { 'user-agent': this.userAgent() }, timeout: 10000, retries: 0, publicOnly: true, maxRedirects: this.cfg.maxRedirects });
       status = res.status;
       text = (await res.text()).slice(0, 500000);
     } catch (err) {
@@ -163,10 +191,10 @@ export class Spider extends EventEmitter {
       h.robots_fetched_at = Date.now();
     }
     h.parsed = parseRobots(h.robots);
-    const d = crawlDelay(h.parsed, BOT_TOKEN);
+    const d = crawlDelay(h.parsed, this.botName);
     h.crawl_delay_ms = d != null ? Math.min(d * 1000, 60000) : null;
     // Sitemaps of trusted hosts are the fastest way to learn about new articles.
-    if (this.trusted.has(bare(h.host))) {
+    if (this.cfg.useSitemaps && this.trusted.has(bare(h.host))) {
       for (const sm of h.parsed.sitemaps.slice(0, 6)) {
         if (/news|post|article|\d{4}|sitemap\.xml$|sitemap_index/i.test(sm)) this.enqueue(sm, { kind: 'sitemap', priority: 9, depth: 0, via: 'robots.txt' });
       }
@@ -200,8 +228,16 @@ export class Spider extends EventEmitter {
   }
 
   tick() {
-    if (!this.running || !this.cfg.enabled || this.active >= this.cfg.concurrency) return;
+    if (!this.running) return;
     const now = Date.now();
+    this.idleReason = !this.cfg.enabled ? 'paused' : inQuietHours(this.cfg.quietHours, now) ? 'quiet hours' : null;
+    if (this.idleReason) return;
+    const cap = this.cfg.maxPagesPerMinute;
+    if (cap && this.stats.recent.filter((t) => t > now - 60e3).length >= cap) {
+      this.idleReason = 'pages-per-minute cap';
+      return;
+    }
+    if (this.active >= this.cfg.concurrency) return;
     // Candidates are the best two ready URLs per host, so one big sitemap
     // can't starve every other site. Refreshed every few seconds.
     if (!this.cands?.length || now - this.candsAt > 3000) {
@@ -216,6 +252,12 @@ export class Spider extends EventEmitter {
       if (this.inflight.has(row.host)) continue;
       const h = this.host(row.host);
       if (h.next_allowed_at > now) continue;
+      // Patterns are checked again here so a new exclude pattern also clears what's already queued.
+      if (row.kind !== 'hub' && row.kind !== 'sitemap' && !this.urlAllowedByPatterns(row.url)) {
+        this.cands.splice(this.cands.indexOf(row), 1);
+        q("UPDATE frontier SET status = 'skipped', error = 'Excluded by a URL pattern' WHERE url = ?").run(row.url);
+        continue;
+      }
       const rule = this.rule(row.host);
       if (rule?.blocked) {
         this.cands.splice(this.cands.indexOf(row), 1);
@@ -228,12 +270,15 @@ export class Spider extends EventEmitter {
       }
       this.cands.splice(this.cands.indexOf(row), 1);
       this.inflight.add(row.host);
+      this.inflightUrls.set(row.url, { host: row.host, kind: row.kind, started: Date.now() });
       this.active++;
       q("UPDATE frontier SET status = 'fetching' WHERE url = ?").run(row.url);
+      row._started = Date.now();
       this.process(row, h)
         .catch((err) => this.fail(row, h, err))
         .finally(() => {
           this.inflight.delete(row.host);
+          this.inflightUrls.delete(row.url);
           this.active--;
         });
     }
@@ -243,13 +288,15 @@ export class Spider extends EventEmitter {
     if (err instanceof BlockedUrlError) {
       this.stats.blocked++;
       q("UPDATE frontier SET status = 'blocked', error = ?, fetched_at = ? WHERE url = ?").run(err.message.slice(0, 300), Date.now(), row.url);
+      this.log(row, { outcome: 'blocked', reason: err.message });
       return;
     }
     this.stats.errors++;
     h.errors++;
     const attempts = row.attempts + 1;
     const permanent = /HTTP (400|401|403|404|410|451)/.test(err.message);
-    const retry = !permanent && attempts < 3;
+    const retry = !permanent && attempts < this.cfg.maxAttempts;
+    this.log(row, { outcome: 'error', http: err.status || null, reason: `${err.message}${retry ? ` (attempt ${attempts} of ${this.cfg.maxAttempts}, will retry)` : ''}` });
     q('UPDATE frontier SET status = ?, attempts = ?, next_at = ?, error = ?, fetched_at = ? WHERE url = ?').run(
       row.kind === 'hub' || row.kind === 'sitemap' ? 'queued' : retry ? 'queued' : 'error',
       attempts,
@@ -261,36 +308,58 @@ export class Spider extends EventEmitter {
     this.saveHost(h);
   }
 
-  done(row, { status = 'done', httpStatus = 200, etag = null, lastModified = null } = {}) {
+  done(row, { status = 'done', httpStatus = 200, etag = null, lastModified = null, recrawlAt = null } = {}) {
     const recurring = row.kind === 'hub' || row.kind === 'sitemap';
-    const next = recurring ? Date.now() + (row.kind === 'hub' ? this.cfg.hubRecrawlMin : this.cfg.sitemapRecrawlMin) * 60e3 : Date.now();
+    const next = recurring ? Date.now() + (row.kind === 'hub' ? this.cfg.hubRecrawlMin : this.cfg.sitemapRecrawlMin) * 60e3 : recrawlAt || Date.now();
+    const again = (recurring || recrawlAt) && status === 'done';
     q('UPDATE frontier SET status = ?, http_status = ?, etag = COALESCE(?, etag), last_modified = COALESCE(?, last_modified), fetched_at = ?, next_at = ?, attempts = 0, error = NULL WHERE url = ?').run(
-      recurring && status === 'done' ? 'queued' : status, httpStatus, etag, lastModified, Date.now(), next, row.url);
+      again ? 'queued' : status, httpStatus, etag, lastModified, Date.now(), next, row.url);
+  }
+
+  // ---------- crawl log ----------
+
+  log(row, { outcome, http = null, reason = null, bytes = null }) {
+    const now = Date.now();
+    const e = { at: now, url: row.url, host: row.host, kind: row.kind, http, outcome, reason: reason ? String(reason).slice(0, 300) : null, ms: row._started ? now - row._started : null, bytes, depth: row.depth, via: row.via || null };
+    this.ring.unshift(e);
+    if (this.ring.length > LOG_RING) this.ring.length = LOG_RING;
+    try {
+      q('INSERT INTO crawl_log (at, url, host, kind, http_status, outcome, reason, ms, bytes, depth, via) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(e.at, e.url, e.host, e.kind, e.http, e.outcome, e.reason, e.ms, e.bytes, e.depth, e.via);
+    } catch { /* logging must never break crawling */ }
   }
 
   // ---------- fetch + process ----------
 
   async process(row, h) {
     const scheme = new URL(row.url).protocol;
+    const rule = this.rule(h.host);
     await this.ensureRobots(h, scheme);
-    if (!isAllowed(h.parsed, row.url, BOT_TOKEN) || this.ruleDisallows(row.url)) {
+    // Owners can exempt specific sites from robots.txt (e.g. their own). Site rules still apply.
+    const robotsOk = rule?.ignoreRobots || isAllowed(h.parsed, row.url, this.botName);
+    if (!robotsOk || this.ruleDisallows(row.url)) {
       this.stats.blocked++;
+      this.log(row, { outcome: 'blocked', reason: robotsOk ? 'Blocked path in a site rule' : 'Disallowed by robots.txt' });
       return this.done(row, { status: 'blocked', httpStatus: 0 });
     }
 
-    const delay = Math.max(this.cfg.hostDelayMs, h.crawl_delay_ms || 0, this.rule(h.host)?.minDelayMs || 0);
+    const robotsDelay = this.cfg.honorCrawlDelay && !rule?.ignoreRobots ? h.crawl_delay_ms || 0 : 0;
+    const delay = Math.max(this.cfg.hostDelayMs, robotsDelay, rule?.minDelayMs || 0);
     h.next_allowed_at = Date.now() + delay;
     h.fetched_today++;
 
-    const headers = { 'user-agent': BOT_UA, accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.5' };
+    const headers = { 'user-agent': this.userAgent(), accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.5', 'accept-language': this.cfg.acceptLanguage };
     if (row.etag) headers['if-none-match'] = row.etag;
     if (row.last_modified) headers['if-modified-since'] = row.last_modified;
 
     let res;
     try {
-      res = await get(row.url, { timeout: 20000, retries: 0, headers, publicOnly: true });
+      res = await get(row.url, { timeout: this.cfg.timeoutMs, retries: 0, headers, publicOnly: true, maxRedirects: this.cfg.maxRedirects });
     } catch (err) {
-      if (/HTTP 304/.test(err.message)) return this.done(row, { httpStatus: 304 });
+      if (/HTTP 304/.test(err.message)) {
+        this.log(row, { outcome: 'not-modified', http: 304 });
+        return this.done(row, { httpStatus: 304 });
+      }
       throw err;
     }
     const type = res.headers.get('content-type') || '';
@@ -299,38 +368,56 @@ export class Spider extends EventEmitter {
     this.stats.fetched++;
     h.pages++;
     this.saveHost(h);
-    this.stats.recent.push(Date.now());
-    if (this.stats.recent.length > 600) this.stats.recent.splice(0, 300);
+    this.countFetch();
+    const bytes = Buffer.byteLength(body);
+    const http = res.status;
 
-    const meta = { etag: res.headers.get('etag'), lastModified: res.headers.get('last-modified') };
+    const meta = { etag: res.headers.get('etag'), lastModified: res.headers.get('last-modified'), httpStatus: http };
     if (row.kind === 'sitemap' || /xml/.test(type) && !/html/.test(type)) {
-      this.handleSitemap(row, body);
+      const n = this.handleSitemap(row, body);
+      this.log(row, { outcome: 'sitemap', http, bytes, reason: `${n} URLs queued` });
       return this.done(row, meta);
     }
-    if (!/html/.test(type)) return this.done(row, { ...meta, status: 'skipped' });
-    if (/noindex/i.test(res.headers.get('x-robots-tag') || '')) return this.done(row, { ...meta, status: 'skipped' });
+    if (!/html/.test(type)) {
+      this.log(row, { outcome: 'skipped', http, bytes, reason: `Not HTML (${type.split(';')[0] || 'unknown type'})` });
+      return this.done(row, { ...meta, status: 'skipped' });
+    }
+    if (/noindex/i.test(res.headers.get('x-robots-tag') || '')) {
+      this.log(row, { outcome: 'skipped', http, bytes, reason: 'X-Robots-Tag: noindex' });
+      return this.done(row, { ...meta, status: 'skipped' });
+    }
 
-    const page = extractPage(body, finalUrl);
-    this.followLinks(row, page);
-    if (row.kind !== 'hub') this.indexPage(row, page);
-    return this.done(row, meta);
+    const page = extractPage(body, finalUrl, { respectNofollow: this.cfg.respectNofollow });
+    const queued = this.followLinks(row, page);
+    if (row.kind === 'hub') {
+      this.log(row, { outcome: 'hub', http, bytes, reason: `${queued} links queued` });
+      return this.done(row, meta);
+    }
+    const r = this.indexPage(row, page);
+    this.log(row, { outcome: r.outcome, http, bytes, reason: [r.reason, queued ? `${queued} links queued` : null].filter(Boolean).join('; ') || null });
+    // Fresh articles are fetched again later to catch updates.
+    const fresh = page.published_at && Date.now() - page.published_at < 3 * 86400e3;
+    const recrawlAt = this.cfg.recrawlHours && r.indexedOk && fresh ? Date.now() + this.cfg.recrawlHours * 3600e3 : null;
+    return this.done(row, { ...meta, recrawlAt });
   }
 
   handleSitemap(row, xml) {
     let parsed;
     try {
-      parsed = parseSitemap(xml);
+      parsed = parseSitemap(xml, { maxAgeDays: this.cfg.sitemapMaxAgeDays, maxUrls: this.cfg.sitemapMaxUrls });
     } catch {
-      return;
+      return 0;
     }
+    let n = 0;
     tx(() => {
       for (const sm of parsed.sitemaps) this.enqueue(sm.url, { kind: 'sitemap', priority: 8.5, depth: 0, via: row.url });
       for (const u of parsed.urls) {
         const ageH = u.lastmod ? (Date.now() - u.lastmod) / 3600e3 : 72;
-        if (u.title && !isAiRelated(u.title) && !this.isAiHost(hostOf(u.url))) continue;
-        this.enqueue(u.url, { kind: 'article', priority: 6 + Math.max(0, 3 - ageH / 12), depth: 1, via: 'sitemap' });
+        if (u.title && this.cfg.relevance !== 'all' && !this.isRelevantText(u.title) && !this.isAiHost(hostOf(u.url))) continue;
+        if (this.enqueue(u.url, { kind: 'article', priority: 6 + Math.max(0, 3 - ageH / 12), depth: 1, via: 'sitemap' })) n++;
       }
     });
+    return n;
   }
 
   // Extra paths blocked from the dashboard, using robots.txt pattern syntax.
@@ -338,7 +425,7 @@ export class Spider extends EventEmitter {
     const rule = this.rule(new URL(url).hostname);
     if (!rule?.disallow?.length) return false;
     if (rule._parsed?.src !== rule.disallow) rule._parsed = { src: rule.disallow, robots: parseRobots(`User-agent: *\n${rule.disallow.map((p) => `Disallow: ${p}`).join('\n')}`) };
-    return !isAllowed(rule._parsed.robots, url, BOT_TOKEN);
+    return !isAllowed(rule._parsed.robots, url, '*');
   }
 
   isAiHost(host) {
@@ -350,6 +437,8 @@ export class Spider extends EventEmitter {
     const fromHost = bare(hostOf(page.url));
     const fromTrusted = this.trusted.has(fromHost);
     const external = [];
+    let queued = 0;
+    const enq = (u, o) => { if (this.enqueue(u, o)) queued++; };
     tx(() => {
       for (const link of page.links) {
         const toHost = bare(hostOf(link.url));
@@ -361,30 +450,62 @@ export class Spider extends EventEmitter {
         if (depth > this.cfg.maxDepth) continue;
 
         if (sameHost && fromTrusted) {
-          if (article) this.enqueue(link.url, { kind: 'article', priority: 6 + (aiAnchor ? 2 : 0) - row.depth * 0.5 + (this.isAiHost(toHost) ? 1 : 0), depth, via: row.url });
-          else if (aiAnchor && depth <= 2) this.enqueue(link.url, { kind: 'page', priority: 3.5, depth, via: row.url });
+          if (article) enq(link.url, { kind: 'article', priority: 6 + (aiAnchor ? 2 : 0) - row.depth * 0.5 + (this.isAiHost(toHost) ? 1 : 0), depth, via: row.url });
+          else if (aiAnchor && depth <= 2) enq(link.url, { kind: 'page', priority: 3.5, depth, via: row.url });
         } else if (sameHost) {
-          if (article && aiAnchor && depth <= 2) this.enqueue(link.url, { kind: 'article', priority: 4.5, depth, via: row.url });
+          if (article && aiAnchor && depth <= 2) enq(link.url, { kind: 'article', priority: 4.5, depth, via: row.url });
         } else if (fromTrusted && article && aiAnchor && this.cfg.followExternal) {
           // One hop off the trusted set, and no further.
-          this.enqueue(link.url, { kind: 'article', priority: 5 + (this.trusted.has(toHost) ? 1 : 0), depth: this.cfg.maxDepth, via: row.url });
+          enq(link.url, { kind: 'article', priority: 5 + (this.trusted.has(toHost) ? 1 : 0), depth: this.cfg.maxDepth, via: row.url });
         }
       }
       if (external.length) addInlinks(external.slice(0, 200));
     });
+    return queued;
+  }
+
+  // Whether a page would be indexed, and why not. Shared by crawling and "Test a URL".
+  decide(page) {
+    const cfg = this.cfg;
+    const text = page.text || '';
+    if (page.noindex) return { ok: false, outcome: 'skipped', reason: 'Page asks not to be indexed (noindex)' };
+    if (!page.title) return { ok: false, outcome: 'skipped', reason: 'No title' };
+    const head = `${page.title} ${page.description}`.toLowerCase();
+    const bad = cfg.excludeKeywords.find((k) => head.includes(k));
+    if (bad) return { ok: false, outcome: 'skipped', reason: `Mentions excluded keyword "${bad}"` };
+    if (cfg.languages.length && page.lang && !cfg.languages.includes(page.lang)) return { ok: false, outcome: 'skipped', reason: `Language ${page.lang} isn't in the allowed list` };
+    const words = text ? text.split(/\s+/).length : 0;
+    if (words < cfg.minWords) return { ok: false, outcome: 'skipped', reason: `Too short (${words} words, minimum ${cfg.minWords})` };
+    if (!page.isArticle && text.length < 600) return { ok: false, outcome: 'skipped', reason: "Doesn't look like an article" };
+    if (cfg.maxArticleAgeDays && page.published_at && Date.now() - page.published_at > cfg.maxArticleAgeDays * 86400e3) {
+      return { ok: false, outcome: 'skipped', reason: `Older than ${cfg.maxArticleAgeDays} days` };
+    }
+    const sample = `${page.title} ${page.description} ${text.slice(0, 4000)}`;
+    if (cfg.relevance === 'keywords') {
+      const hit = cfg.includeKeywords.find((k) => sample.toLowerCase().includes(k));
+      if (!hit) return { ok: false, outcome: 'skipped', reason: 'None of the keywords appear' };
+    } else if (cfg.relevance === 'ai' && !this.isAiHost(page.site) && !this.isRelevantText(sample)) {
+      return { ok: false, outcome: 'skipped', reason: 'Not about AI' };
+    }
+    const dup = findByContentHash(page.contentHash);
+    if (dup && dup.url !== page.url) return { ok: false, outcome: 'duplicate', reason: `Same text as ${dup.url}` };
+    return { ok: true, words };
+  }
+
+  isRelevantText(text) {
+    if (isAiRelated(text)) return true;
+    const t = text.toLowerCase();
+    return this.cfg.includeKeywords.some((k) => t.includes(k));
   }
 
   indexPage(row, page) {
-    if (page.noindex || !page.title) return;
-    const text = page.text || '';
-    const relevant = this.isAiHost(page.site) || isAiRelated(`${page.title} ${page.description} ${text.slice(0, 4000)}`);
-    if (!relevant) return;
-    if (!page.isArticle && text.length < 600) return;
-    const dup = findByContentHash(page.contentHash);
-    if (dup && dup.url !== page.url) {
-      this.stats.duplicates++;
-      return;
+    const d = this.decide(page);
+    if (!d.ok) {
+      if (d.outcome === 'duplicate') this.stats.duplicates++;
+      return d;
     }
+    const text = page.text || '';
+    const existed = !!q('SELECT 1 FROM docs WHERE url = ? AND fetched_at IS NOT NULL').get(page.url);
     const first = page.images[0];
     const { id } = upsertDoc({
       url: page.url,
@@ -416,6 +537,62 @@ export class Spider extends EventEmitter {
     });
     this.stats.indexed++;
     this.emit('indexed', { id, url: page.url, title: page.title });
+    return { ok: true, indexedOk: true, outcome: existed ? 'updated' : 'indexed', reason: `${d.words} words` };
+  }
+
+  // ---------- "Test a URL": fetch and evaluate without saving anything ----------
+
+  async inspect(url) {
+    const report = { url, steps: [] };
+    const step = (label, ok, detail) => report.steps.push({ label, ok, detail });
+    let u;
+    try {
+      u = new URL(this.cleanUrl(canonicalUrl(url)));
+    } catch {
+      step('URL', false, "That isn't a valid http(s) URL.");
+      return report;
+    }
+    report.url = u.toString();
+    if (this.isSkipped(report.url)) step('Never-crawl list', false, 'This host is on the never-crawl list.');
+    else step('Never-crawl list', true, 'Not listed.');
+    step('URL patterns', this.urlAllowedByPatterns(report.url), this.urlAllowedByPatterns(report.url) ? 'Allowed by the include/exclude patterns.' : 'Excluded by the include/exclude patterns.');
+    const rule = this.rule(u.hostname);
+    if (rule?.blocked) step('Site rule', false, 'Blocked by a per-site rule.');
+    const h = this.host(u.hostname);
+    try {
+      await this.ensureRobots(h, u.protocol);
+    } catch (err) {
+      step('Address check', false, err.message);
+      return report;
+    }
+    const allowed = isAllowed(h.parsed, report.url, this.botName);
+    step('robots.txt', allowed || !!rule?.ignoreRobots, rule?.ignoreRobots ? `robots.txt is ignored for this site by an owner rule (it would ${allowed ? 'allow' : 'block'} this URL).` : allowed ? `Allowed for ${this.botName} (HTTP ${h.robots_status}).` : `Disallowed for ${this.botName}.`);
+    if (this.ruleDisallows(report.url)) step('Site rule paths', false, 'This path is blocked by a per-site rule.');
+    const started = Date.now();
+    let res;
+    try {
+      res = await get(report.url, { timeout: this.cfg.timeoutMs, retries: 0, publicOnly: true, maxRedirects: this.cfg.maxRedirects, headers: { 'user-agent': this.userAgent(), 'accept-language': this.cfg.acceptLanguage } });
+    } catch (err) {
+      step('Fetch', false, err.message);
+      return report;
+    }
+    const type = res.headers.get('content-type') || '';
+    const body = await readText(res, this.cfg.maxPageBytes);
+    step('Fetch', true, `HTTP ${res.status}, ${type.split(';')[0]}, ${Math.round(Buffer.byteLength(body) / 1024)} KB in ${Date.now() - started} ms${res.url && res.url !== report.url ? `, final URL ${res.url}` : ''}.`);
+    if (!/html/.test(type)) {
+      step('Content type', false, 'Not HTML, so it would not be indexed.');
+      return report;
+    }
+    const page = extractPage(body, res.url || report.url, { respectNofollow: this.cfg.respectNofollow });
+    report.extracted = {
+      title: page.title, description: page.description, author: page.author, publishedAt: page.published_at, lang: page.lang,
+      canonical: page.url, words: page.text ? page.text.split(/\s+/).length : 0, isArticle: page.isArticle, links: page.links.length,
+      images: page.images.slice(0, 6).map((i) => ({ url: i.url, alt: i.alt })), textPreview: (page.text || '').slice(0, 600),
+    };
+    const d = this.decide(page);
+    step('Would be indexed', d.ok, d.ok ? `Yes (${d.words} words).` : d.reason);
+    report.wouldIndex = d.ok;
+    return report;
   }
 
   // ---------- images ----------
@@ -504,6 +681,42 @@ export class Spider extends EventEmitter {
 
   // ---------- stats ----------
 
+  countFetch() {
+    const now = Date.now();
+    this.stats.recent.push(now);
+    if (this.stats.recent.length > 6000) this.stats.recent.splice(0, 3000);
+    const m = Math.floor(now / 60e3);
+    this.minutes.set(m, (this.minutes.get(m) || 0) + 1);
+    for (const k of this.minutes.keys()) if (k < m - 60) this.minutes.delete(k);
+  }
+
+  live() {
+    const now = Date.now();
+    const m = Math.floor(now / 60e3);
+    return {
+      running: this.running,
+      state: !this.running ? 'stopped' : this.idleReason || (this.active ? 'crawling' : 'idle'),
+      quietHours: this.cfg.quietHours || null,
+      utcTime: new Date(now).toISOString().slice(11, 16),
+      active: this.active,
+      concurrency: this.cfg.concurrency,
+      inflight: [...this.inflightUrls].map(([url, v]) => ({ url, host: v.host, kind: v.kind, seconds: Math.round((now - v.started) / 1000) })),
+      perMinute: Array.from({ length: 60 }, (_, i) => this.minutes.get(m - 59 + i) || 0),
+      userAgent: this.userAgent(),
+      ignoringRobots: [...this.cfg.hostRules.values()].filter((r) => r.ignoreRobots).map((r) => r.host),
+      recent: this.ring.slice(0, 40),
+    };
+  }
+
+  logEntries({ host = '', outcome = '', before = null, limit = 100 } = {}) {
+    const where = [];
+    const args = [];
+    if (host) { where.push('host LIKE ?'); args.push(`%${host.replace(/[%_]/g, '')}%`); }
+    if (outcome) { where.push('outcome = ?'); args.push(outcome); }
+    if (before) { where.push('id < ?'); args.push(Number(before)); }
+    return q(`SELECT * FROM crawl_log ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`).all(...args, Math.min(500, Number(limit) || 100));
+  }
+
   status() {
     const now = Date.now();
     if (this._st && now - this._st.at < 5000) return this._st.v;
@@ -534,4 +747,17 @@ async function readText(res, limit) {
   } catch {
     return buf.toString('utf8');
   }
+}
+
+// "01:00-06:00" in UTC; windows may wrap past midnight ("22:00-05:00").
+export function inQuietHours(spec, now = Date.now()) {
+  if (!spec) return false;
+  const m = spec.match(/^(\d\d):(\d\d)-(\d\d):(\d\d)$/);
+  if (!m) return false;
+  const start = +m[1] * 60 + +m[2];
+  const end = +m[3] * 60 + +m[4];
+  const d = new Date(now);
+  const t = d.getUTCHours() * 60 + d.getUTCMinutes();
+  if (start === end) return false;
+  return start < end ? t >= start && t < end : t >= start || t < end;
 }

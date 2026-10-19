@@ -82,12 +82,12 @@ export function looksLikeArticleUrl(url) {
   }
 }
 
-export function extractPage(html, pageUrl) {
+export function extractPage(html, pageUrl, { respectNofollow = true } = {}) {
   const { document } = parseHTML(html);
   const robotsMeta = (meta(document, 'robots') || '') + ' ' + (meta(document, 'googlebot') || '');
   const noindex = /noindex/i.test(robotsMeta);
   const noarchive = /noarchive|nosnippet/i.test(robotsMeta);
-  const nofollow = /nofollow/i.test(robotsMeta);
+  const nofollow = respectNofollow && /nofollow/i.test(robotsMeta);
 
   const canonicalHref = document.querySelector('link[rel="canonical"]')?.getAttribute('href');
   const canonical = normalizeLink(canonicalHref, pageUrl) || canonicalUrl(pageUrl);
@@ -112,7 +112,7 @@ export function extractPage(html, pageUrl) {
   if (!nofollow) {
     const seen = new Set();
     for (const a of document.querySelectorAll('a[href]')) {
-      if (/nofollow|sponsored|ugc/i.test(a.getAttribute('rel') || '')) continue;
+      if (respectNofollow && /nofollow|sponsored|ugc/i.test(a.getAttribute('rel') || '')) continue;
       const url = normalizeLink(a.getAttribute('href'), pageUrl);
       if (!url || seen.has(url) || url === canonical) continue;
       seen.add(url);

@@ -135,6 +135,25 @@ END;
 
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 
+-- One row per crawler fetch, for the dashboard's crawl log. Trimmed by retention.
+CREATE TABLE IF NOT EXISTS crawl_log (
+  id INTEGER PRIMARY KEY,
+  at INTEGER NOT NULL,
+  url TEXT NOT NULL,
+  host TEXT NOT NULL,
+  kind TEXT,
+  http_status INTEGER,
+  outcome TEXT NOT NULL,      -- indexed | updated | skipped | duplicate | blocked | error | not-modified | sitemap | hub | followed
+  reason TEXT,
+  ms INTEGER,
+  bytes INTEGER,
+  depth INTEGER,
+  via TEXT
+);
+CREATE INDEX IF NOT EXISTS crawl_log_at ON crawl_log(at DESC);
+CREATE INDEX IF NOT EXISTS crawl_log_host ON crawl_log(host, at DESC);
+CREATE INDEX IF NOT EXISTS crawl_log_outcome ON crawl_log(outcome, at DESC);
+
 -- Runtime settings edited from the admin dashboard (JSON values).
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,

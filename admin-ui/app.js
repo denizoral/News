@@ -278,7 +278,10 @@ function shell() {
 }
 
 async function route() {
-  const v = location.hash.replace('#', '') || 'overview';
+  clearInterval(S.timer);
+  const [v0, sub] = (location.hash.replace('#', '') || 'overview').split('/');
+  const v = v0 || 'overview';
+  S.sub = sub || '';
   const item = NAV.find(([k, , p]) => k === v && (!p || can(p)));
   S.view = item ? v : 'overview';
   $$('[data-nav]').forEach((a) => (a.dataset.nav === S.view ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
@@ -318,23 +321,32 @@ function fieldHtml(d) {
       return `<label class="field" data-key="${esc(d.key)}"><span>${esc(d.label)}</span><input type="number" id="${id}" value="${esc(d.value)}" min="${d.min}" max="${d.max}" step="${d.type === 'int' ? 1 : 'any'}" ${dis}>${help}<small class="muted">${fmt(d.min)} to ${fmt(d.max)}</small>${updated}<span class="field-error"></span></label>`;
     case 'text':
       return `<label class="field wide" data-key="${esc(d.key)}"><span>${esc(d.label)}</span><textarea id="${id}" rows="8" maxlength="${d.max}" spellcheck="false" ${dis}>${esc(d.value)}</textarea>${help}${updated}<span class="field-error"></span></label>`;
+    case 'enum':
+      return `<label class="field" data-key="${esc(d.key)}"><span>${esc(d.label)}</span><select id="${id}" ${dis}>${d.options.map(([k, l]) => `<option value="${esc(k)}" ${k === d.value ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>${help}${updated}<span class="field-error"></span></label>`;
+    case 'words':
+    case 'patterns':
+      return `<label class="field" data-key="${esc(d.key)}"><span>${esc(d.label)} <span class="muted">(${d.value.length})</span></span><textarea id="${id}" rows="5" spellcheck="false" ${dis}>${esc(d.value.join('\n'))}</textarea>${help}${updated}<span class="field-error"></span></label>`;
     case 'urls':
     case 'hosts':
       return `<label class="field wide" data-key="${esc(d.key)}"><span>${esc(d.label)} <span class="muted">(${d.value.length})</span></span><textarea id="${id}" rows="10" spellcheck="false" ${dis}>${esc(d.value.join('\n'))}</textarea>${help}${updated}<span class="field-error"></span></label>`;
     case 'hostRules':
-      return `<div class="field wide" data-key="${esc(d.key)}"><span><b>${esc(d.label)}</b></span>${help}
-        <div class="rule-row rule-head"><span>Host</span><span>Block</span><span>Min gap (ms)</span><span>Pages / day</span><span>Extra blocked paths (one per line)</span><span></span></div>
-        <div class="rules">${d.value.map(ruleRow).join('')}</div>
+      // The card around it already carries the title and explanation.
+      return `<div class="field wide" data-key="${esc(d.key)}">
+        <div class="rule-row rule-head"><span>Host</span><span>Block</span><span>Ignore robots.txt</span><span>Min gap (ms)</span><span>Pages / day</span><span>Extra blocked paths (one per line)</span><span></span></div>
+        <div class="rules">${d.value.map((r) => ruleRow(r)).join('')}</div>
         ${dis ? '' : '<button class="btn small" type="button" data-add-rule>Add a site rule</button>'}${updated}<span class="field-error"></span></div>`;
     default:
       return `<label class="field" data-key="${esc(d.key)}"><span>${esc(d.label)}</span><input type="${d.type === 'url' ? 'url' : 'text'}" id="${id}" value="${esc(d.value)}" maxlength="${d.max || 2000}" ${dis}>${help}${updated}<span class="field-error"></span></label>`;
   }
 }
 
-function ruleRow(r = { host: '', blocked: false, minDelayMs: null, dailyBudget: null, disallow: [] }) {
-  return `<div class="rule-row" data-rule>
+function ruleRow(r = { host: '', blocked: false, ignoreRobots: false, minDelayMs: null, dailyBudget: null, disallow: [] }) {
+  // Only owners may change which sites ignore robots.txt (the server enforces this too).
+  const owner = S.session.user.role === 'owner';
+  return `<div class="rule-row${r.ignoreRobots ? ' ignores-robots' : ''}" data-rule>
     <input type="text" data-r="host" value="${esc(r.host)}" placeholder="example.com" aria-label="Host">
     <label class="toggle"><input type="checkbox" data-r="blocked" ${r.blocked ? 'checked' : ''} aria-label="Block this site"></label>
+    <label class="toggle" title="${owner ? 'Fetch this site even where its robots.txt says no. Use only for sites you own or have permission to crawl.' : 'Only owners can change this.'}"><input type="checkbox" data-r="ignoreRobots" ${r.ignoreRobots ? 'checked' : ''} ${owner ? '' : 'disabled'} aria-label="Ignore robots.txt for this site"></label>
     <input type="number" data-r="minDelayMs" value="${r.minDelayMs ?? ''}" min="500" placeholder="default" aria-label="Minimum gap in ms">
     <input type="number" data-r="dailyBudget" value="${r.dailyBudget ?? ''}" min="0" placeholder="default" aria-label="Pages per day">
     <textarea data-r="disallow" placeholder="/paywall/" aria-label="Blocked paths">${esc((r.disallow || []).join('\n'))}</textarea>
@@ -350,11 +362,13 @@ function readField(d, el) {
   switch (d.type) {
     case 'bool': return input.checked;
     case 'int': case 'number': return input.value === '' ? null : Number(input.value);
-    case 'urls': case 'hosts': return input.value.split('\n').map((s) => s.trim()).filter(Boolean);
+    case 'urls': case 'hosts': case 'words': case 'patterns': return input.value.split('\n').map((s) => s.trim()).filter(Boolean);
+    case 'enum': return $('select', el).value;
     case 'hostRules':
       return $$('[data-rule]', el).map((row) => ({
         host: $('[data-r=host]', row).value.trim(),
         blocked: $('[data-r=blocked]', row).checked,
+        ignoreRobots: $('[data-r=ignoreRobots]', row).checked,
         minDelayMs: $('[data-r=minDelayMs]', row).value === '' ? null : Number($('[data-r=minDelayMs]', row).value),
         dailyBudget: $('[data-r=dailyBudget]', row).value === '' ? null : Number($('[data-r=dailyBudget]', row).value),
         disallow: $('[data-r=disallow]', row).value.split('\n').map((s) => s.trim()).filter(Boolean),
@@ -364,7 +378,8 @@ function readField(d, el) {
 }
 
 // Renders a form for the given settings and saves only what changed.
-function settingsForm(container, defs, { title, intro = '' } = {}) {
+function settingsForm(container, defs, opts = {}) {
+  const { title, intro = '' } = opts;
   container.insertAdjacentHTML('beforeend', `<section class="card" data-form>
     ${title ? `<h2>${esc(title)}</h2>` : ''}${intro ? `<p class="muted">${intro}</p>` : ''}
     <div class="form-grid">${defs.map(fieldHtml).join('')}</div>
@@ -397,6 +412,7 @@ function settingsForm(container, defs, { title, intro = '' } = {}) {
   reset.addEventListener('click', () => route());
   save.addEventListener('click', async () => {
     const patch = Object.fromEntries(changed().map((d) => [d.key, readField(d, $(`[data-key="${CSS.escape(d.key)}"]`, card))]));
+    if (opts.beforeSave && !(await opts.beforeSave(patch))) return;
     $$('.field', card).forEach((f) => { f.classList.remove('invalid'); const fe = $('.field-error', f); if (fe) fe.textContent = ''; });
     save.disabled = true;
     try {
@@ -495,83 +511,25 @@ const VIEWS = {
 
   async crawler(el) {
     await loadSettings();
-    const c = await api('GET', '/crawler');
-    const st = c.status;
     const writable = can('crawler:write');
-    el.innerHTML = `<div class="page-head"><div><h1>Crawler</h1><p>${st.paused ? 'Paused. The queue is kept.' : `Running at ${st.pagesPerMinute} pages a minute.`}</p></div>
-        ${writable ? `<button class="btn ${st.paused ? 'primary' : 'danger'}" id="pauseBtn">${st.paused ? 'Resume crawling' : 'Pause crawling'}</button>` : ''}</div>
-      <div class="stats">
-        <div class="stat"><b>${compact(c.queue.byStatus.queued || 0)}</b><span>queued (${compact(c.queue.readyNow)} ready now)</span></div>
-        <div class="stat"><b>${compact(c.queue.byStatus.done || 0)}</b><span>fetched</span></div>
-        <div class="stat"><b>${compact(c.queue.byStatus.error || 0)}</b><span>failed</span></div>
-        <div class="stat"><b>${compact(c.queue.byStatus.blocked || 0)}</b><span>blocked by robots.txt or rules</span></div>
-        <div class="stat"><b>${compact(st.hosts)}</b><span>sites seen</span></div>
-      </div>
-      ${writable ? `<section class="card"><h2>Crawl a page now</h2><form class="row" id="crawlNow"><input type="url" name="url" placeholder="https://example.com/article" required aria-label="URL to crawl"><button class="btn primary">Add to the front of the queue</button></form>
-        <p class="help" style="margin-top:8px">It still respects robots.txt and won't fetch private network addresses.</p></section>` : ''}
-      <div class="grid grid-2">
-        <section class="card"><h2>Busiest queues</h2><div class="table-wrap"><table><thead><tr><th>Site</th><th>Queued</th><th></th></tr></thead><tbody>
-          ${c.queue.topHosts.map((h) => `<tr><td>${esc(h.host)}</td><td class="num">${fmt(h.n)}</td><td>${writable ? `<button class="btn small" data-purge="${esc(h.host)}">Clear queue</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">Nothing queued.</td></tr>'}
-        </tbody></table></div></section>
-        <section class="card"><h2>Recent failures</h2>${writable ? '<p><button class="btn small" id="requeueAll">Retry all failed pages</button></p>' : ''}<div class="table-wrap"><table><tbody>
-          ${c.queue.recentErrors.slice(0, 10).map((r) => `<tr><td class="trunc"><span>${esc(r.url)}</span><span class="sub">${esc(r.error || `HTTP ${r.http_status}`)}</span></td><td class="num muted">${ago(r.fetched_at)}</td></tr>`).join('') || '<tr><td class="muted">No failures.</td></tr>'}
-        </tbody></table></div></section>
-      </div>
-      <section class="card"><h2>Sites</h2><p class="muted small">The 30 most-crawled sites. Filter to find any other.</p><form class="row" id="hostSearch"><input type="search" name="q" placeholder="Filter by host" aria-label="Filter sites"><button class="btn">Filter</button></form><div id="hostList" style="margin-top:10px"></div></section>
-      <div id="crawlerForms"></div>`;
-
-    const forms = $('#crawlerForms');
-    const g = group('crawler');
-    settingsForm(forms, g.filter((d) => ['crawler.concurrency', 'crawler.hostDelayMs', 'crawler.hostDailyBudget', 'crawler.maxDepth', 'crawler.followExternal', 'crawler.hubRecrawlMin', 'crawler.sitemapRecrawlMin', 'crawler.imagesPerPage', 'crawler.imageConcurrency'].includes(d.key)), { title: 'Speed and depth' });
-    settingsForm(forms, g.filter((d) => d.key === 'crawler.hostRules'), { title: 'Per-site rules', intro: "Make the crawler stricter for particular sites: block them, slow down, cap pages per day, or skip paths. These add to each site's robots.txt; they can't override it. Robots.txt is always obeyed." });
-    settingsForm(forms, g.filter((d) => d.key === 'crawler.hubs' || d.key === 'crawler.skipHosts'), { title: 'Where to crawl' });
-
-    $('#pauseBtn')?.addEventListener('click', async () => {
-      const resume = st.paused;
-      if (!resume && !(await confirmAction({ title: 'Pause the crawler?', body: 'Page and image fetches stop until you resume. The feed keeps updating.', confirm: 'Pause', danger: true }))) return;
-      await act(() => api('PATCH', '/settings', { 'crawler.enabled': resume }), resume ? 'Crawler resumed.' : 'Crawler paused.');
+    const tabs = [['status', 'Status'], ['log', 'Log'], ['settings', 'Settings'], ['sites', 'Sites'], ['test', 'Test a URL']];
+    const tab = tabs.some(([k]) => k === S.sub) ? S.sub : 'status';
+    const enabled = S.settings.find((d) => d.key === 'crawler.enabled')?.value;
+    el.innerHTML = `<div class="page-head"><div><h1>Crawler</h1><p id="crawlState" class="muted">Loading…</p></div>
+        ${writable ? `<button class="btn ${enabled ? 'danger' : 'primary'}" id="pauseBtn">${enabled ? 'Pause crawling' : 'Resume crawling'}</button>` : ''}</div>
+      <nav class="tabs-row" aria-label="Crawler sections">${tabs.map(([k, l]) => `<a href="#crawler/${k}" ${k === tab ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
+      <div id="crawlTab"></div>`;
+    $('#pauseBtn', el)?.addEventListener('click', async () => {
+      if (enabled && !(await confirmAction({ title: 'Pause the crawler?', body: 'Page and image fetches stop until you resume. The queue is kept and the feed keeps updating.', confirm: 'Pause', danger: true }))) return;
+      await act(() => api('PATCH', '/settings', { 'crawler.enabled': !enabled }), enabled ? 'Crawler paused.' : 'Crawler resumed.');
       route();
     });
-    $('#crawlNow')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      await act(() => api('POST', '/crawler/crawl', { url: e.target.url.value.trim() }), 'Queued at the front.');
-      e.target.reset();
-    });
-    $('#requeueAll')?.addEventListener('click', async () => {
-      await act(() => api('POST', '/crawler/requeue', {}), (r) => `${fmt(r.requeued)} pages queued again.`);
-      route();
-    });
-    el.addEventListener('click', async (e) => {
-      const p = e.target.closest('[data-purge]');
-      if (p && (await confirmAction({ title: `Clear the queue for ${p.dataset.purge}?`, body: 'Queued pages from this site are dropped. Starting pages stay and will rediscover new articles.', confirm: 'Clear queue', danger: true }))) {
-        await act(() => api('POST', '/crawler/purge', { host: p.dataset.purge }), (r) => `Removed ${fmt(r.removed)} queued pages.`);
-        route();
-      }
-      const rb = e.target.closest('[data-robots]');
-      if (rb) {
-        const r = await act(() => api('GET', `/crawler/robots?host=${encodeURIComponent(rb.dataset.robots)}`));
-        modal(`<h2 id="modalTitle">robots.txt for ${esc(r.host)}</h2>
-          <p class="muted small">${r.robots ? `HTTP ${esc(r.robots.robots_status)}, fetched ${ago(r.robots.robots_fetched_at)}` : 'Not fetched yet.'}</p>
-          <pre class="robots">${esc(r.robots?.robots || '(empty: everything allowed)')}</pre>
-          <div class="form-actions">${writable ? `<button class="btn" id="refetchRobots">Fetch again before the next request</button>` : ''}<button class="btn" data-close>Close</button></div>`, (m) => {
-          $('#refetchRobots', m)?.addEventListener('click', async () => {
-            await act(() => api('POST', '/crawler/refresh-robots', { host: r.host }), 'robots.txt will be fetched again.');
-            $('#modal').close();
-          });
-        });
-      }
-    });
-    const loadHosts = async (qv = '') => {
-      const r = await api('GET', `/crawler/hosts?q=${encodeURIComponent(qv)}&limit=30`);
-      $('#hostList').innerHTML = `<div class="table-wrap"><table><thead><tr><th>Site</th><th>Pages</th><th>Today</th><th>Queued</th><th>Errors</th><th>robots.txt</th><th></th></tr></thead><tbody>
-        ${r.hosts.map((h) => `<tr><td>${esc(h.host)} ${h.trusted ? '<span class="pill info">starting site</span>' : ''}${h.rule?.blocked ? '<span class="pill bad">blocked</span>' : h.rule ? '<span class="pill warn">custom rule</span>' : ''}</td>
-          <td class="num">${fmt(h.pages)}</td><td class="num">${fmt(h.fetched_today)}</td><td class="num">${fmt(h.queued)}</td><td class="num">${fmt(h.errors)}</td>
-          <td>${h.robots_status ? `<span class="pill ${h.robots_status < 400 ? 'ok' : h.robots_status < 500 ? '' : 'bad'}">${h.robots_status}</span>` : ''}${h.crawl_delay_ms ? `<span class="muted small">delay ${h.crawl_delay_ms / 1000}s</span>` : ''}</td>
-          <td><button class="btn small" data-robots="${esc(h.host)}">View robots.txt</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No sites match.</td></tr>'}
-      </tbody></table></div>`;
+    const box = $('#crawlTab', el);
+    const setState = (live) => {
+      const words = { crawling: 'Crawling', idle: 'Idle: nothing is due right now', paused: 'Paused', 'quiet hours': `Quiet hours (${live.quietHours} UTC; it's ${live.utcTime} UTC now)`, 'pages-per-minute cap': 'Waiting: the pages-per-minute cap was reached', stopped: 'Stopped on this server (SPIDER=off)' };
+      $('#crawlState', el).textContent = `${words[live.state] || live.state}. ${live.active} of ${live.concurrency} fetch slots in use.`;
     };
-    $('#hostSearch').addEventListener('submit', (e) => { e.preventDefault(); loadHosts(e.target.q.value.trim()); });
-    await loadHosts();
+    await CRAWLER_TABS[tab](box, { writable, setState });
   },
 
   async sources(el) {
@@ -804,6 +762,213 @@ const VIEWS = {
     el.addEventListener('click', async (e) => {
       const b = e.target.closest('[data-revoke]');
       if (b) { await act(() => api('POST', '/account/sessions/revoke', { id: b.dataset.revoke }), 'Session signed out.'); route(); }
+    });
+  },
+};
+
+// ---------- crawler tabs ----------
+
+const OUTCOMES = {
+  indexed: ['ok', 'indexed'], updated: ['ok', 'updated'], hub: ['info', 'starting page'], sitemap: ['info', 'sitemap'],
+  'not-modified': ['', 'not modified'], skipped: ['', 'skipped'], duplicate: ['', 'duplicate'], blocked: ['warn', 'blocked'], error: ['bad', 'error'],
+};
+const outcomePill = (o) => `<span class="pill ${OUTCOMES[o]?.[0] || ''}">${esc(OUTCOMES[o]?.[1] || o)}</span>`;
+const logRow = (e) => `<tr><td class="num muted" title="${esc(new Date(e.at).toISOString())}">${new Date(e.at).toLocaleTimeString()}</td><td>${outcomePill(e.outcome)}</td>
+  <td class="num">${e.http ?? e.http_status ?? ''}</td><td class="trunc"><a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">${esc(e.url)}</a>${e.reason ? `<span class="sub">${esc(e.reason)}</span>` : ''}</td>
+  <td class="num muted">${e.ms != null ? `${fmt(e.ms)} ms` : ''}</td><td class="num muted">${e.bytes ? bytes(e.bytes) : ''}</td></tr>`;
+const logTable = (rows) => `<div class="table-wrap"><table class="log"><thead><tr><th>Time</th><th>Outcome</th><th>HTTP</th><th>URL and reason</th><th>Took</th><th>Size</th></tr></thead><tbody>${rows.map(logRow).join('')}</tbody></table></div>`;
+
+// Pages fetched per minute over the last hour: one series, bars on a zero baseline.
+// Drawn at the container's real pixel width so text stays at its CSS size.
+function rateChart(series, width = 600) {
+  const w = Math.max(280, Math.round(width)), h = 140, pad = { t: 10, r: 8, b: 22, l: 34 };
+  const max = Math.max(4, ...series);
+  const nice = Math.ceil(max / 4) * 4;
+  const bw = (w - pad.l - pad.r) / series.length;
+  const y = (v) => pad.t + (h - pad.t - pad.b) * (1 - v / nice);
+  const bars = series.map((v, i) => {
+    const x = pad.l + i * bw;
+    const top = y(v);
+    const height = h - pad.b - top;
+    const minsAgo = series.length - 1 - i;
+    const label = `${v} ${v === 1 ? 'page' : 'pages'} ${minsAgo === 0 ? 'this minute' : `${minsAgo} min ago`}`;
+    // Rounded top, square base; the hit area is the full column.
+    const r = Math.min(2, height / 2, (bw - 2) / 2);
+    const path = height > 0 ? `M${x + 1},${h - pad.b} V${top + r} q0,-${r} ${r},-${r} H${x + bw - 1 - r} q${r},0 ${r},${r} V${h - pad.b} Z` : '';
+    return `<g class="bar"><title>${label}</title><rect x="${x}" y="${pad.t}" width="${bw}" height="${h - pad.t - pad.b}" fill="transparent"/>${path ? `<path d="${path}"/>` : ''}</g>`;
+  }).join('');
+  const grid = [0, nice / 2, nice].map((v) => `<line x1="${pad.l}" x2="${w - pad.r}" y1="${y(v)}" y2="${y(v)}"/><text x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('');
+  const total = series.reduce((a, b) => a + b, 0);
+  return `<figure class="rate"><figcaption><b>Pages fetched per minute</b><span class="muted small">last 60 minutes, ${fmt(total)} in total</span></figcaption>
+    <svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Pages fetched per minute over the last hour; ${fmt(total)} in total, peak ${Math.max(...series)} a minute">
+      <g class="grid">${grid}</g><g class="bars">${bars}</g>
+      <text class="axis" x="${pad.l}" y="${h - 6}">60 min ago</text><text class="axis" x="${w - pad.r}" y="${h - 6}" text-anchor="end">now</text>
+    </svg></figure>`;
+}
+
+const CRAWLER_TABS = {
+  async status(box, { setState }) {
+    const render = async () => {
+      const [live, c] = await Promise.all([api('GET', '/crawler/live'), api('GET', '/crawler')]);
+      setState(live);
+      const q = c.queue;
+      box.innerHTML = `<div class="stats">
+          <div class="stat"><b>${compact(q.byStatus.queued || 0)}</b><span>queued (${compact(q.readyNow)} ready now)</span></div>
+          <div class="stat"><b>${compact(q.byStatus.done || 0)}</b><span>fetched</span></div>
+          <div class="stat"><b>${compact(q.byStatus.error || 0)}</b><span>failed</span></div>
+          <div class="stat"><b>${compact(q.byStatus.blocked || 0)}</b><span>blocked</span></div>
+          <div class="stat"><b>${compact(c.status.hosts)}</b><span>sites seen</span></div>
+        </div>
+        ${live.ignoringRobots.length ? `<div class="notice warn">robots.txt is being ignored for: ${live.ignoringRobots.map(esc).join(', ')}. <a href="#crawler/settings">Change in Settings</a></div>` : ''}
+        <section class="card">${rateChart(live.perMinute, box.clientWidth - 38)}</section>
+        <div class="grid grid-2">
+          <section class="card"><h2>Fetching now <span class="muted small">(${live.inflight.length})</span></h2>
+            ${live.inflight.length ? `<div class="table-wrap"><table><tbody>${live.inflight.map((f) => `<tr><td class="trunc">${esc(f.url)}<span class="sub">${esc(f.kind)}</span></td><td class="num muted">${f.seconds}s</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nothing in flight.</p>'}
+            <p class="small muted" style="margin-top:12px">Identifies itself as <code>${esc(live.userAgent)}</code></p></section>
+          <section class="card"><h2>Queue by kind</h2><div class="table-wrap"><table><tbody>
+            ${Object.entries(q.byKind).map(([k, n]) => `<tr><td>${esc({ hub: 'Starting pages (rechecked)', sitemap: 'Sitemaps (rechecked)', article: 'Articles', page: 'Listing pages' }[k] || k)}</td><td class="num">${fmt(n)}</td></tr>`).join('') || '<tr><td class="muted">Empty.</td></tr>'}
+          </tbody></table></div><p style="margin-top:10px"><a href="#crawler/sites">Queues by site</a></p></section>
+        </div>
+        <section class="card"><div class="row"><h2 style="margin:0">Latest activity</h2><span class="spacer"></span><a href="#crawler/log">Full log</a></div>
+          ${live.recent.length ? logTable(live.recent.slice(0, 15)) : '<p class="muted" style="margin-top:10px">No fetches since the server started.</p>'}</section>`;
+    };
+    await render();
+    S.timer = setInterval(() => document.visibilityState === 'visible' && render().catch(() => {}), 5000);
+  },
+
+  async log(box, { setState }) {
+    api('GET', '/crawler/live').then(setState).catch(() => {});
+    const f = new URLSearchParams(sessionStorage.getItem('adm.log') || '');
+    box.innerHTML = `<section class="card"><form class="row" id="logFilter">
+        <input type="search" name="host" placeholder="Filter by site" value="${esc(f.get('host') || '')}" aria-label="Filter by site">
+        <select name="outcome" aria-label="Outcome"><option value="">Every outcome</option>${Object.entries(OUTCOMES).map(([k, [, l]]) => `<option value="${k}" ${f.get('outcome') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <button class="btn">Filter</button><span class="spacer"></span>
+        <label class="toggle small"><input type="checkbox" id="logLive" ${f.get('live') === '0' ? '' : 'checked'}><span>Refresh every 5 seconds</span></label>
+      </form><div id="logRows" style="margin-top:12px"><p class="muted">Loading…</p></div><button class="btn" id="logMore" hidden>Older entries</button>
+      <p class="help" style="margin-top:10px">Kept for 14 days (at most 200,000 entries).</p></section>`;
+    let rows = [];
+    const params = () => ({ host: $('#logFilter [name=host]').value.trim(), outcome: $('#logFilter [name=outcome]').value });
+    const load = async (older = false) => {
+      const p = params();
+      sessionStorage.setItem('adm.log', new URLSearchParams({ ...p, live: $('#logLive').checked ? '1' : '0' }).toString());
+      const r = await api('GET', `/crawler/log?${new URLSearchParams({ ...p, before: older && rows.length ? rows[rows.length - 1].id : '' })}`);
+      rows = older ? rows.concat(r.entries) : r.entries;
+      $('#logRows').innerHTML = rows.length ? logTable(rows) : '<p class="empty">No entries match.</p>';
+      $('#logMore').hidden = r.entries.length < 100;
+    };
+    $('#logFilter').addEventListener('submit', (e) => { e.preventDefault(); load(); });
+    $('#logMore').addEventListener('click', () => load(true));
+    S.timer = setInterval(() => $('#logLive')?.checked && document.visibilityState === 'visible' && rows.length <= 100 && load().catch(() => {}), 5000);
+    await load();
+  },
+
+  async settings(box) {
+    api('GET', '/crawler/live').then((l) => $('#crawlState') && ($('#crawlState').textContent = `${l.state[0].toUpperCase()}${l.state.slice(1)}.`)).catch(() => {});
+    const g = S.settings.filter((d) => d.group === 'crawler');
+    const sec = (name) => g.filter((d) => d.section === name);
+    settingsForm(box, sec('identity'), { title: 'Identity', intro: 'How the crawler introduces itself. Site owners see this in their logs and match it in robots.txt.' });
+    settingsForm(box, sec('pace'), { title: 'Speed and schedule', intro: 'Times are UTC.' });
+    settingsForm(box, sec('fetch'), { title: 'Fetching' });
+    settingsForm(box, sec('discovery'), { title: 'Discovery', intro: 'Which links get followed and queued.' });
+    settingsForm(box, sec('indexing'), { title: 'What gets indexed', intro: 'Pages are always fetched in full; these decide whether they are stored and searchable.' });
+    settingsForm(box, sec('rules'), {
+      title: 'Per-site rules',
+      intro: "Block a site, slow down, cap pages a day, or skip paths. <b>Ignore robots.txt</b> fetches a site even where its robots.txt says no: use it only for sites you own or have permission to crawl. Ignoring robots.txt gets crawlers banned, and in some places (such as the EU's text-and-data-mining rules) it can carry legal risk. Owner-only, and recorded in the audit log.",
+      beforeSave: async (patch) => {
+        const next = patch['crawler.hostRules'];
+        if (!next) return true;
+        const before = new Set((S.settings.find((d) => d.key === 'crawler.hostRules')?.value || []).filter((r) => r.ignoreRobots).map((r) => r.host));
+        const added = next.filter((r) => r.ignoreRobots && !before.has(r.host)).map((r) => r.host);
+        if (!added.length) return true;
+        return confirmAction({ title: 'Ignore robots.txt?', body: `The crawler will fetch pages on <b>${added.map(esc).join(', ')}</b> even where their robots.txt asks it not to. Only do this for sites you own or have permission to crawl.`, confirm: 'Ignore robots.txt for these sites', danger: true, typeToConfirm: 'ignore' });
+      },
+    });
+    settingsForm(box, sec('where'), { title: 'Where to crawl' });
+  },
+
+  async sites(box, { writable, setState }) {
+    api('GET', '/crawler/live').then(setState).catch(() => {});
+    const c = await api('GET', '/crawler');
+    box.innerHTML = `${writable ? `<section class="card"><h2>Crawl a page now</h2><form class="row" id="crawlNow"><input type="url" name="url" placeholder="https://example.com/article" required aria-label="URL to crawl"><button class="btn primary">Add to the front of the queue</button></form>
+        <p class="help" style="margin-top:8px">It still goes through robots.txt and never fetches private network addresses. To see what would happen without queuing it, use <a href="#crawler/test">Test a URL</a>.</p></section>` : ''}
+      <div class="grid grid-2">
+        <section class="card"><h2>Busiest queues</h2><div class="table-wrap"><table><thead><tr><th>Site</th><th>Queued</th><th></th></tr></thead><tbody>
+          ${c.queue.topHosts.map((h) => `<tr><td>${esc(h.host)}</td><td class="num">${fmt(h.n)}</td><td>${writable ? `<button class="btn small" data-purge="${esc(h.host)}">Clear queue</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">Nothing queued.</td></tr>'}
+        </tbody></table></div></section>
+        <section class="card"><h2>Recent failures</h2>${writable ? '<p><button class="btn small" id="requeueAll">Retry all failed pages</button></p>' : ''}<div class="table-wrap"><table><tbody>
+          ${c.queue.recentErrors.slice(0, 10).map((r) => `<tr><td class="trunc"><span>${esc(r.url)}</span><span class="sub">${esc(r.error || `HTTP ${r.http_status}`)}</span></td><td class="num muted">${ago(r.fetched_at)}</td></tr>`).join('') || '<tr><td class="muted">No failures.</td></tr>'}
+        </tbody></table></div></section>
+      </div>
+      <section class="card"><h2>Sites</h2><p class="muted small">The 30 most-crawled sites. Filter to find any other.</p><form class="row" id="hostSearch"><input type="search" name="q" placeholder="Filter by host" aria-label="Filter sites"><button class="btn">Filter</button></form><div id="hostList" style="margin-top:10px"></div></section>`;
+    $('#crawlNow', box)?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await act(() => api('POST', '/crawler/crawl', { url: e.target.url.value.trim() }), 'Queued at the front.');
+      e.target.reset();
+    });
+    $('#requeueAll', box)?.addEventListener('click', async () => {
+      await act(() => api('POST', '/crawler/requeue', {}), (r) => `${fmt(r.requeued)} pages queued again.`);
+      route();
+    });
+    box.addEventListener('click', async (e) => {
+      const p = e.target.closest('[data-purge]');
+      if (p && (await confirmAction({ title: `Clear the queue for ${p.dataset.purge}?`, body: 'Queued pages from this site are dropped. Starting pages stay and will rediscover new articles.', confirm: 'Clear queue', danger: true }))) {
+        await act(() => api('POST', '/crawler/purge', { host: p.dataset.purge }), (r) => `Removed ${fmt(r.removed)} queued pages.`);
+        route();
+      }
+      const rb = e.target.closest('[data-robots]');
+      if (rb) {
+        const r = await act(() => api('GET', `/crawler/robots?host=${encodeURIComponent(rb.dataset.robots)}`));
+        modal(`<h2 id="modalTitle">robots.txt for ${esc(r.host)}</h2>
+          <p class="muted small">${r.robots ? `HTTP ${esc(r.robots.robots_status)}, fetched ${ago(r.robots.robots_fetched_at)}` : 'Not fetched yet.'}</p>
+          <pre class="robots">${esc(r.robots?.robots || '(empty: everything allowed)')}</pre>
+          <div class="form-actions">${writable ? '<button class="btn" id="refetchRobots">Fetch again before the next request</button>' : ''}<button class="btn" data-close>Close</button></div>`, (m) => {
+          $('#refetchRobots', m)?.addEventListener('click', async () => {
+            await act(() => api('POST', '/crawler/refresh-robots', { host: r.host }), 'robots.txt will be fetched again.');
+            $('#modal').close();
+          });
+        });
+      }
+    });
+    const loadHosts = async (qv = '') => {
+      const r = await api('GET', `/crawler/hosts?q=${encodeURIComponent(qv)}&limit=30`);
+      $('#hostList', box).innerHTML = `<div class="table-wrap"><table><thead><tr><th>Site</th><th>Pages</th><th>Today</th><th>Queued</th><th>Errors</th><th>robots.txt</th><th></th></tr></thead><tbody>
+        ${r.hosts.map((h) => `<tr><td>${esc(h.host)} ${h.trusted ? '<span class="pill info">starting site</span>' : ''}${h.rule?.blocked ? '<span class="pill bad">blocked</span>' : ''}${h.rule?.ignoreRobots ? '<span class="pill warn">ignores robots.txt</span>' : h.rule && !h.rule.blocked ? '<span class="pill">custom rule</span>' : ''}</td>
+          <td class="num">${fmt(h.pages)}</td><td class="num">${fmt(h.fetched_today)}</td><td class="num">${fmt(h.queued)}</td><td class="num">${fmt(h.errors)}</td>
+          <td>${h.robots_status ? `<span class="pill ${h.robots_status < 400 ? 'ok' : h.robots_status < 500 ? '' : 'bad'}">${h.robots_status}</span>` : ''}${h.crawl_delay_ms ? `<span class="muted small">delay ${h.crawl_delay_ms / 1000}s</span>` : ''}</td>
+          <td><button class="btn small" data-robots="${esc(h.host)}">View robots.txt</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No sites match.</td></tr>'}
+      </tbody></table></div>`;
+    };
+    $('#hostSearch', box).addEventListener('submit', (e) => { e.preventDefault(); loadHosts(e.target.q.value.trim()); });
+    await loadHosts();
+  },
+
+  async test(box, { writable, setState }) {
+    api('GET', '/crawler/live').then(setState).catch(() => {});
+    box.innerHTML = `<section class="card"><h2>Test a URL</h2>
+      <p class="muted">Fetches one page the way the crawler would and explains every decision: never-crawl list, patterns, site rules, robots.txt, the fetch, extraction, and whether it would be indexed. Nothing is saved or queued.</p>
+      ${writable ? `<form class="row" id="testForm"><input type="url" name="url" placeholder="https://example.com/article" required aria-label="URL to test"><button class="btn primary">Test</button></form>` : '<p class="notice info">Admins and owners can run tests.</p>'}
+      <div id="testOut" style="margin-top:14px"></div></section>`;
+    $('#testForm', box)?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = $('button', e.target);
+      btn.disabled = true;
+      $('#testOut', box).innerHTML = '<p class="muted">Fetching…</p>';
+      try {
+        const r = await api('POST', '/crawler/inspect', { url: e.target.url.value.trim() });
+        const x = r.extracted;
+        $('#testOut', box).innerHTML = `<ul class="checks test-steps">${r.steps.map((s) => `<li class="${s.ok ? 'ok' : 'no'}"><span class="mark">${s.ok ? '✓' : '✗'}</span><span><b>${esc(s.label)}</b><br><span class="muted small">${esc(s.detail)}</span></span></li>`).join('')}</ul>
+          ${x ? `<h2 style="margin-top:18px">What the crawler extracted</h2><div class="table-wrap"><table class="kv"><tbody>
+            <tr><th>Title</th><td>${esc(x.title)}</td></tr><tr><th>Description</th><td>${esc(x.description)}</td></tr>
+            <tr><th>Canonical URL</th><td class="mono small">${esc(x.canonical)}</td></tr><tr><th>Published</th><td>${x.publishedAt ? when(x.publishedAt) : 'unknown'}</td></tr>
+            <tr><th>Author</th><td>${esc(x.author || 'unknown')}</td></tr><tr><th>Language</th><td>${esc(x.lang || 'unknown')}</td></tr>
+            <tr><th>Words</th><td>${fmt(x.words)}${x.isArticle ? ' (looks like an article)' : ''}</td></tr><tr><th>Links found</th><td>${fmt(x.links)}</td></tr>
+            <tr><th>Images</th><td>${x.images.map((i) => `<div class="small"><a href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">${esc(i.url.slice(0, 90))}</a>${i.alt ? ` <span class="muted">${esc(i.alt.slice(0, 80))}</span>` : ''}</div>`).join('') || 'none'}</td></tr>
+          </tbody></table></div>${x.textPreview ? `<details style="margin-top:10px"><summary class="muted small">Start of the extracted text</summary><pre class="robots">${esc(x.textPreview)}</pre></details>` : ''}` : ''}`;
+      } catch (err) {
+        $('#testOut', box).innerHTML = `<div class="notice bad">${esc(err.message)}</div>`;
+      } finally {
+        btn.disabled = false;
+      }
     });
   },
 };

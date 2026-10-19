@@ -22,7 +22,7 @@ export class HttpError extends Error {
   }
 }
 
-export async function get(url, { timeout = 15000, headers = {}, retries = 1, publicOnly = false } = {}) {
+export async function get(url, { timeout = 15000, headers = {}, retries = 1, publicOnly = false, maxRedirects = 5 } = {}) {
   const host = new URL(url).host;
   const until = hostCooldown.get(host);
   if (until && until > Date.now()) throw new Error(`cooling down ${host}`);
@@ -33,7 +33,7 @@ export async function get(url, { timeout = 15000, headers = {}, retries = 1, pub
         headers: { 'user-agent': UA, accept: '*/*', 'accept-language': 'en-US,en;q=0.9', ...headers },
         signal: AbortSignal.timeout(timeout),
       };
-      const res = publicOnly ? await fetchPublic(url, init) : await fetch(url, { ...init, redirect: 'follow' });
+      const res = publicOnly ? await fetchPublic(url, init, maxRedirects) : await fetch(url, { ...init, redirect: 'follow' });
       if (res.status === 429 || res.status === 503) {
         const retryAfter = Number(res.headers.get('retry-after')) || 120;
         hostCooldown.set(host, Date.now() + Math.min(retryAfter, 900) * 1000);
@@ -50,9 +50,9 @@ export async function get(url, { timeout = 15000, headers = {}, retries = 1, pub
 
 // Untrusted URLs (anything the crawler found): every hop must resolve to a
 // public address, redirects are followed by hand so each target is checked.
-async function fetchPublic(url, init) {
+async function fetchPublic(url, init, maxRedirects = 5) {
   let current = url;
-  for (let hop = 0; hop <= 5; hop++) {
+  for (let hop = 0; hop <= maxRedirects; hop++) {
     await assertPublicUrl(current);
     const res = await fetch(current, { ...init, redirect: 'manual', ...(publicOnlyDispatcher ? { dispatcher: publicOnlyDispatcher } : {}) });
     if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {

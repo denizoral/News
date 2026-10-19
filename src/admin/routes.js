@@ -173,6 +173,32 @@ export function createAdminRouter({ store, spider, runNow, sourceNames }) {
 
   route('GET', '/crawler', {}, () => ({ status: spider.status(), queue: spider.queueSummary() }));
 
+  route('GET', '/crawler/live', {}, () => spider.live());
+
+  route('GET', '/crawler/log', {}, ({ url }) => ({
+    entries: spider.logEntries({
+      host: (url.searchParams.get('host') || '').slice(0, 100), outcome: (url.searchParams.get('outcome') || '').slice(0, 20),
+      before: url.searchParams.get('before'), limit: 100,
+    }),
+  }));
+
+  // Dry run: fetches one page (through the SSRF guard and robots.txt) and
+  // reports what would happen, without writing anything.
+  const inspectLimiter = new RateLimiter({ capacity: 10, refillPerSec: 10 / 60 });
+  route('POST', '/crawler/inspect', { permission: 'crawler:write', limit: 4096 }, async ({ req, a, body }) => {
+    const lim = inspectLimiter.take(`u:${a.user.id}`);
+    if (!lim.ok) throw new HttpError(429, 'Too many test fetches. Wait a minute.', { retryAfter: lim.retryAfter });
+    let u;
+    try {
+      u = new URL(String(body.url || ''));
+    } catch {
+      throw new HttpError(400, 'Enter a full http:// or https:// link.');
+    }
+    if (!/^https?:$/.test(u.protocol)) throw new HttpError(400, 'Only http and https links can be tested.');
+    audit(req, { user: a.user, action: 'crawler.inspect', target: u.toString() });
+    return spider.inspect(u.toString());
+  });
+
   route('GET', '/crawler/hosts', {}, ({ url }) => ({ hosts: spider.hosts({ search: (url.searchParams.get('q') || '').slice(0, 100), limit: Math.min(500, Number(url.searchParams.get('limit')) || 100) }) }));
 
   route('GET', '/crawler/robots', {}, ({ url }) => {

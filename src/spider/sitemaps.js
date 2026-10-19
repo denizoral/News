@@ -6,7 +6,7 @@ import { XMLParser } from 'fast-xml-parser';
 const parser = new XMLParser({ ignoreAttributes: true, removeNSPrefix: true, processEntities: true });
 const arr = (x) => (x == null ? [] : Array.isArray(x) ? x : [x]);
 
-export function parseSitemap(xml, { maxAgeDays = 7, now = Date.now() } = {}) {
+export function parseSitemap(xml, { maxAgeDays = 7, maxUrls = 300, now = Date.now() } = {}) {
   const doc = parser.parse(xml);
   const cutoff = now - maxAgeDays * 86400e3;
   if (doc.sitemapindex) {
@@ -31,5 +31,5 @@ export function parseSitemap(xml, { maxAgeDays = 7, now = Date.now() } = {}) {
   const dated = urls.filter((u) => u.lastmod).length;
   const kept = dated >= urls.length / 2 ? urls.filter((u) => u.lastmod) : urls;
   kept.sort((a, b) => (b.lastmod || 0) - (a.lastmod || 0));
-  return { kind: 'urlset', sitemaps: [], urls: kept.slice(0, 300) };
+  return { kind: 'urlset', sitemaps: [], urls: kept.slice(0, maxUrls) };
 }

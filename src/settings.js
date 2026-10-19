@@ -36,19 +36,54 @@ const DEFS = [
   { key: 'site.robotsTxt', group: 'site', label: 'robots.txt for this site', help: 'Served at /robots.txt. Tells other crawlers what they may fetch here.', type: 'text', max: 20000, default: DEFAULT_ROBOTS, role: 'admin', validate: validateRobots },
 
   // Crawler
-  { key: 'crawler.enabled', group: 'crawler', label: 'Crawler running', help: 'Pause to stop all page and image fetches. The queue is kept.', type: 'bool', default: env('SPIDER', 'on') !== 'off', role: 'admin' },
-  { key: 'crawler.concurrency', group: 'crawler', label: 'Parallel fetches', help: 'Across all sites. Each site still gets one request at a time.', type: 'int', min: 1, max: 64, default: envNum('SPIDER_CONCURRENCY', SPIDER.concurrency), role: 'admin' },
-  { key: 'crawler.hostDelayMs', group: 'crawler', label: 'Minimum gap per site (ms)', help: "A site's robots.txt Crawl-delay wins when it's longer.", type: 'int', min: 500, max: 120000, default: envNum('SPIDER_HOST_DELAY_MS', SPIDER.hostDelayMs), role: 'admin' },
-  { key: 'crawler.hostDailyBudget', group: 'crawler', label: 'Pages per site per day', type: 'int', min: 10, max: 200000, default: envNum('SPIDER_HOST_BUDGET', SPIDER.hostDailyBudget), role: 'admin' },
-  { key: 'crawler.maxDepth', group: 'crawler', label: 'Link depth', help: 'How many links away from a starting page the crawler may go.', type: 'int', min: 0, max: 8, default: SPIDER.maxDepth, role: 'admin' },
-  { key: 'crawler.followExternal', group: 'crawler', label: 'Follow links to other sites', help: 'One hop out, only when the link is about AI.', type: 'bool', default: true, role: 'admin' },
-  { key: 'crawler.hubRecrawlMin', group: 'crawler', label: 'Recheck starting pages every (min)', type: 'int', min: 1, max: 1440, default: SPIDER.hubRecrawlMin, role: 'admin' },
-  { key: 'crawler.sitemapRecrawlMin', group: 'crawler', label: 'Recheck sitemaps every (min)', type: 'int', min: 5, max: 1440, default: SPIDER.sitemapRecrawlMin, role: 'admin' },
-  { key: 'crawler.imagesPerPage', group: 'crawler', label: 'Images kept per page', type: 'int', min: 0, max: 12, default: SPIDER.imagesPerPage, role: 'admin' },
-  { key: 'crawler.imageConcurrency', group: 'crawler', label: 'Parallel image downloads', type: 'int', min: 0, max: 16, default: SPIDER.imageConcurrency, role: 'admin' },
-  { key: 'crawler.hubs', group: 'crawler', label: 'Starting pages', help: 'One URL per line. Their sites are trusted: the crawler follows any link inside them.', type: 'urls', maxItems: 500, default: SPIDER.hubs, role: 'admin' },
-  { key: 'crawler.skipHosts', group: 'crawler', label: 'Never crawl', help: 'One host per line (subdomains included), or host/path.', type: 'hosts', maxItems: 2000, allowPath: true, default: SPIDER.skipHosts, role: 'admin' },
-  { key: 'crawler.hostRules', group: 'crawler', label: 'Per-site rules', help: 'Stricter rules for specific sites, on top of their robots.txt.', type: 'hostRules', maxItems: 2000, default: [], role: 'admin' },
+  { key: 'crawler.enabled', group: 'crawler', section: 'status', label: 'Crawler running', help: 'Pause to stop all page and image fetches. The queue is kept.', type: 'bool', default: env('SPIDER', 'on') !== 'off', role: 'admin' },
+  { key: 'crawler.concurrency', group: 'crawler', section: 'pace', label: 'Parallel fetches', help: 'Across all sites. Each site still gets one request at a time.', type: 'int', min: 1, max: 64, default: envNum('SPIDER_CONCURRENCY', SPIDER.concurrency), role: 'admin' },
+  { key: 'crawler.hostDelayMs', group: 'crawler', section: 'pace', label: 'Minimum gap per site (ms)', help: "A site's robots.txt Crawl-delay wins when it's longer.", type: 'int', min: 500, max: 120000, default: envNum('SPIDER_HOST_DELAY_MS', SPIDER.hostDelayMs), role: 'admin' },
+  { key: 'crawler.hostDailyBudget', group: 'crawler', section: 'pace', label: 'Pages per site per day', type: 'int', min: 10, max: 200000, default: envNum('SPIDER_HOST_BUDGET', SPIDER.hostDailyBudget), role: 'admin' },
+  { key: 'crawler.maxDepth', group: 'crawler', section: 'discovery', label: 'Link depth', help: 'How many links away from a starting page the crawler may go.', type: 'int', min: 0, max: 8, default: SPIDER.maxDepth, role: 'admin' },
+  { key: 'crawler.followExternal', group: 'crawler', section: 'discovery', label: 'Follow links to other sites', help: 'One hop out, only when the link is about AI.', type: 'bool', default: true, role: 'admin' },
+  { key: 'crawler.hubRecrawlMin', group: 'crawler', section: 'pace', label: 'Recheck starting pages every (min)', type: 'int', min: 1, max: 1440, default: SPIDER.hubRecrawlMin, role: 'admin' },
+  { key: 'crawler.sitemapRecrawlMin', group: 'crawler', section: 'pace', label: 'Recheck sitemaps every (min)', type: 'int', min: 5, max: 1440, default: SPIDER.sitemapRecrawlMin, role: 'admin' },
+  { key: 'crawler.imagesPerPage', group: 'crawler', section: 'indexing', label: 'Images kept per page', type: 'int', min: 0, max: 12, default: SPIDER.imagesPerPage, role: 'admin' },
+  { key: 'crawler.imageConcurrency', group: 'crawler', section: 'fetch', label: 'Parallel image downloads', type: 'int', min: 0, max: 16, default: SPIDER.imageConcurrency, role: 'admin' },
+  { key: 'crawler.hubs', group: 'crawler', section: 'where', label: 'Starting pages', help: 'One URL per line. Their sites are trusted: the crawler follows any link inside them.', type: 'urls', maxItems: 500, default: SPIDER.hubs, role: 'admin' },
+  { key: 'crawler.skipHosts', group: 'crawler', section: 'where', label: 'Never crawl', help: 'One host per line (subdomains included), or host/path.', type: 'hosts', maxItems: 2000, allowPath: true, default: SPIDER.skipHosts, role: 'admin' },
+  { key: 'crawler.hostRules', group: 'crawler', section: 'rules', label: 'Per-site rules', help: 'Rules for specific sites. Blocking, slowing down, page caps and extra blocked paths are on top of robots.txt. Ignoring robots.txt is owner-only and logged.', type: 'hostRules', maxItems: 2000, default: [], role: 'admin', checkRole: hostRulesRole },
+
+  // Crawler: identity
+  { key: 'crawler.botName', group: 'crawler', section: 'identity', label: 'Bot name', help: 'Sent in the User-Agent and matched against robots.txt groups. Letters, digits and dashes.', type: 'string', min: 3, max: 40, default: 'FrontierWireBot', role: 'admin', validate: (v) => (/^[A-Za-z][A-Za-z0-9-]{2,39}$/.test(v) ? null : 'Use 3 to 40 letters, digits or dashes, starting with a letter.') },
+  { key: 'crawler.contactUrl', group: 'crawler', section: 'identity', label: 'Contact URL', help: "Where site owners can learn about the bot or ask you to stop. Shown in the User-Agent.", type: 'url', default: 'https://github.com/denizoral/News', role: 'admin' },
+  { key: 'crawler.acceptLanguage', group: 'crawler', section: 'identity', label: 'Accept-Language header', type: 'string', min: 2, max: 100, default: 'en-US,en;q=0.9', role: 'admin', validate: (v) => (/^[A-Za-z0-9,;=.\- *]+$/.test(v) ? null : 'Use language tags like en-US,en;q=0.9.') },
+
+  // Crawler: fetching
+  { key: 'crawler.timeoutSec', group: 'crawler', section: 'fetch', label: 'Request timeout (seconds)', type: 'int', min: 3, max: 120, default: 20, role: 'admin' },
+  { key: 'crawler.maxPageKb', group: 'crawler', section: 'fetch', label: 'Largest page read (KB)', help: 'Anything longer is cut off at this size.', type: 'int', min: 64, max: 32768, default: 4096, role: 'admin' },
+  { key: 'crawler.maxRedirects', group: 'crawler', section: 'fetch', label: 'Redirects followed', type: 'int', min: 0, max: 10, default: 5, role: 'admin' },
+  { key: 'crawler.maxAttempts', group: 'crawler', section: 'fetch', label: 'Attempts before giving up', help: 'For timeouts and server errors. 404s and 403s are never retried.', type: 'int', min: 1, max: 10, default: 3, role: 'admin' },
+
+  // Crawler: pace and schedule
+  { key: 'crawler.maxPagesPerMinute', group: 'crawler', section: 'pace', label: 'Pages per minute, all sites (0 = no cap)', type: 'int', min: 0, max: 100000, default: 0, role: 'admin' },
+  { key: 'crawler.quietHours', group: 'crawler', section: 'pace', label: 'Quiet hours (UTC)', help: 'No crawling in this window, e.g. 01:00-06:00. Leave empty to crawl around the clock.', type: 'string', max: 11, default: '', role: 'admin', validate: (v) => (!v || /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/.test(v) ? null : 'Use HH:MM-HH:MM in 24-hour UTC, e.g. 01:00-06:00.') },
+  { key: 'crawler.honorCrawlDelay', group: 'crawler', section: 'pace', label: 'Honor Crawl-delay from robots.txt', help: 'When off, only the minimum gap per site applies.', type: 'bool', default: true, role: 'admin' },
+
+  // Crawler: discovery
+  { key: 'crawler.useSitemaps', group: 'crawler', section: 'discovery', label: 'Read sitemaps', help: 'Sitemaps listed in robots.txt of starting sites.', type: 'bool', default: true, role: 'admin' },
+  { key: 'crawler.sitemapMaxAgeDays', group: 'crawler', section: 'discovery', label: 'Sitemap entries newer than (days)', type: 'int', min: 1, max: 3650, default: 7, role: 'admin' },
+  { key: 'crawler.sitemapMaxUrls', group: 'crawler', section: 'discovery', label: 'URLs taken per sitemap', type: 'int', min: 10, max: 50000, default: 300, role: 'admin' },
+  { key: 'crawler.respectNofollow', group: 'crawler', section: 'discovery', label: 'Respect nofollow', help: 'Skip links marked rel=nofollow, sponsored or ugc, and pages with a nofollow meta tag.', type: 'bool', default: true, role: 'admin' },
+  { key: 'crawler.includePatterns', group: 'crawler', section: 'discovery', label: 'Only crawl URLs matching', help: 'One pattern per line, * matches anything, e.g. https://*.example.com/news/*. Empty means everything.', type: 'patterns', maxItems: 500, default: [], role: 'admin' },
+  { key: 'crawler.excludePatterns', group: 'crawler', section: 'discovery', label: 'Never crawl URLs matching', help: 'One pattern per line, e.g. */tag/* or *?page=*.', type: 'patterns', maxItems: 500, default: ['https://job-boards.*', 'https://jobs.*', '*/careers/*', '*/jobs/*', '*/job/*'], role: 'admin' },
+  { key: 'crawler.stripQueryParams', group: 'crawler', section: 'discovery', label: 'Remove these query parameters', help: 'One name per line; * removes every query string. Tracking parameters (utm_*, fbclid…) are always removed.', type: 'words', maxItems: 200, default: [], role: 'admin' },
+  { key: 'crawler.maxQueue', group: 'crawler', section: 'discovery', label: 'Largest queue', help: 'Past this, low-priority links are dropped instead of queued.', type: 'int', min: 1000, max: 50000000, default: 250000, role: 'admin' },
+
+  // Crawler: what gets indexed
+  { key: 'crawler.relevance', group: 'crawler', section: 'indexing', label: 'Index which pages', type: 'enum', options: [['ai', 'Only pages about AI'], ['keywords', 'Only pages with one of the keywords below'], ['all', 'Every article the crawler finds']], default: 'ai', role: 'admin' },
+  { key: 'crawler.includeKeywords', group: 'crawler', section: 'indexing', label: 'Keywords', help: 'One per line. Used when indexing by keywords; otherwise they count as AI terms too.', type: 'words', maxItems: 500, default: [], role: 'admin' },
+  { key: 'crawler.excludeKeywords', group: 'crawler', section: 'indexing', label: 'Skip pages mentioning', help: 'One per line, matched in the title and description.', type: 'words', maxItems: 500, default: [], role: 'admin' },
+  { key: 'crawler.minWords', group: 'crawler', section: 'indexing', label: 'Minimum words', help: 'Shorter pages are not indexed.', type: 'int', min: 0, max: 10000, default: 100, role: 'admin' },
+  { key: 'crawler.maxArticleAgeDays', group: 'crawler', section: 'indexing', label: 'Skip articles older than (days, 0 = any age)', type: 'int', min: 0, max: 36500, default: 0, role: 'admin' },
+  { key: 'crawler.languages', group: 'crawler', section: 'indexing', label: 'Languages', help: 'Two-letter codes, one per line (en, de…). Empty means any language.', type: 'words', maxItems: 50, default: [], role: 'admin', validate: (list) => list.find((l) => !/^[a-z]{2}$/.test(l)) ? 'Use two-letter language codes like en or de.' : null },
+  { key: 'crawler.recrawlHours', group: 'crawler', section: 'indexing', label: 'Recheck fresh articles after (hours, 0 = never)', help: 'Articles from the last 3 days are fetched again to pick up updates and corrections.', type: 'int', min: 0, max: 168, default: 0, role: 'admin' },
 
   // Sources (aggregator)
   ...Object.entries(SCHEDULE).flatMap(([name, sec]) => [
@@ -73,6 +108,39 @@ const DEFS = [
 export const SCHEMA = new Map(DEFS.map((d) => [d.key, d]));
 const ROLE_RANK = { viewer: 0, editor: 1, admin: 2, owner: 3 };
 export const roleAtLeast = (role, min) => (ROLE_RANK[role] ?? -1) >= (ROLE_RANK[min] ?? 99);
+
+// Turning on "ignore robots.txt" for a site is owner-only; other rule edits need admin.
+function hostRulesRole(before, after, role) {
+  if (role === 'owner') return null;
+  const was = new Set((before || []).filter((r) => r.ignoreRobots).map((r) => r.host));
+  const now = new Set(after.filter((r) => r.ignoreRobots).map((r) => r.host));
+  const changed = [...now].some((h) => !was.has(h)) || [...was].some((h) => !now.has(h));
+  return changed ? 'Only owners can change which sites ignore robots.txt.' : null;
+}
+
+// URL patterns: * matches any run of characters; everything else is literal,
+// case-insensitive. Matched with the classic two-pointer wildcard algorithm,
+// O(pattern x URL) at worst; a regex could backtrack exponentially.
+export function compileGlob(pattern) {
+  const p = pattern.toLowerCase();
+  const fn = (input) => {
+    const s = String(input).toLowerCase();
+    let i = 0;
+    let j = 0;
+    let star = -1;
+    let mark = 0;
+    while (i < s.length) {
+      if (j < p.length && p[j] !== '*' && p[j] === s[i]) { i++; j++; }
+      else if (j < p.length && p[j] === '*') { star = j++; mark = i; }
+      else if (star !== -1) { j = star + 1; i = ++mark; }
+      else return false;
+    }
+    while (j < p.length && p[j] === '*') j++;
+    return j === p.length;
+  };
+  fn.source = pattern;
+  return fn;
+}
 
 function validateRobots(text) {
   // Not a full linter: catch obvious mistakes that would block all crawlers by accident or break parsing.
@@ -151,6 +219,26 @@ export function validate(def, input) {
     if (out.length > def.maxItems) return { error: `${def.label} can hold at most ${def.maxItems} entries.` };
     return { value: out };
   }
+  if (t === 'enum') {
+    if (!def.options.some(([k]) => k === input)) return { error: `Choose one of: ${def.options.map(([, l]) => l).join('; ')}.` };
+    return { value: input };
+  }
+  if (t === 'words' || t === 'patterns') {
+    const list = Array.isArray(input) ? input : typeof input === 'string' ? input.split(/\r?\n/) : null;
+    if (!list) return { error: `${def.label} must be a list, one per line.` };
+    const out = [];
+    for (const raw of list.map((x) => String(x).trim()).filter(Boolean)) {
+      const v = t === 'words' ? raw.toLowerCase() : raw;
+      if (v.length > (t === 'words' ? 60 : 300)) return { error: `"${v.slice(0, 40)}…" is too long.` };
+      if (/[\u0000-\u001f\u007f]/.test(v)) return { error: `"${v.slice(0, 40)}" contains control characters.` };
+      if (t === 'patterns' && (v.match(/\*/g) || []).length > 8) return { error: `"${v.slice(0, 60)}" has too many wildcards (at most 8).` };
+      if (!out.includes(v)) out.push(v);
+    }
+    if (out.length > def.maxItems) return { error: `${def.label} can hold at most ${def.maxItems} entries.` };
+    const custom = def.validate?.(out);
+    if (custom) return { error: custom };
+    return { value: out };
+  }
   if (t === 'hostRules') {
     if (!Array.isArray(input)) return { error: `${def.label} must be a list.` };
     if (input.length > def.maxItems) return { error: `${def.label} can hold at most ${def.maxItems} rules.` };
@@ -169,7 +257,7 @@ export function validate(def, input) {
       const disallow = (Array.isArray(r.disallow) ? r.disallow : String(r.disallow || '').split(/\r?\n/)).map((p) => String(p).trim()).filter(Boolean);
       if (disallow.length > 200) return { error: `${host} can have at most 200 blocked paths.` };
       for (const p of disallow) if (!p.startsWith('/') || p.length > 300) return { error: `Blocked paths for ${host} must start with / (got "${p.slice(0, 60)}").` };
-      out.push({ host, blocked: r.blocked === true, minDelayMs, dailyBudget, disallow });
+      out.push({ host, blocked: r.blocked === true, ignoreRobots: r.ignoreRobots === true, minDelayMs, dailyBudget, disallow });
     }
     return { value: out };
   }
@@ -224,6 +312,8 @@ class Settings extends EventEmitter {
       const v = validate(def, input);
       if (v.error) { errors[key] = v.error; continue; }
       const before = this.values.get(key);
+      const roleError = def.checkRole?.(before, v.value, role);
+      if (roleError) { errors[key] = roleError; continue; }
       if (JSON.stringify(before) !== JSON.stringify(v.value)) changes.push({ key, before, after: v.value });
     }
     if (Object.keys(errors).length) return { errors };
@@ -250,7 +340,15 @@ class Settings extends EventEmitter {
       enabled: g('enabled'), concurrency: g('concurrency'), hostDelayMs: g('hostDelayMs'), hostDailyBudget: g('hostDailyBudget'),
       maxDepth: g('maxDepth'), followExternal: g('followExternal'), hubRecrawlMin: g('hubRecrawlMin'), sitemapRecrawlMin: g('sitemapRecrawlMin'),
       imagesPerPage: g('imagesPerPage'), imageConcurrency: g('imageConcurrency'), hubs: g('hubs'), skipHosts: g('skipHosts'),
-      hostRules: new Map(g('hostRules').map((r) => [r.host, r])), maxPageBytes: SPIDER.maxPageBytes,
+      hostRules: new Map(g('hostRules').map((r) => [r.host, r])),
+      botName: g('botName'), contactUrl: g('contactUrl'), acceptLanguage: g('acceptLanguage'),
+      timeoutMs: g('timeoutSec') * 1000, maxPageBytes: g('maxPageKb') * 1024, maxRedirects: g('maxRedirects'), maxAttempts: g('maxAttempts'),
+      maxPagesPerMinute: g('maxPagesPerMinute'), quietHours: g('quietHours'), honorCrawlDelay: g('honorCrawlDelay'),
+      useSitemaps: g('useSitemaps'), sitemapMaxAgeDays: g('sitemapMaxAgeDays'), sitemapMaxUrls: g('sitemapMaxUrls'), respectNofollow: g('respectNofollow'),
+      includePatterns: g('includePatterns').map(compileGlob), excludePatterns: g('excludePatterns').map(compileGlob),
+      stripQueryParams: g('stripQueryParams'), maxQueue: g('maxQueue'),
+      relevance: g('relevance'), includeKeywords: g('includeKeywords'), excludeKeywords: g('excludeKeywords'), minWords: g('minWords'),
+      maxArticleAgeDays: g('maxArticleAgeDays'), languages: g('languages'), recrawlHours: g('recrawlHours'),
     };
   }
 

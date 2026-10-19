@@ -282,7 +282,11 @@ async function route() {
   const item = NAV.find(([k, , p]) => k === v && (!p || can(p)));
   S.view = item ? v : 'overview';
   $$('[data-nav]').forEach((a) => (a.dataset.nav === S.view ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
-  const el = $('#view');
+  // A fresh container per visit: views attach listeners to it, and reusing the
+  // old one would stack them (one click firing an action twice).
+  const old = $('#view');
+  const el = old.cloneNode(false);
+  old.replaceWith(el);
   el.innerHTML = '<p class="muted">Loading…</p>';
   try {
     await VIEWS[S.view](el);
@@ -574,21 +578,108 @@ const VIEWS = {
     await loadSettings();
     const r = await api('GET', '/sources');
     const writable = can('sources:write');
-    el.innerHTML = `<div class="page-head"><div><h1>Sources</h1><p>The feeds and APIs behind the live front page, how often each runs, and whether it's working.</p></div></div>
-      <section class="card"><div class="table-wrap"><table><thead><tr><th>Source</th><th>Status</th><th>Items</th><th>Last run</th><th></th></tr></thead><tbody>
-        ${r.sources.map((s) => `<tr><td><b>${esc(s.name)}</b>${s.status?.strategy ? `<span class="sub">via ${esc(s.status.strategy)}</span>` : ''}</td>
-          <td>${!s.enabled ? '<span class="pill">off</span>' : !s.status ? '<span class="pill">waiting</span>' : s.status.ok ? '<span class="pill ok">working</span>' : `<span class="pill bad">failing</span><span class="sub">${esc((s.status.error || '').slice(0, 140))}</span>`}</td>
-          <td class="num">${fmt(s.status?.count)}</td><td class="num muted">${ago(s.status?.lastRun)}</td>
-          <td>${writable && s.enabled ? `<button class="btn small" data-run="${esc(s.name)}">Run now</button>` : ''}</td></tr>`).join('')}
-      </tbody></table></div></section><div id="srcForm"></div>`;
-    settingsForm($('#srcForm'), group('sources'), { title: 'Schedule', intro: 'Turn sources on or off and set how often each one runs. Faster isn\'t always better: many sources rate-limit aggressive clients.' });
-    el.addEventListener('click', async (e) => {
+    const def = (name, k) => S.settings.find((d) => d.key === `sources.${name}.${k}`);
+    const label = (name) => (def(name, 'enabled')?.label || name).replace(/: enabled$/, '');
+    const every = (sec) => (sec < 60 ? `${sec} s` : sec < 3600 ? `${+(sec / 60).toFixed(1)} min` : `${+(sec / 3600).toFixed(1)} h`);
+    const statusCell = (s, enabled) => !enabled ? '<span class="pill">off</span>'
+      : s?.paused ? '<span class="pill">off</span>'
+      : !s?.lastRun ? '<span class="pill">waiting for first run</span>'
+      : s.ok ? '<span class="pill ok">working</span>'
+      : `<span class="pill bad">failing</span><span class="sub" title="${esc(s.error || '')}">${esc((s.error || '').slice(0, 120))}</span>`;
+    const original = Object.fromEntries(r.sources.map((s) => [s.name, { enabled: s.enabled, intervalSec: s.intervalSec }]));
+    const min = def(r.sources[0]?.name, 'intervalSec')?.min ?? 30;
+    const max = def(r.sources[0]?.name, 'intervalSec')?.max ?? 86400;
+
+    el.innerHTML = `<div class="page-head"><div><h1>Sources</h1><p>The feeds and APIs behind the live front page: whether each one is on, how often it runs, and whether it's working.</p></div></div>
+      <section class="card" id="srcCard">
+        <div class="table-wrap"><table class="sources-table"><thead><tr>
+          <th>Source</th><th>Status</th><th class="num">Items</th><th>Last run</th><th>On</th><th>Runs every</th><th></th>
+        </tr></thead><tbody>
+        ${r.sources.map((s) => `<tr data-src="${esc(s.name)}">
+          <td class="c-name"><b>${esc(label(s.name))}</b>${s.status?.strategy ? `<span class="sub">via ${esc(s.status.strategy)}</span>` : ''}</td>
+          <td class="c-status" data-cell="status">${statusCell(s.status, s.enabled)}</td>
+          <td class="c-count num" data-cell="count" data-label="Items">${s.status?.lastRun ? fmt(s.status.count) : '—'}</td>
+          <td class="c-last num muted" data-cell="last" data-label="Last run">${s.status?.lastRun ? ago(s.status.lastRun) : '—'}</td>
+          <td class="c-on"><label class="toggle"><input type="checkbox" data-f="enabled" ${s.enabled ? 'checked' : ''} ${writable ? '' : 'disabled'} aria-label="${esc(label(s.name))} on"><span class="mobile-only">On</span></label></td>
+          <td class="c-every"><div class="interval"><input type="number" data-f="intervalSec" value="${s.intervalSec}" min="${min}" max="${max}" step="1" ${writable ? '' : 'disabled'} aria-label="${esc(label(s.name))}: seconds between runs"><span class="muted small">s</span><span class="muted small" data-hint>${every(s.intervalSec)}</span></div>
+            <span class="field-error"></span></td>
+          <td class="c-run">${writable ? `<button class="btn small" data-run="${esc(s.name)}" ${s.enabled ? '' : 'disabled'}>Run now</button>` : ''}</td>
+        </tr>`).join('')}
+        </tbody></table></div>
+        <p class="help" style="margin-top:12px">Intervals are in seconds, from ${fmt(min)} to ${fmt(max)}. Faster isn't always better: many sources rate-limit clients that poll too often.</p>
+        ${writable ? '<div class="form-actions"><button class="btn primary" data-save disabled>Save changes</button><button class="btn" data-reset disabled>Discard</button><span class="muted small" data-status></span></div>' : ''}
+      </section>`;
+
+    const card = $('#srcCard', el);
+    const rows = () => $$('[data-src]', card);
+    const read = (row) => ({ enabled: $('[data-f=enabled]', row).checked, intervalSec: Number($('[data-f=intervalSec]', row).value) });
+    const changes = () => {
+      const patch = {};
+      for (const row of rows()) {
+        const name = row.dataset.src;
+        const now = read(row);
+        if (now.enabled !== original[name].enabled) patch[`sources.${name}.enabled`] = now.enabled;
+        if (now.intervalSec !== original[name].intervalSec) patch[`sources.${name}.intervalSec`] = now.intervalSec;
+      }
+      return patch;
+    };
+    const refresh = () => {
+      for (const row of rows()) {
+        const v = read(row);
+        const o = original[row.dataset.src];
+        row.classList.toggle('changed', v.enabled !== o.enabled || v.intervalSec !== o.intervalSec);
+        $('[data-hint]', row).textContent = Number.isFinite(v.intervalSec) && v.intervalSec > 0 ? every(v.intervalSec) : '';
+      }
+      const n = Object.keys(changes()).length;
+      if (!writable) return;
+      $('[data-save]', card).disabled = $('[data-reset]', card).disabled = !n;
+      $('[data-status]', card).textContent = n ? `${n} unsaved ${n === 1 ? 'change' : 'changes'}` : '';
+    };
+    card.addEventListener('input', refresh);
+    card.addEventListener('change', refresh);
+
+    $('[data-reset]', card)?.addEventListener('click', () => route());
+    $('[data-save]', card)?.addEventListener('click', async () => {
+      const patch = changes();
+      $$('.field-error', card).forEach((f) => (f.textContent = ''));
+      rows().forEach((row) => row.classList.remove('invalid'));
+      $('[data-save]', card).disabled = true;
+      try {
+        const res = await api('PATCH', '/settings', patch);
+        S.settings = res.settings;
+        toast(`Saved ${res.changed.length} ${res.changed.length === 1 ? 'change' : 'changes'}.`);
+        route();
+      } catch (err) {
+        for (const [key, msg] of Object.entries(err.body?.fields || {})) {
+          const row = $(`[data-src="${CSS.escape(key.split('.')[1])}"]`, card);
+          // The server's message repeats the source name; the row already shows it.
+          if (row) { row.classList.add('invalid'); $('.field-error', row).textContent = /intervalSec$/.test(key) ? `Use ${fmt(min)} to ${fmt(max)} seconds.` : msg; }
+        }
+        toast(err.message, 'bad');
+        refresh();
+      }
+    });
+
+    card.addEventListener('click', async (e) => {
       const b = e.target.closest('[data-run]');
       if (!b) return;
+      const name = b.dataset.run;
       b.disabled = true;
       b.textContent = 'Running…';
-      await act(() => api('POST', `/sources/${encodeURIComponent(b.dataset.run)}/run`, {}), (x) => `${b.dataset.run}: ${x.status?.ok ? `${fmt(x.status.count)} items` : 'failed'}`).catch(() => {});
-      route();
+      try {
+        const x = await api('POST', `/sources/${encodeURIComponent(name)}/run`, {});
+        // Update this row in place so unsaved schedule edits aren't lost.
+        const row = $(`[data-src="${CSS.escape(name)}"]`, card);
+        $('[data-cell=status]', row).innerHTML = statusCell(x.status, true);
+        $('[data-cell=count]', row).textContent = fmt(x.status?.count);
+        $('[data-cell=last]', row).textContent = ago(x.status?.lastRun);
+        toast(`${label(name)}: ${x.status?.ok ? `${fmt(x.status.count)} items` : 'failed'}`, x.status?.ok ? '' : 'bad');
+      } catch (err) {
+        if (err.status !== 401) toast(err.message, 'bad');
+      } finally {
+        b.disabled = false;
+        b.textContent = 'Run now';
+      }
     });
   },
 

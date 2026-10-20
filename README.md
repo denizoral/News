@@ -333,8 +333,8 @@ Keyboard: `/` search (arrow keys pick a suggestion), `j`/`k` move between storie
 
 The Tech tab is filled by `src/sources/tech.js`: general tech feeds and the
 Hacker News front page, minus anything the AI filter claims, sorted by a local
-zero-shot classifier (`classifier/server.py`, GLiClass base, CPU, about 1 GB of
-RAM and ~100 ms per headline). Only unseen items are classified.
+zero-shot classifier (`classifier/server.py`, GLiClass large, CPU, about 2.5 GB
+of RAM and ~200 ms per headline). Only unseen items are classified.
 
     python3 -m venv /opt/wire-classifier/venv
     /opt/wire-classifier/venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu

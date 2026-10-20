@@ -43,6 +43,13 @@ async function classify(items) {
 
 export const isTech = (v) => !!v && TECH.has(v.label) && v.score >= minScore;
 
+// The model often prefers the catch-all "technology"; a specific tech label
+// close behind it makes a better topic.
+export function topicOf(v) {
+  const specific = (v.top || [v]).find((t) => t.label !== 'technology' && TECH.has(t.label) && t.score >= 0.5);
+  return TECH_TOPIC[specific?.label || v.label] || 'General';
+}
+
 async function fromFeeds() {
   const { results, errors } = await pool(TECH_FEEDS, 6, async (feed) =>
     parseFeed(await getText(feed.url)).filter((e) => e.title && e.url).slice(0, 30).map((e) => ({
@@ -106,7 +113,7 @@ export async function fetchTech() {
 
   const items = candidates
     .filter((i) => isTech(verdicts.get(i.id)))
-    .map((i) => ({ ...i, id: `tech:${i.id}`, section: 'tech', topic: TECH_TOPIC[verdicts.get(i.id).label] || 'General' }));
+    .map((i) => ({ ...i, id: `tech:${i.id}`, section: 'tech', topic: topicOf(verdicts.get(i.id)) }));
   techStatus.kept = items.length;
   return { items, errors };
 }

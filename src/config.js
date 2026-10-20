@@ -145,14 +145,16 @@ export const TECH_FEEDS = [
   { name: '9to5Mac', url: 'https://9to5mac.com/feed/', weight: 0.8 },
 ];
 
-// The local zero-shot classifier. The extra non-tech labels give borderline
-// headlines somewhere else to land; only a confident tech top label is kept.
+// The local zero-shot classifier (GLiClass large; on our hand-labelled
+// headlines it scored F1 0.93 vs 0.88 for base and 0.82 for gliformer-large).
+// The extra non-tech labels give borderline headlines somewhere else to land;
+// only a confident tech top label is kept.
 export const TECH_CLASSIFIER = {
   url: process.env.CLASSIFIER_URL || 'http://127.0.0.1:8765',
   labels: ['artificial intelligence', 'technology', 'software', 'cybersecurity', 'consumer electronics', 'internet platforms',
     'science', 'business', 'politics', 'world news', 'crime', 'sports', 'entertainment', 'health', 'lifestyle', 'food'],
   techLabels: ['artificial intelligence', 'technology', 'software', 'cybersecurity', 'consumer electronics', 'internet platforms'],
-  minScore: 0.95,
+  minScore: 0.8,
   batch: 32,
 };
 

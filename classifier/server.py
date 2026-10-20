@@ -3,7 +3,7 @@
 A small local HTTP service around a GLiClass model (CPU). The Node crawler
 POSTs batches of headlines to /classify and gets each one's best label back.
 
-  POST /classify  {"texts": [...], "labels": [...]}  ->  {"results": [{"label", "score"}], "ms"}
+  POST /classify  {"texts": [...], "labels": [...]}  ->  {"results": [{"label", "score", "top": [3 best]}], "ms"}
   GET  /health                                        ->  {"ok", "model", "classified", "avgMs"}
 
 Run: venv/bin/python classifier/server.py  (CLASSIFIER_PORT, CLASSIFIER_MODEL, CLASSIFIER_THREADS)
@@ -22,7 +22,7 @@ import torch  # noqa: E402
 from gliclass import GLiClassModel, ZeroShotClassificationPipeline  # noqa: E402
 from transformers import AutoTokenizer  # noqa: E402
 
-MODEL = os.environ.get("CLASSIFIER_MODEL", "knowledgator/gliclass-base-v3.0")
+MODEL = os.environ.get("CLASSIFIER_MODEL", "knowledgator/gliclass-large-v3.0")
 PORT = int(os.environ.get("CLASSIFIER_PORT", "8765"))
 MAX_TEXTS = 64
 MAX_CHARS = 400
@@ -40,8 +40,9 @@ def classify(texts, labels):
         out = pipe([t[:MAX_CHARS] for t in texts], labels, threshold=0.0, batch_size=16)
     best = []
     for r in out:
-        top = max(r, key=lambda x: x["score"], default=None)
-        best.append({"label": top["label"], "score": round(float(top["score"]), 4)} if top else None)
+        ranked = sorted(r, key=lambda x: -x["score"])[:3]
+        top = [{"label": x["label"], "score": round(float(x["score"]), 4)} for x in ranked]
+        best.append({**top[0], "top": top} if top else None)
     return best
 
 

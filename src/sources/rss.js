@@ -1,5 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
-import { getText, pool } from '../http.js';
+import { getTextCached as getText, pool } from '../http.js';
 import { RSS_FEEDS, GOOGLE_NEWS_QUERIES, SCRAPED_PAGES } from '../config.js';
 import { stripHtml, clip, decodeEntities, splitOutlet } from '../pipeline/text.js';
 import { isAiRelated } from '../pipeline/classify.js';
@@ -62,13 +62,43 @@ export function parseFeed(xml) {
       image: imageOf(e, decodeEntities(rawSummary)),
       source: stripHtml(text(e.source)),
       sourceUrl: e.source?.['@url'] || null,
+      category: arr(e.category).map((c) => (typeof c === 'object' ? c['@term'] || text(c) : String(c)))[0] || '',
     };
   });
 }
 
+// When a publisher blocks us (403/429/Cloudflare) or its feed breaks, its
+// recent articles are still listed by Google News: query `site:<host>` and
+// keep the source name, so the outlet doesn't vanish from the wire.
+export function siteOf(url) {
+  return new URL(url).hostname.replace(/^www\./, '');
+}
+
+export async function googleNewsForSite(site, { days = 3, aiOnly = false } = {}) {
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(`site:${site} when:${days}d`)}&hl=en-US&gl=US&ceid=US:en`;
+  return parseFeed(await getText(url))
+    .map((e) => ({ ...e, title: splitOutlet(e.title).title }))
+    .filter((e) => e.title && e.url)
+    .filter((e) => !aiOnly || isAiRelated(e.title))
+    .slice(0, 20);
+}
+
+async function withSiteFallback(primary, site, opts) {
+  try {
+    const entries = await primary();
+    if (entries.length) return { entries, via: null };
+  } catch (err) {
+    const fb = await googleNewsForSite(site, opts).catch(() => []);
+    if (!fb.length) throw err;
+    return { entries: fb, via: 'Google News' };
+  }
+  return { entries: [], via: null };
+}
+
 export async function fetchFeeds() {
   const { results, errors } = await pool(RSS_FEEDS, 8, async (feed) => {
-    const entries = parseFeed(await getText(feed.url));
+    const site = feed.site || siteOf(feed.url);
+    const { entries, via } = await withSiteFallback(async () => parseFeed(await getText(feed.url)), site, { aiOnly: feed.aiOnly || feed.topical });
     return entries
       .filter((e) => e.title && e.url)
       .filter((e) => !feed.aiOnly || isAiRelated(`${e.title} ${e.summary}`))
@@ -85,6 +115,7 @@ export async function fetchFeeds() {
         kind: feed.kind,
         platform: 'web',
         weight: feed.weight,
+        ...(via ? { via, sourceHost: site } : {}),
       }));
   });
   return { items: results.flat(), errors };
@@ -119,7 +150,27 @@ export async function fetchGoogleNews() {
 // Lab pages without feeds: pull article links plus the nearest heading text.
 export async function fetchScraped() {
   const { results, errors } = await pool(SCRAPED_PAGES, 4, async (page) => {
-    const html = await getText(page.url);
+    let html;
+    try {
+      html = await getText(page.url);
+    } catch (err) {
+      const site = page.site || siteOf(page.url);
+      const fb = await googleNewsForSite(site, { days: 14 }).catch(() => []);
+      if (!fb.length) throw err;
+      return fb.slice(0, 15).map((e) => ({
+        id: `page:gn:${e.url}`,
+        url: e.url,
+        title: e.title,
+        summary: '',
+        publishedAt: e.publishedAt,
+        source: page.name,
+        via: 'Google News',
+        sourceHost: site,
+        kind: page.kind,
+        platform: 'web',
+        weight: page.weight,
+      }));
+    }
     const seen = new Set();
     const items = [];
     for (const m of html.matchAll(page.link)) {

@@ -44,10 +44,14 @@ export class Store extends EventEmitter {
   ingest(sourceName, items) {
     const now = Date.now();
     const firstRun = !this.bootstrapped.has(sourceName);
+    // News older than the retention window would only be pruned again on the
+    // next sweep (and counted as "new" every run until then); skip it here.
+    const cutoff = now - settings.get('storage.feedRetentionHours') * 3600e3;
     let added = 0;
     for (const it of items) {
       if (!it?.id || !it.title) continue;
       const prev = this.items.get(it.id);
+      if (!prev && (it.section || 'news') === 'news' && it.publishedAt && !it.undated && it.publishedAt < cutoff) continue;
       if (prev) {
         // Keep the first-seen time; refresh engagement and text.
         this.items.set(it.id, { ...prev, ...it, firstSeen: prev.firstSeen, lastSeen: now, publishedAt: prev.publishedAt || it.publishedAt });

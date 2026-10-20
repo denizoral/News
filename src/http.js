@@ -48,7 +48,7 @@ export async function get(url, { timeout = 15000, headers = {}, retries = 1, pub
       if (cooldown && (res.status === 429 || res.status === 503)) {
         hostCooldown.set(host, Date.now() + Math.min(retryAfter ?? 120, 900) * 1000);
       }
-      if (!res.ok) {
+      if (!res.ok && res.status !== 304) {
         await res.body?.cancel().catch(() => {});
         throw new HttpError(res.status, url, retryAfter);
       }
@@ -79,6 +79,39 @@ async function fetchPublic(url, init, maxRedirects = 5) {
 }
 
 export const getText = async (url, opts) => (await get(url, opts)).text();
+
+// Conditional GET for documents polled on a timer (feeds, listing pages): send
+// the last ETag / Last-Modified and reuse the stored body on 304, so an
+// unchanged feed costs the publisher a few hundred bytes instead of the whole
+// document. Bounded; the oldest entry is evicted first.
+const condCache = new Map();
+const COND_CACHE_MAX = 300;
+export const conditionalStats = { hits: 0, misses: 0 };
+
+export async function getTextCached(url, opts = {}) {
+  const prev = condCache.get(url);
+  const headers = { ...(opts.headers || {}) };
+  if (prev?.etag) headers['if-none-match'] = prev.etag;
+  if (prev?.lastModified) headers['if-modified-since'] = prev.lastModified;
+  const res = await get(url, { ...opts, headers });
+  if (res.status === 304 && prev) {
+    await res.body?.cancel().catch(() => {});
+    conditionalStats.hits++;
+    condCache.delete(url);
+    condCache.set(url, prev);
+    return prev.body;
+  }
+  const body = await res.text();
+  conditionalStats.misses++;
+  const etag = res.headers.get('etag');
+  const lastModified = res.headers.get('last-modified');
+  condCache.delete(url);
+  if (etag || lastModified) {
+    condCache.set(url, { etag, lastModified, body });
+    if (condCache.size > COND_CACHE_MAX) condCache.delete(condCache.keys().next().value);
+  }
+  return body;
+}
 export const getJSON = async (url, opts) =>
   (await get(url, { ...opts, headers: { accept: 'application/json', ...(opts?.headers || {}) } })).json();
 

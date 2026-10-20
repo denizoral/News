@@ -82,48 +82,72 @@ async function redditAuth() {
   return redditToken.value;
 }
 
-async function subreddit(name, listing, limit) {
+// Anonymous JSON is refused from many networks; once it is, go straight to RSS
+// for a while instead of spending a request on it every time.
+let redditJsonBlockedUntil = 0;
+
+async function subreddit(subs, listing, limit) {
+  const name = subs.join('+');
   const token = await redditAuth().catch(() => null);
   if (token) {
     const json = await getJSON(`https://oauth.reddit.com/r/${name}/${listing}?limit=${limit}&raw_json=1`, { headers: { authorization: `Bearer ${token}`, 'user-agent': 'frontier-wire/0.1' } });
     return json.data.children.filter((c) => !c.data.stickied && !c.data.over_18);
   }
-  try {
-    const res = await get(`https://www.reddit.com/r/${name}/${listing}.json?limit=${limit}&raw_json=1`, { headers: { accept: 'application/json' }, retries: 0 });
-    if (/\/login/.test(res.url)) throw new Error('reddit requires login from this network');
-    const json = await res.json();
-    return json.data.children.filter((c) => !c.data.stickied && !c.data.over_18);
-  } catch (err) {
-    // RSS has no scores, so treat every entry as passing the score bar.
-    const entries = parseFeed(await getText(`https://www.reddit.com/r/${name}/${listing === 'new' ? 'new' : 'top'}/.rss?t=day&limit=${limit}`));
-    if (!entries.length) throw err;
-    return entries.map((e) => {
-      const id = e.url.match(/comments\/(\w+)/)?.[1] || e.url;
-      const ext = e.summaryHtml?.match(/<a href="([^"]+)">\[link\]<\/a>/)?.[1];
-      return { data: { id, title: e.title, permalink: new URL(e.url).pathname, url: ext || e.url, selftext: stripHtml(e.summaryHtml || '').replace(/submitted by .*$/, ''), author: e.author?.replace(/^\/u\//, ''), created_utc: (e.publishedAt || Date.now()) / 1000, subreddit: name, score: 20, num_comments: 0 } };
-    });
+  let jsonErr = new Error('reddit JSON skipped');
+  if (redditJsonBlockedUntil < Date.now()) {
+    try {
+      const res = await get(`https://www.reddit.com/r/${name}/${listing}.json?limit=${limit}&raw_json=1`, { headers: { accept: 'application/json' }, retries: 0, cooldown: false });
+      if (/\/login/.test(res.url)) throw new Error('reddit requires login from this network');
+      const json = await res.json();
+      return json.data.children.filter((c) => !c.data.stickied && !c.data.over_18);
+    } catch (err) {
+      jsonErr = err;
+      if (err.status === 403 || /login/.test(err.message)) redditJsonBlockedUntil = Date.now() + 30 * 60e3;
+    }
   }
+  // RSS has no scores, so treat every entry as passing the score bar.
+  const entries = parseFeed(await getText(`https://www.reddit.com/r/${name}/${listing === 'new' ? 'new' : 'top'}/.rss?t=day&limit=${limit}`));
+  if (!entries.length) throw jsonErr;
+  return entries.map((e) => {
+    const id = e.url.match(/comments\/(\w+)/)?.[1] || e.url;
+    const ext = e.summaryHtml?.match(/<a href="([^"]+)">\[link\]<\/a>/)?.[1];
+    const sub = e.category || e.url.match(/\/r\/([^/]+)/)?.[1] || subs[0];
+    return { data: { id, title: e.title, permalink: new URL(e.url).pathname, url: ext || e.url, selftext: stripHtml(e.summaryHtml || '').replace(/submitted by .*$/, ''), author: e.author?.replace(/^\/u\//, ''), created_utc: (e.publishedAt || Date.now()) / 1000, subreddit: sub, score: 20, num_comments: 0 } };
+  });
+}
+
+const REDDIT_BUILD_SUBS = new Set(['vibecoding', 'ClaudeAI', 'LocalLLaMA', 'ChatGPTCoding', 'cursor', 'AI_Agents']);
+
+function keepRedditItem(i, listing, section) {
+  const text = `${i.title} ${i.summary} ${i.flair || ''}`;
+  if (section === 'builds') {
+    const flairBuild = /showcase|project|built|show|launch|resource|tool/i.test(i.flair || '');
+    return (flairBuild || looksLikeBuild(text)) && (isAiRelated(text) || REDDIT_BUILD_SUBS.has(i.source.slice(2)));
+  }
+  if (listing === 'new' && i.engagement.score < 5) return false;
+  return i.engagement.score >= 15 || listing === 'new';
+}
+
+// Subreddits per combined listing. Reddit serves /r/a+b+c as one listing, so
+// a run costs a handful of requests instead of one per subreddit, which keeps
+// anonymous clients clear of its 429s.
+const MULTI_CHUNK = 5;
+
+export function redditJobs({ oauth = false } = {}) {
+  const chunk = (subs) => (oauth ? subs.map((s) => [s]) : Array.from({ length: Math.ceil(subs.length / MULTI_CHUNK) }, (_, i) => subs.slice(i * MULTI_CHUNK, (i + 1) * MULTI_CHUNK)));
+  return [
+    ...chunk(SUBREDDITS.news).map((subs) => ({ subs, listing: 'hot', section: 'news' })),
+    ...chunk(SUBREDDITS.news.slice(0, 4)).map((subs) => ({ subs, listing: 'new', section: 'news' })),
+    ...chunk(SUBREDDITS.builds).map((subs) => ({ subs, listing: 'hot', section: 'builds' })),
+  ];
 }
 
 export async function fetchReddit() {
-  const jobs = [
-    ...SUBREDDITS.news.map((s) => ({ s, listing: 'hot', section: 'news' })),
-    ...SUBREDDITS.news.slice(0, 4).map((s) => ({ s, listing: 'new', section: 'news' })),
-    ...SUBREDDITS.builds.map((s) => ({ s, listing: 'hot', section: 'builds' })),
-  ];
-  const { results, errors } = await pool(jobs, 4, async ({ s, listing, section }) => {
-    const posts = await subreddit(s, listing, 40);
-    return posts
-      .map((p) => redditItem(p, section))
-      .filter((i) => {
-        const text = `${i.title} ${i.summary} ${i.flair || ''}`;
-        if (section === 'builds') {
-          const flairBuild = /showcase|project|built|show|launch|resource|tool/i.test(i.flair || '');
-          return (flairBuild || looksLikeBuild(text)) && (isAiRelated(text) || ['vibecoding', 'ClaudeAI', 'LocalLLaMA', 'ChatGPTCoding', 'cursor', 'AI_Agents'].includes(s));
-        }
-        if (listing === 'new' && i.engagement.score < 5) return false;
-        return i.engagement.score >= 15 || listing === 'new';
-      });
+  const oauth = Boolean(await redditAuth().catch(() => null));
+  const jobs = redditJobs({ oauth });
+  const { results, errors } = await pool(jobs, oauth ? 4 : 2, async ({ subs, listing, section }) => {
+    const posts = await subreddit(subs, listing, oauth ? 40 : 100);
+    return posts.map((p) => redditItem(p, section)).filter((i) => keepRedditItem(i, listing, section));
   });
   return { items: results.flat(), errors };
 }

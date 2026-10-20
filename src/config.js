@@ -82,12 +82,12 @@ export const RSS_FEEDS = [
   { name: 'Ars Technica', url: 'https://arstechnica.com/ai/feed/', kind: 'press', weight: 1.2 },
   { name: 'MIT Tech Review', url: 'https://www.technologyreview.com/topic/artificial-intelligence/feed', kind: 'press', weight: 1.2 },
   { name: 'Wired', url: 'https://www.wired.com/feed/tag/ai/latest/rss', kind: 'press', weight: 1.1 },
-  { name: 'VentureBeat', url: 'https://venturebeat.com/category/ai/feed/', kind: 'press', weight: 1.0 },
+  { name: 'VentureBeat', url: 'https://venturebeat.com/category/ai/feed/', kind: 'press', weight: 1.0, topical: true },
   { name: 'The Decoder', url: 'https://the-decoder.com/feed/', kind: 'press', weight: 1.1 },
   { name: '404 Media', url: 'https://www.404media.co/rss/', kind: 'press', weight: 0.9, aiOnly: true },
   { name: 'MarkTechPost', url: 'https://www.marktechpost.com/feed/', kind: 'press', weight: 0.7 },
   { name: 'Engadget', url: 'https://www.engadget.com/rss.xml', kind: 'press', weight: 0.9, aiOnly: true },
-  { name: 'CNBC Tech', url: 'https://www.cnbc.com/id/19854910/device/rss/rss.html', kind: 'press', weight: 1.0, aiOnly: true },
+  { name: 'CNBC Tech', url: 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=19854910', site: 'cnbc.com', kind: 'press', weight: 1.0, aiOnly: true },
 
   // Newsletters and analysts
   { name: 'Simon Willison', url: 'https://simonwillison.net/atom/everything/', kind: 'analysis', weight: 1.1 },

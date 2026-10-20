@@ -68,6 +68,65 @@ function highlight(text) {
   return t.replace(re, '<mark>$1</mark>');
 }
 
+// ---------- DOM patching ----------
+// Live updates re-render whole sections. Swapping innerHTML would rebuild every
+// node, so images reload and the page flashes each time a source finishes.
+// setHtml() diffs instead: nodes whose markup is unchanged stay put, elements
+// that changed are patched in place, and only genuinely new nodes are inserted.
+// Relative times are ignored when comparing; a timer keeps them current.
+
+const TIME_TEXT = /(<time\b[^>]*>)[^<]*/g;
+const sig = (n) => (n.nodeType === 1 ? n.outerHTML.replace(TIME_TEXT, '$1') : n.nodeType === 3 ? `#${n.data}` : '#');
+const keyOf = (n) => (n.nodeType === 1 ? n.getAttribute('data-id') : null);
+
+function morph(old, next) {
+  if (old.nodeType !== 1) {
+    if (old.data !== next.data) old.data = next.data;
+    return;
+  }
+  for (const { name } of [...old.attributes]) if (!next.hasAttribute(name)) old.removeAttribute(name);
+  for (const { name, value } of next.attributes) if (old.getAttribute(name) !== value) old.setAttribute(name, value);
+  if (old.tagName === 'TIME') return;
+  morphChildren(old, next);
+}
+
+function morphChildren(parent, next) {
+  const olds = [...parent.childNodes];
+  const bySig = new Map();
+  for (const o of olds) {
+    const k = sig(o);
+    bySig.has(k) ? bySig.get(k).push(o) : bySig.set(k, [o]);
+  }
+  const used = new Set();
+  const take = (o) => (used.add(o), o);
+  const result = [...next.childNodes].map((n, i) => {
+    const same = bySig.get(sig(n))?.find((o) => !used.has(o));
+    if (same) return take(same);
+    const key = keyOf(n);
+    const match = key != null
+      ? olds.find((o) => !used.has(o) && keyOf(o) === key && o.tagName === n.tagName)
+      : olds[i] && !used.has(olds[i]) && olds[i].nodeType === n.nodeType && olds[i].nodeName === n.nodeName && keyOf(olds[i]) == null ? olds[i] : null;
+    if (match) {
+      morph(match, n);
+      return take(match);
+    }
+    return n;
+  });
+  // Move only what's out of place, so untouched nodes keep running animations.
+  result.forEach((n, i) => {
+    if (parent.childNodes[i] !== n) parent.insertBefore(n, parent.childNodes[i] || null);
+  });
+  while (parent.childNodes.length > result.length) parent.lastChild.remove();
+}
+
+function setHtml(el, html) {
+  if (!el || el._html === html) return;
+  el._html = html;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  morphChildren(el, tpl.content);
+}
+
 // ---------- Search engine ----------
 // Created after the helpers below are defined (function declarations hoist).
 let searchUi = null;
@@ -109,7 +168,7 @@ async function refresh({ force = false } = {}) {
     setLive('on');
   } catch (e) {
     setLive('off');
-    if (!state.data) $('#river').innerHTML = `<p class="empty">Couldn't load the feed. ${esc(e.message)}. Check that the server is running, then reload.</p>`;
+    if (!state.data) setHtml($('#river'), `<p class="empty">Couldn't load the feed. ${esc(e.message)}. Check that the server is running, then reload.</p>`);
   }
 }
 
@@ -301,10 +360,10 @@ function renderChips() {
   const counts = {};
   for (const s of stories) for (const t of s.topics) counts[t] = (counts[t] || 0) + 1;
   const topics = ['All', ...Object.keys(counts).sort((a, b) => counts[b] - counts[a])];
-  $('#topicChips').innerHTML = topics.map((t) =>
-    `<button class="chip" type="button" data-topic="${esc(t)}" aria-pressed="${state.topic === t}">${esc(t)}${t !== 'All' ? `<span class="n">${counts[t]}</span>` : ''}</button>`).join('');
-  $('#sortSeg').innerHTML = [['top', 'Top'], ['latest', 'Latest']].map(([k, l]) => `<button type="button" data-sort="${k}" aria-pressed="${state.sort === k}">${l}</button>`).join('');
-  $('#kindChips').innerHTML = KINDS.map(([k, l]) => `<button class="chip" type="button" data-kind="${k}" aria-pressed="${state.kind === k}">${l}</button>`).join('');
+  setHtml($('#topicChips'), topics.map((t) =>
+    `<button class="chip" type="button" data-topic="${esc(t)}" aria-pressed="${state.topic === t}">${esc(t)}${t !== 'All' ? `<span class="n">${counts[t]}</span>` : ''}</button>`).join(''));
+  setHtml($('#sortSeg'), [['top', 'Top'], ['latest', 'Latest']].map(([k, l]) => `<button type="button" data-sort="${k}" aria-pressed="${state.sort === k}">${l}</button>`).join(''));
+  setHtml($('#kindChips'), KINDS.map(([k, l]) => `<button class="chip" type="button" data-kind="${k}" aria-pressed="${state.kind === k}">${l}</button>`).join(''));
 }
 
 function pickLead(stories) {
@@ -314,9 +373,9 @@ function pickLead(stories) {
 }
 
 function renderLead(lead, rising) {
-  if (!lead) return ($('#lead').innerHTML = '');
+  if (!lead) return (setHtml($('#lead'), ''));
   const img = lead.image ? `<a class="lead-img" href="${esc(lead.url)}" target="_blank" rel="noopener" tabindex="-1"><img src="${esc(lead.image)}" alt="" data-fallback="remove-parent"></a>` : '';
-  $('#lead').innerHTML = `
+  setHtml($('#lead'), `
     <article class="lead story" data-id="${esc(lead.id)}">
       ${img}
       <div class="lead-meta">${lead.sources.length >= 3 ? '<span class="hot">Developing</span>' : ''}${sourceBadge(lead)}${time(lead.publishedAt)}${coverageHtml(lead)}${engagementHtml(lead)}</div>
@@ -328,7 +387,7 @@ function renderLead(lead, rising) {
     <div class="rising">
       <h2>Also leading right now</h2>
       ${rising.map((s) => storyHtml(s, { showThumb: false, dek: false })).join('')}
-    </div>`;
+    </div>`);
 }
 
 function bucket(ts) {
@@ -404,7 +463,7 @@ function renderNews({ animate = false } = {}) {
     const skip = new Set([lead, ...rising].map((s) => s?.id));
     rest = all.filter((s) => !skip.has(s.id));
   } else {
-    $('#lead').innerHTML = '';
+    setHtml($('#lead'), '');
   }
 
   if (state.sort === 'latest') rest = rest.slice().sort((a, b) => b.publishedAt - a.publishedAt);
@@ -426,7 +485,7 @@ function renderNews({ animate = false } = {}) {
     const label = trendData()?.topics.find((x) => x.key === state.entity)?.label || state.entity;
     html = `<p class="entity-bar">Stories about <b>${esc(label)}</b> <button class="chip" type="button" data-entity="${esc(state.entity)}">Show all stories</button></p>` + html;
   }
-  $('#river').innerHTML = html;
+  setHtml($('#river'), html);
   revealStories($('#river'), { all: animate });
   revealStories($('#lead'), { all: animate });
   const more = $('#moreStories');
@@ -439,22 +498,22 @@ function renderRail() {
   const { markets, social, models } = state.data;
   const heat = (m) => m.move * Math.log10(10 + m.volume24h);
   const moving = markets.filter((m) => m.volume24h > 1000).slice().sort((a, b) => heat(b) - heat(a)).slice(0, 6);
-  $('#railMarkets').innerHTML = moving.map((m) => {
+  setHtml($('#railMarkets'), moving.map((m) => {
     const o = m.outcomes.slice().sort((a, b) => Math.abs(b.change24h || 0) - Math.abs(a.change24h || 0))[0];
     const label = m.binary ? m.title : `${m.title}: ${o.label}`;
     return `<li><a class="q" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(label)}</a>
       ${barHtml(m, o)}
       <span class="row"><span>${pctHtml(m, o, 'b', 'num')} ${changeHtml(o.change24h)}</span><span class="num">$${compact(m.volume24h)} today</span></span></li>`;
-  }).join('') || '<li class="rail-note">Markets are loading.</li>';
+  }).join('') || '<li class="rail-note">Markets are loading.</li>');
 
   const posts = social.filter((p) => matchesQuery(`${p.title} ${p.author}`)).slice(0, 14);
-  $('#railPosts').innerHTML = posts.map((p) => `<li><a class="post" href="${esc(p.url)}" target="_blank" rel="noopener">
+  setHtml($('#railPosts'), posts.map((p) => `<li><a class="post" href="${esc(p.url)}" target="_blank" rel="noopener">
       <img class="av" src="${esc(p.avatar || fav(PLATFORM_HOST[p.platform]))}" alt="" loading="lazy" width="30" height="30">
       <span><span class="who"><b>${esc(p.author)}</b>${p.platform === 'x' ? `@${esc(p.handle)}` : 'Bluesky'} ${time(p.publishedAt)}</span><p>${highlight(p.title)}</p></span>
-    </a></li>`).join('') || '<li class="rail-note">No posts yet. X posts appear once an X source is configured; see the Sources list at the bottom of the page.</li>';
+    </a></li>`).join('') || '<li class="rail-note">No posts yet. X posts appear once an X source is configured; see the Sources list at the bottom of the page.</li>');
 
-  $('#railModels').innerHTML = models.slice(0, 8).map((m) =>
-    `<li><a href="${esc(m.url)}" target="_blank" rel="noopener" title="${esc(m.title)}">${esc(m.title)}</a><span>${compact(m.engagement?.likes ?? m.engagement?.score)} likes</span></li>`).join('');
+  setHtml($('#railModels'), models.slice(0, 8).map((m) =>
+    `<li><a href="${esc(m.url)}" target="_blank" rel="noopener" title="${esc(m.title)}">${esc(m.title)}</a><span>${compact(m.engagement?.likes ?? m.engagement?.score)} likes</span></li>`).join(''));
 }
 
 // ---------- Tech view ----------
@@ -470,13 +529,13 @@ function renderTech({ animate = false } = {}) {
   if (!topics.includes(state.techTopic)) state.techTopic = 'All';
   $('#techChips').innerHTML =
     topics.map((t) => `<button class="chip" type="button" data-techtopic="${esc(t)}" aria-pressed="${state.techTopic === t}">${esc(t === 'AI' ? 'AI-adjacent' : t)}<span class="n">${t === 'All' ? all.length : counts[t]}</span></button>`).join('');
-  $('#techSortSeg').innerHTML = [['top', 'Top'], ['latest', 'Latest']].map(([k, l]) => `<button type="button" data-techsort="${k}" aria-pressed="${state.techSort === k}">${l}</button>`).join('');
+  setHtml($('#techSortSeg'), [['top', 'Top'], ['latest', 'Latest']].map(([k, l]) => `<button type="button" data-techsort="${k}" aria-pressed="${state.techSort === k}">${l}</button>`).join(''));
 
   let list = all.filter((s) => state.techTopic === 'All' || s.topic === state.techTopic).filter((s) => matchesQuery(`${s.title} ${s.summary || ''}`));
   if (state.techSort === 'latest') list = list.slice().sort((a, b) => b.publishedAt - a.publishedAt);
   const shown = list.slice(0, state.techLimit);
-  $('#techRiver').innerHTML = shown.map((s) => storyHtml(s).replace('class="story', `data-topic="${esc(s.topic)}" class="story`)).join('') ||
-    `<p class="empty">${all.length ? 'No tech stories match.' : 'Tech stories appear after the first classified crawl (every 10 minutes).'}</p>`;
+  setHtml($('#techRiver'), shown.map((s) => storyHtml(s).replace('class="story', `data-topic="${esc(s.topic)}" class="story`)).join('') ||
+    `<p class="empty">${all.length ? 'No tech stories match.' : 'Tech stories appear after the first classified crawl (every 10 minutes).'}</p>`);
   revealStories($('#techRiver'), { all: animate });
   const more = $('#moreTech');
   more.hidden = list.length <= state.techLimit;
@@ -524,7 +583,7 @@ async function loadX({ append = false, animate = false } = {}) {
     if (state.xHandle) qs.set('handle', state.xHandle);
     if (state.xq) qs.set('q', state.xq);
     if (append && state.x?.nextBefore) qs.set('before', state.x.nextBefore);
-    if (!state.x) $('#xFeed').innerHTML = skeletonX();
+    if (!state.x) setHtml($('#xFeed'), skeletonX());
     try {
       const res = await fetch(`api/x?${qs}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -558,21 +617,21 @@ function renderX() {
 function drawX({ animate = false } = {}) {
   const x = state.x;
   if (!x) return;
-  $('#xGroups').innerHTML = x.groups.filter(([k, , n]) => k === 'all' || n).map(([k, l, n]) =>
-    `<button class="chip" type="button" data-xgroup="${k}" aria-pressed="${state.xGroup === k}">${l}<span class="n">${compact(n)}</span></button>`).join('');
+  setHtml($('#xGroups'), x.groups.filter(([k, , n]) => k === 'all' || n).map(([k, l, n]) =>
+    `<button class="chip" type="button" data-xgroup="${k}" aria-pressed="${state.xGroup === k}">${l}<span class="n">${compact(n)}</span></button>`).join(''));
 
   const hour = Date.now() - 3600e3;
-  $('#xAccounts').innerHTML = x.accounts.filter((a) => a.count).slice(0, 40).map((a) =>
+  setHtml($('#xAccounts'), x.accounts.filter((a) => a.count).slice(0, 40).map((a) =>
     `<li><button type="button" class="x-acct${a.latest > hour ? ' hot' : ''}" data-xhandle="${esc(a.handle)}" aria-pressed="${state.xHandle === a.handle}" title="${esc(a.name || a.handle)} · ${a.count} posts">
       <span class="ring"><img src="${esc(a.avatar || fav('x.com'))}" alt="" loading="lazy" width="44" height="44"></span>
       <span class="h">@${esc(a.handle)}</span>
-    </button></li>`).join('');
+    </button></li>`).join(''));
 
   const st = x.status || {};
-  $('#xStatus').innerHTML = st.ok ? `<i class="dot on"></i>Live${st.lastRun ? ` · checked ${ago(st.lastRun)}` : ''}` : `<i class="dot"></i>${st.error ? 'X source is having trouble' : 'Waiting for X'}`;
+  setHtml($('#xStatus'), st.ok ? `<i class="dot on"></i>Live${st.lastRun ? ` · checked ${ago(st.lastRun)}` : ''}` : `<i class="dot"></i>${st.error ? 'X source is having trouble' : 'Waiting for X'}`);
 
   const fresh = [];
-  $('#xFeed').innerHTML = x.posts.map((p) => {
+  setHtml($('#xFeed'), x.posts.map((p) => {
     const isNew = shownX.size && !shownX.has(p.id);
     if (animate || isNew) fresh.push(p.id);
     const link = p.linkUrl ? `<a class="x-link" href="${esc(p.linkUrl)}" target="_blank" rel="noopener"><img src="${esc(fav(host(p.linkUrl)))}" alt="" width="16" height="16" loading="lazy">${esc(host(p.linkUrl))}</a>` : '';
@@ -585,7 +644,7 @@ function drawX({ animate = false } = {}) {
         <div class="x-foot">${link}${p.likes ? `<span class="num">♥ ${compact(p.likes)}</span>` : ''}${p.replies ? `<span class="num">${compact(p.replies)} replies</span>` : ''}<a class="open" href="${esc(p.url)}" target="_blank" rel="noopener">Open on X ↗</a></div>
       </div>
     </li>`;
-  }).join('') || `<li class="empty">${state.xq || state.xHandle ? 'No posts match.' : 'No X posts yet. They appear once the X source has run; see Sources at the bottom of the page.'}</li>`;
+  }).join('') || `<li class="empty">${state.xq || state.xHandle ? 'No posts match.' : 'No X posts yet. They appear once the X source has run; see Sources at the bottom of the page.'}</li>`);
 
   if (!reducedMotion()) {
     let i = 0;
@@ -625,11 +684,11 @@ function buildStats(b) {
 function renderBuilds() {
   const counts = {};
   for (const b of state.data.builds) counts[b.platform] = (counts[b.platform] || 0) + 1;
-  $('#buildChips').innerHTML = BUILD_FILTERS.filter(([k]) => k === 'all' || counts[k]).map(([k, l]) =>
-    `<button class="chip" type="button" data-build="${k}" aria-pressed="${state.buildFilter === k}">${l}${k !== 'all' ? `<span class="n">${counts[k]}</span>` : ''}</button>`).join('');
+  setHtml($('#buildChips'), BUILD_FILTERS.filter(([k]) => k === 'all' || counts[k]).map(([k, l]) =>
+    `<button class="chip" type="button" data-build="${k}" aria-pressed="${state.buildFilter === k}">${l}${k !== 'all' ? `<span class="n">${counts[k]}</span>` : ''}</button>`).join(''));
   let list = state.data.builds.filter((b) => (state.buildFilter === 'all' || b.platform === state.buildFilter) && matchesQuery(`${b.title} ${b.summary} ${b.author}`));
   if (state.buildFilter === 'all') list = interleave(list);
-  $('#buildGrid').innerHTML = list.map((b, i) => {
+  setHtml($('#buildGrid'), list.map((b, i) => {
     const h = PLATFORM_HOST[b.platform] || host(b.url);
     const glyph = b.emoji ? esc(b.emoji) : `<img src="${esc(b.avatar || fav(b.platform === 'hn' || b.platform === 'producthunt' ? host(b.url) || h : h))}" alt="" loading="lazy">`;
     const feature = i < 2 && state.buildFilter === 'all' && !state.q ? ' feature' : '';
@@ -638,7 +697,7 @@ function renderBuilds() {
       <div><h3><a href="${esc(b.url)}" target="_blank" rel="noopener">${highlight(b.title)}</a></h3>${b.summary ? `<p>${highlight(b.summary)}</p>` : ''}</div>
       <div class="stats">${buildStats(b)}</div>
     </article>`;
-  }).join('') || `<p class="empty">No projects match. Clear the search or choose Everything.</p>`;
+  }).join('') || `<p class="empty">No projects match. Clear the search or choose Everything.</p>`);
 }
 
 // Round-robin across platforms, keeping each platform's own ranking.
@@ -658,14 +717,14 @@ function interleave(list) {
 
 function renderMarkets() {
   const sorts = [['moving', 'Moving most'], ['volume', 'Most traded today'], ['linked', 'In the news'], ['ending', 'Ending soonest']];
-  $('#marketSort').innerHTML = sorts.map(([k, l]) => `<button class="chip" type="button" data-msort="${k}" aria-pressed="${state.marketSort === k}">${l}</button>`).join('');
+  setHtml($('#marketSort'), sorts.map(([k, l]) => `<button class="chip" type="button" data-msort="${k}" aria-pressed="${state.marketSort === k}">${l}</button>`).join(''));
   let list = state.data.markets.filter((m) => matchesQuery(`${m.title} ${m.outcomes.map((o) => o.label).join(' ')}`));
   if (state.marketSort === 'moving') list = list.filter((m) => m.volume24h > 200).sort((a, b) => b.move - a.move);
   if (state.marketSort === 'volume') list.sort((a, b) => b.volume24h - a.volume24h);
   if (state.marketSort === 'linked') list = list.filter((m) => m.stories.length).sort((a, b) => b.stories.length - a.stories.length || b.volume24h - a.volume24h);
   if (state.marketSort === 'ending') list = list.filter((m) => m.endDate && Date.parse(m.endDate) > Date.now()).sort((a, b) => Date.parse(a.endDate) - Date.parse(b.endDate));
   const storyById = new Map(state.data.stories.map((s) => [s.id, s]));
-  $('#marketList').innerHTML = list.slice(0, 90).map((m) => `
+  setHtml($('#marketList'), list.slice(0, 90).map((m) => `
     <article class="market">
       <header>${m.image ? `<img src="${esc(m.image)}" alt="" loading="lazy">` : '<span></span>'}
         <div><h3><a href="${esc(m.url)}" target="_blank" rel="noopener">${highlight(m.title)}</a></h3>
@@ -679,7 +738,7 @@ function renderMarkets() {
         const s = storyById.get(r.id);
         return `<a href="${esc(s?.url || '#news')}" target="_blank" rel="noopener">${esc(r.title)}</a>`;
       }).join('')}</div>` : ''}
-    </article>`).join('') || `<p class="empty">No markets match. Clear the search to see all AI markets.</p>`;
+    </article>`).join('') || `<p class="empty">No markets match. Clear the search to see all AI markets.</p>`);
 }
 
 // ---------- Footer ----------
@@ -884,7 +943,7 @@ async function updateSpiderLine() {
   $('#footSpider').textContent = await spiderLine(compact);
 }
 setInterval(updateSpiderLine, 30e3);
-$('#river').innerHTML = Array.from({ length: 6 }, () => '<div class="skeleton-card" aria-hidden="true"><i class="skeleton"></i><i class="skeleton w80"></i><i class="skeleton w40"></i></div>').join('');
+setHtml($('#river'), Array.from({ length: 6 }, () => '<div class="skeleton-card" aria-hidden="true"><i class="skeleton"></i><i class="skeleton w80"></i><i class="skeleton w40"></i></div>').join(''));
 route();
 await refresh();
 updateSpiderLine();

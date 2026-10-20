@@ -134,7 +134,10 @@ const isAiSlug = (path) => isAiRelated(path.replace(/[-_/]/g, ' ')) || /artifici
 const looksLikePost = (u) => /\/[^/]*-[^/]*-[^/]*-[^/]*\/?$/.test(new URL(u).pathname);
 
 // Hosts that publish help pages and docs, not news; never promoted to starting sites.
-export const isNonNewsHost = (host) => /^(support|help|docs|developer-docs|status|community|forum|forums|accounts?|login|shop|store|careers|jobs|job-boards|boards)\./i.test(host) || /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com)$/i.test(host);
+export const isNonNewsHost = (host) => /^(support|help|docs|developer-docs|status|community|forum|forums|accounts?|login|signin|auth|console|dashboard|portal|app|shop|store|careers|jobs|job-boards|boards)\./i.test(host) || NON_NEWS_DOMAINS.test(host);
+// Job boards, stock-photo libraries (articles link every photo credit), and
+// social sites and AI apps that show crawlers a login wall.
+const NON_NEWS_DOMAINS = /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com|gettyimages\.[a-z.]+|shutterstock\.com|alamy\.com|istockphoto\.com|stock\.adobe\.com|unsplash\.com|pexels\.com|flickr\.com|facebook\.com|instagram\.com|linkedin\.com|tiktok\.com|x\.com|twitter\.com|threads\.net|claude\.ai|chatgpt\.com|gemini\.google\.com)$/i;
 // The same sections on a news site's own domain (claude.com/docs/…).
 export const isNonNewsPath = (url) => { try { return NON_NEWS_PATH.test(new URL(url).pathname); } catch { return false; } };
 const NON_NEWS_PATH = /^\/([a-z]{2}(-[a-z]{2})?\/)?(docs|documentation|help|support|kb|knowledge-base|legal|careers|jobs|pricing|login|signup|civis|forums?|community|threads|discussions?)(\/|$)/i;

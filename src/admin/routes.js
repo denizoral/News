@@ -249,6 +249,14 @@ export function createAdminRouter({ store, spider, runNow, sourceNames }) {
     return { ok: true };
   });
 
+  route('POST', '/crawler/forget-dead-end', { permission: 'crawler:write', limit: 1024 }, ({ req, a, body }) => {
+    const key = String(body.key || '');
+    if (!/^[a-z0-9.-]{1,253}\/([a-z0-9._~-]{1,100}|\*)$/i.test(key)) throw new HttpError(400, 'Not a dead-end key.');
+    if (!spider.forgetDeadEnd(key)) throw new HttpError(404, 'No such dead end.');
+    audit(req, { user: a.user, action: 'crawler.forget_dead_end', target: key });
+    return { ok: true };
+  });
+
   route('POST', '/crawler/refresh-robots', { permission: 'crawler:write', limit: 1024 }, ({ req, a, body }) => {
     const host = hostParam(body.host);
     spider.refreshRobots(host);

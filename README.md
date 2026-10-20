@@ -98,7 +98,13 @@ the oldest images first.
   - Sites that keep producing indexed articles are promoted to starting pages
     automatically, up to 25. You can review and dismiss them in the dashboard.
   - It follows links freely inside starting sites, and one hop out to other
-    sites when the link is about AI.
+    sites when the link is about AI. On general news sites, a link whose anchor
+    and URL slug are both clearly about something else (`/sport/…-late-winner`)
+    isn't followed, and links are only followed from pages that were worth
+    indexing: an off-topic page's links lead further off-topic.
+  - Pages that would only be skipped after fetching are never queued: docs,
+    help and forum sections, job boards, stock-photo pages, and social sites and
+    AI apps behind a login wall.
   - Anything that keeps yielding nothing new is checked less often, up to 8×
     the interval, and goes back to normal as soon as it has news.
 - **How it stays polite and keeps going:**
@@ -109,7 +115,8 @@ the oldest images first.
   - When a site rate-limits it (HTTP 429, or 503 with Retry-After), the whole
     site rests for as long as it asks, without counting as an error.
   - After 8 failures in a row (timeouts, server errors), a site rests for 15
-    minutes, doubling up to 6 hours.
+    minutes, doubling up to 6 hours. A site that refuses 10 pages in a row
+    (403/404, usually blocking crawlers) rests for 6 hours, doubling up to 2 days.
   - Feeds and sitemaps that answer 404 (or another permanent error), or turn
     out to be ordinary web pages, three times in a row are retired instead of
     being rechecked forever. So are feeds and sitemaps whose pages never get
@@ -127,15 +134,18 @@ the oldest images first.
     header, `<meta charset>`), including correct Windows-1252.
 - **What it skips:** `noindex` pages, exact duplicates, pages in languages other
   than English (configurable), help/docs/forum/jobs pages, and pages that aren't
-  about AI. Translated sections (`/cs/…`) and whole sites in another language
-  are learned from the pages themselves and no longer queued. Generated pages
-  (comparisons, directories) are capped: a site section indexes at most 20
-  undated pages a day, except on starting sites and in blog, news and research
-  sections.
+  about AI. A page counts as about AI if its headline or summary says so, or the
+  body keeps coming back to it. Generated pages (comparisons, directories) are
+  capped: a site section indexes at most 20 undated pages a day, except on
+  starting sites and in blog, news and research sections.
+- **Dead ends it learns:** translated sections (`/cs/…`) and whole sites in
+  another language (5 pages in a row), and sections whose pages come back empty
+  (10 in a row, usually JavaScript apps), stop being queued and their queued
+  pages are dropped. Under a locale prefix the section is two levels deep
+  (`/en-us/geforce`). The Sites tab lists them, and *Forget* brings one back.
 - **Cleaning up later:** Content → *Clean up the index* in the dashboard rechecks
   everything already indexed against today's rules, shows what matches, and
-  hides it (restorable) when you confirm. A page counts as about AI if its headline or summary says so, or the
-  body keeps coming back to it.
+  hides it (restorable) when you confirm.
 - **State:** the queue lives in the database, so a restart picks up where it
   left off. Logs go to `data/logs/server.log` (rotated at 10 MB).
 

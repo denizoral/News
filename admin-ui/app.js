@@ -850,8 +850,8 @@ const CRAWLER_TABS = {
           </tbody></table></div><p style="margin-top:10px"><a href="#crawler/sites">Queues by site</a></p></section>
         </div>
         ${live.resting.length ? `<section class="card"><h2>Resting sites <span class="muted small">(${live.resting.length})</span></h2>
-          <p class="muted small">These sites failed several times in a row (timeouts or server errors), so the crawler is giving them a break. It tries again automatically when the time is up.</p>
-          <div class="table-wrap"><table><tbody>${live.resting.map((r) => `<tr><td>${esc(r.host)}</td><td class="muted">${fmt(r.failures)} failures in a row</td><td class="num muted">until ${new Date(r.until).toLocaleTimeString()}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
+          <p class="muted small">These sites failed several times in a row (timeouts or server errors), or refused page after page (403/404, usually blocking crawlers), so the crawler is giving them a break. It tries again automatically when the time is up.</p>
+          <div class="table-wrap"><table><tbody>${live.resting.map((r) => `<tr><td>${esc(r.host)}</td><td class="muted">${fmt(r.failures)} ${r.refused ? 'refusals' : 'failures'} in a row</td><td class="num muted">until ${new Date(r.until).toLocaleTimeString()}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
         <section class="card"><div class="row"><h2 style="margin:0">Latest activity</h2><span class="spacer"></span><a href="#crawler/log">Full log</a></div>
           ${live.recent.length ? logTable(live.recent.slice(0, 15)) : '<p class="muted" style="margin-top:10px">No fetches since the server started.</p>'}</section>`;
     };
@@ -931,6 +931,7 @@ const CRAWLER_TABS = {
         </tbody></table></div></section>
       </div>
       <section class="card" id="autoHubCard"></section>
+      <section class="card" id="deadEndCard"></section>
       <section class="card"><h2>Sites</h2><p class="muted small">The 30 most-crawled sites. Filter to find any other.</p><form class="row" id="hostSearch"><input type="search" name="q" placeholder="Filter by host" aria-label="Filter sites"><button class="btn">Filter</button></form><div id="hostList" style="margin-top:10px"></div></section>`;
     $('#crawlNow', box)?.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -965,7 +966,17 @@ const CRAWLER_TABS = {
     $('#autoHubCard', box).innerHTML = `<h2>Discovered starting sites <span class="muted small">(${live.autoHubs.length})</span></h2>
       <p class="muted small">Sites that kept producing indexed articles were added as starting pages automatically (change how many under Settings &gt; Where to crawl). Dismiss one to stop rechecking it; it won't be added again.</p>
       ${live.autoHubs.length ? `<div class="table-wrap"><table><thead><tr><th>Site</th><th>Articles when added</th><th>Added</th><th></th></tr></thead><tbody>${live.autoHubs.map((a) => `<tr><td><a href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${esc(a.host)}</a></td><td class="num">${fmt(a.articles)}</td><td class="num muted">${ago(a.addedAt)}</td><td>${writable ? `<button class="btn small" data-dismiss="${esc(a.host)}">Dismiss</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">None yet. Sites are considered every 30 minutes once they have 5 indexed articles from the last week.</p>'}`;
+    const DEAD_END = { language: 'Another language', empty: 'Pages come back empty' };
+    $('#deadEndCard', box).innerHTML = `<h2>Learned dead ends <span class="muted small">(${live.deadEnds.length})</span></h2>
+      <p class="muted small">Sections the crawler stopped queuing after their pages kept being skipped: translations and whole sites in a language you don't index (5 pages in a row), and sections whose pages come back empty (10 in a row). Forget one to crawl it again.</p>
+      ${live.deadEnds.length ? `<div class="table-wrap"><table><thead><tr><th>Section</th><th>Why</th><th>Learned</th><th></th></tr></thead><tbody>${live.deadEnds.map((d) => `<tr><td>${esc(d.key.endsWith('/*') ? `${d.key.slice(0, -2)} (whole site)` : `${d.key}/…`)}</td><td>${esc(DEAD_END[d.reason] || d.reason)}</td><td class="num muted">${ago(d.at)}</td><td>${writable ? `<button class="btn small" data-forget="${esc(d.key)}">Forget</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">None yet.</p>'}`;
     box.addEventListener('click', async (e) => {
+      const f = e.target.closest('[data-forget]');
+      if (f) {
+        await act(() => api('POST', '/crawler/forget-dead-end', { key: f.dataset.forget }), 'Forgotten. Links there are queued again.');
+        route();
+        return;
+      }
       const d = e.target.closest('[data-dismiss]');
       if (!d || !(await confirmAction({ title: `Dismiss ${d.dataset.dismiss}?`, body: 'It stops being rechecked as a starting page and will not be added again. Links to it are still followed normally.', confirm: 'Dismiss' }))) return;
       await act(() => api('POST', '/crawler/dismiss-hub', { host: d.dataset.dismiss }), 'Dismissed.');
@@ -974,7 +985,7 @@ const CRAWLER_TABS = {
     const loadHosts = async (qv = '') => {
       const r = await api('GET', `/crawler/hosts?q=${encodeURIComponent(qv)}&limit=30`);
       $('#hostList', box).innerHTML = `<div class="table-wrap"><table><thead><tr><th>Site</th><th>Pages</th><th>Today</th><th>Queued</th><th>Errors</th><th>robots.txt</th><th></th></tr></thead><tbody>
-        ${r.hosts.map((h) => `<tr><td>${esc(h.host)} ${h.trusted ? '<span class="pill info">starting site</span>' : ''}${h.rule?.blocked ? '<span class="pill bad">blocked</span>' : ''}${h.rule?.ignoreRobots ? '<span class="pill warn">ignores robots.txt</span>' : h.rule && !h.rule.blocked ? '<span class="pill">custom rule</span>' : ''}${h.restingUntil ? `<span class="pill warn" title="${fmt(h.failStreak)} failures in a row">resting until ${new Date(h.restingUntil).toLocaleTimeString()}</span>` : ''}</td>
+        ${r.hosts.map((h) => `<tr><td>${esc(h.host)} ${h.trusted ? '<span class="pill info">starting site</span>' : ''}${h.rule?.blocked ? '<span class="pill bad">blocked</span>' : ''}${h.rule?.ignoreRobots ? '<span class="pill warn">ignores robots.txt</span>' : h.rule && !h.rule.blocked ? '<span class="pill">custom rule</span>' : ''}${h.restingUntil ? `<span class="pill warn" title="${fmt(h.failStreak)} failures in a row (or repeated refusals)">resting until ${new Date(h.restingUntil).toLocaleTimeString()}</span>` : ''}</td>
           <td class="num">${fmt(h.pages)}</td><td class="num">${fmt(h.fetched_today)}</td><td class="num">${fmt(h.queued)}</td><td class="num">${fmt(h.errors)}</td>
           <td>${h.robots_status ? `<span class="pill ${h.robots_status < 400 ? 'ok' : h.robots_status < 500 ? '' : 'bad'}">${h.robots_status}</span>` : ''}${h.crawl_delay_ms ? `<span class="muted small">delay ${h.crawl_delay_ms / 1000}s</span>` : ''}</td>
           <td><button class="btn small" data-robots="${esc(h.host)}">View robots.txt</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No sites match.</td></tr>'}

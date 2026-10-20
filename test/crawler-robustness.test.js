@@ -439,3 +439,56 @@ test('dates: month-name URLs, citation tags, and dates printed on article pages'
   const gen = extractPage(`<html><head><title>A vs B</title><meta property="og:type" content="website"></head><body><p class="cpx-updated">Scores updated Oct 17, 2026</p>${body}</body></html>`, 'https://gen.example/compare/a-vs-b');
   assert.equal(gen.published_at, null, 'non-articles and "updated" stamps get no date');
 });
+
+test('sections whose pages come back empty become dead ends, and their queue is cleared', () => {
+  const empty = (i) => ({ title: `Partner ${i}`, description: '', lang: 'en', isArticle: false, site: 'shell.example', url: `https://shell.example/partners/p${i}`, text: '' });
+  spider.enqueue('https://shell.example/partners/p-queued');
+  spider.enqueue('https://shell.example/blog/2026/10/20/a-real-ai-post');
+  for (let i = 0; i < 10; i++) spider.indexPage(row(empty(i).url), empty(i));
+  assert.equal(frontier('https://shell.example/partners/p-queued').status, 'skipped');
+  assert.equal(frontier('https://shell.example/blog/2026/10/20/a-real-ai-post').status, 'queued', 'other sections are untouched');
+  assert.equal(spider.enqueue('https://shell.example/partners/p-new'), false);
+  assert.ok(spider.live().deadEnds.some((d) => d.key === 'shell.example/partners' && d.reason === 'empty'));
+  assert.equal(spider.forgetDeadEnd('shell.example/partners'), true);
+  assert.equal(spider.enqueue('https://shell.example/partners/p-new'), true, 'forgotten');
+});
+
+test('a site refusing page after page rests for hours', () => {
+  const h = spider.host('refuser.example');
+  for (let i = 0; i < 9; i++) spider.fail(row(`https://refuser.example/a-${i}-b-c-d`), h, new HttpError(403, 'x'));
+  assert.equal(h.pausedUntil, 0);
+  spider.fail(row('https://refuser.example/a-9-b-c-d'), h, new HttpError(403, 'x'));
+  assert.ok(h.pausedUntil > Date.now() + 5.9 * 3600e3, 'rests 6 hours after 10 refusals');
+  assert.ok(spider.resting().find((r) => r.host === 'refuser.example')?.refused);
+  spider.hostOk(h);
+  assert.equal(h.refuseStreak, 0);
+});
+
+test('unusable pages are never queued; off-topic links on news sites are not followed', () => {
+  assert.equal(spider.enqueue('https://gettyimages.com/detail/news-photo/ai-chip-123'), false, 'stock photos');
+  assert.equal(spider.enqueue('https://docs.example.com/guide/setup'), false, 'docs host');
+  assert.equal(spider.enqueue('https://site.example/forums/thread-about-ai'), false, 'forum path');
+  const hub = 'https://www.theguardian.com/technology';
+  settings.update({ 'crawler.hubs': [...settings.get('crawler.hubs'), hub] }, { role: 'owner', actor: 't' });
+  const page = { url: hub, links: [
+    { url: 'https://theguardian.com/sport/2026/oct/20/football-match-report-late-winner', text: 'Late winner' },
+    { url: 'https://theguardian.com/technology/2026/oct/20/openai-launches-new-model', text: 'New model' },
+    { url: 'https://theguardian.com/world/2026/oct/20/election-results-live', text: 'How AI shaped the vote' },
+  ] };
+  spider.followLinks(row(hub, 'hub', { depth: 0 }), page);
+  assert.equal(frontier('https://theguardian.com/sport/2026/oct/20/football-match-report-late-winner'), undefined);
+  assert.ok(frontier('https://theguardian.com/technology/2026/oct/20/openai-launches-new-model'));
+  assert.ok(frontier('https://theguardian.com/world/2026/oct/20/election-results-live'), 'an AI anchor is enough');
+});
+
+test('dead ends under a locale prefix cover one section, not the whole locale', () => {
+  const empty = (i) => ({ title: `Compare ${i}`, description: '', lang: 'en', isArticle: false, site: 'loc.example', url: `https://loc.example/en-us/geforce/compare-${i}`, text: '' });
+  spider.enqueue('https://loc.example/en-us/geforce/compare-queued');
+  for (let i = 0; i < 10; i++) spider.indexPage(row(empty(i).url), empty(i));
+  assert.ok(spider.live().deadEnds.some((d) => d.key === 'loc.example/en-us/geforce'));
+  assert.equal(spider.enqueue('https://loc.example/en-us/geforce/compare-new'), false);
+  assert.equal(spider.enqueue('https://loc.example/en-us/blog/2026/10/20/new-ai-model-post'), true, 'the rest of /en-us is fine');
+  assert.equal(frontier('https://loc.example/en-us/geforce/compare-queued').status, 'skipped');
+  spider.forgetDeadEnd('loc.example/en-us/geforce');
+  assert.equal(frontier('https://loc.example/en-us/geforce/compare-queued').status, 'queued', 'forgetting brings dropped URLs back');
+});

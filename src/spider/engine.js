@@ -30,7 +30,7 @@ import { parseFeed } from '../sources/rss.js';
 import { readText } from './body.js';
 import { downloadImage, enforceBudget } from './media.js';
 import { upsertDoc, findByContentHash, addInlinks } from '../index/documents.js';
-import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, localeOf } from './policy.js';
+import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, localeOf, isNonNewsPath } from './policy.js';
 
 export { inQuietHours };
 
@@ -40,6 +40,7 @@ const RECURRING = new Set(['hub', 'sitemap', 'feed']);
 // Where sites usually keep sitemaps and feeds they don't advertise. Guessed
 // addresses are tried once and dropped if nothing is there.
 const GUESS = 'guess';
+const REFUSAL_LIMIT = 10;
 const SITEMAP_GUESSES = ['/sitemap.xml', '/sitemap_index.xml', '/news-sitemap.xml'];
 const FEED_GUESSES = ['/feed', '/feed.xml', '/rss.xml', '/atom.xml', '/index.xml'];
 const MAX_BACKOFF = 8; // recurring URLs are checked at most 8x less often
@@ -57,7 +58,7 @@ export class Spider extends EventEmitter {
     this.running = false;
     this.stats = { fetched: 0, indexed: 0, duplicates: 0, blocked: 0, errors: 0, deferred: 0, images: 0, feeds: 0, startedAt: Date.now(), recent: [] };
     this.inflightUrls = new Map(); // url -> { host, kind, started }
-    this.langMisses = new Map(); // host -> pages in a row in an unwanted language
+    this.misses = new Map(); // "lang:host", "empty:host/section" -> unindexed pages in a row
     this.ring = []; // newest crawl-log entries, for the live view
     this.minutes = new Map(); // minute -> fetches, last hour
     this.backoff = new Map(); // recurring url -> interval multiplier
@@ -112,12 +113,18 @@ export class Spider extends EventEmitter {
     let u;
     try {
       u = this.cleanUrl(canonicalUrl(url));
-      if (!/^https?:\/\//.test(u) || this.isSkipped(u) || this.isKnownTranslation(u)) return false;
+      if (!/^https?:\/\//.test(u) || this.isSkipped(u) || this.isDeadEnd(u)) return false;
     } catch {
       return false;
     }
     // Recurring sources are configured or discovered explicitly; patterns filter what they lead to.
-    if (!RECURRING.has(kind) && !this.urlAllowedByPatterns(u)) return false;
+    if (!RECURRING.has(kind)) {
+      if (!this.urlAllowedByPatterns(u)) return false;
+      // Pages that would only be skipped after fetching: docs, help and forum
+      // sections, job boards, stock photos, login-walled social sites.
+      const host = bare(new URL(u).hostname);
+      if (isNonNewsPath(u) || (isNonNewsHost(host) && !this.trusted.has(host))) return false;
+    }
     if (priority < 4 && this.queuedCount() > this.cfg.maxQueue) return false;
     const inserted = q(`INSERT INTO frontier (url, host, kind, priority, depth, status, next_at, discovered_at, via) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)
        ON CONFLICT(url) DO NOTHING`).run(u, new URL(u).hostname, kind, priority, depth, nextAt, Date.now(), via).changes > 0;
@@ -142,11 +149,27 @@ export class Spider extends EventEmitter {
       for (const r of q("SELECT url FROM frontier WHERE kind = 'sitemap' AND status = 'queued'").all()) {
         if (!isWantedSitemap(r.url, { languages: this.cfg.languages })) q("UPDATE frontier SET status = 'skipped', error = 'Archive or other-language sitemap' WHERE url = ?").run(r.url);
       }
-      // Untitled sitemap entries whose URL says they're off-topic.
-      if (this.cfg.relevance !== 'all') {
-        for (const r of q("SELECT url, host FROM frontier WHERE kind = 'article' AND status = 'queued' AND (via = 'sitemap' OR via IN (SELECT url FROM frontier WHERE kind = 'sitemap'))").all()) {
-          if (isListingUrl(r.url) || this.isKnownTranslation(r.url) || (!isAiHost(r.host) && slugRelevance(r.url) === false)) q("UPDATE frontier SET status = 'skipped', error = 'Off-topic by its URL' WHERE url = ?").run(r.url);
+      // Queued pages today's rules would not queue: docs/help/forum pages,
+      // job boards and stock photos, learned dead ends, sitemap listings, and
+      // links whose URL slug says they're off-topic.
+      const sitemaps = new Set(q("SELECT url FROM frontier WHERE kind = 'sitemap'").all().map((r) => r.url));
+      const feeds = new Set(q("SELECT url FROM frontier WHERE kind = 'feed'").all().map((r) => r.url));
+      const skip = q("UPDATE frontier SET status = 'skipped', error = ? WHERE url = ?");
+      for (const r of q("SELECT url, host, via, fetched_at FROM frontier WHERE kind IN ('article', 'page') AND status = 'queued'").all()) {
+        const host = bare(r.host);
+        let why = null;
+        try {
+          if (isNonNewsPath(r.url) || (isNonNewsHost(host) && !this.trusted.has(host))) why = 'Not a news page';
+          else if (this.isDeadEnd(r.url)) why = 'Learned dead end';
+          // The URL-slug rules only for pages never fetched (not retries or recrawls).
+          else if (r.fetched_at) why = null;
+          else if ((r.via === 'sitemap' || sitemaps.has(r.via)) && isListingUrl(r.url)) why = 'Off-topic by its URL';
+          // Feed entries were already judged by their titles.
+          else if (!feeds.has(r.via) && this.cfg.relevance !== 'all' && !isAiHost(host) && slugRelevance(r.url) === false) why = 'Off-topic by its URL';
+        } catch {
+          why = 'Unparseable URL';
         }
+        if (why) skip.run(why, r.url);
       }
       // Starting pages removed in the dashboard stop being rechecked.
       const current = new Set(hubs.map((u) => canonicalUrl(u)));
@@ -194,46 +217,85 @@ export class Spider extends EventEmitter {
     }
   }
 
-  // Translation sections, learned from pages: once example.com/cs/… turns out
-  // to be Czech while only other languages are wanted, the rest of that
-  // section isn't queued.
-  translations() {
-    if (!this._translations) {
+  // Dead ends, learned from fetched pages, so the rest isn't queued:
+  //   example.com/cs  a section in a language the crawler doesn't index
+  //   example.com/*   a whole site in one (the-decoder.de beside the-decoder.com)
+  //   example.com/partners  a section whose pages all come back empty (JS apps)
+  // Stored as key -> { reason, at, examples }; the dashboard can forget one.
+  deadEnds() {
+    if (!this._deadEnds) {
+      let map = {};
       try {
-        this._translations = new Set(JSON.parse(q("SELECT v FROM kv WHERE k = 'spider.translations'").get()?.v || '[]'));
-      } catch {
-        this._translations = new Set();
-      }
+        map = JSON.parse(q("SELECT v FROM kv WHERE k = 'spider.deadEnds'").get()?.v || '{}');
+        // Earlier versions kept translations as a plain list.
+        for (const k of JSON.parse(q("SELECT v FROM kv WHERE k = 'spider.translations'").get()?.v || '[]')) map[k] ??= { reason: 'language', at: Date.now() };
+      } catch { /* start empty */ }
+      this._deadEnds = new Map(Object.entries(map));
     }
-    return this._translations;
+    return this._deadEnds;
   }
 
-  // A whole site in another language (the-decoder.de beside the-decoder.com)
-  // is learned after 5 such pages in a row with none in a wanted language.
-  learnTranslation(page) {
-    const langs = this.cfg.languages;
-    if (!langs.length || !page.lang || langs.includes(page.lang) || !page.url) return;
-    const host = bare(new URL(page.url).hostname);
-    const code = localeOf(page.url);
-    let key = code === page.lang ? `${host}/${code}` : null;
-    if (!key && !code) {
-      const misses = (this.langMisses.get(host) || 0) + 1;
-      this.langMisses.set(host, misses);
-      if (misses >= 5 && !this.cfg.hubHosts.includes(host)) key = `${host}/*`;
-    }
-    if (!key) return;
-    const known = this.translations();
+  learnDeadEnd(key, reason) {
+    const known = this.deadEnds();
     if (known.has(key)) return;
-    known.add(key);
-    this.saveKv('spider.translations', [...known].slice(-5000));
+    known.set(key, { reason, at: Date.now() });
+    this.saveKv('spider.deadEnds', Object.fromEntries([...known].slice(-5000)));
+    // What's already queued there goes too.
+    const [host, seg] = [key.slice(0, key.indexOf('/')), key.slice(key.indexOf('/') + 1)];
+    const where = seg === '*' ? '' : ' AND (url LIKE ? OR url LIKE ?)';
+    const args = seg === '*' ? [] : [`https://${host}/${seg}/%`, `https://www.${host}/${seg}/%`];
+    const n = q(`UPDATE frontier SET status = 'skipped', error = ? WHERE host IN (?, ?) AND status = 'queued' AND fetched_at IS NULL AND kind IN ('article', 'page')${where}`)
+      .run(`Learned dead end: ${reason === 'language' ? 'another language' : 'pages come back empty'}`, host, `www.${host}`, ...args).changes;
+    console.log(`[spider] learned dead end ${key} (${reason}); ${n} queued URLs dropped`);
   }
 
-  isKnownTranslation(u) {
-    if (!this.cfg.languages.length) return false;
-    const host = bare(new URL(u).hostname);
-    if (this.translations().has(`${host}/*`)) return true;
-    const code = localeOf(u);
-    return !!code && !this.cfg.languages.includes(code) && this.translations().has(`${host}/${code}`);
+  forgetDeadEnd(key) {
+    // Pages it dropped from the queue come back.
+    const [host, seg] = [key.slice(0, key.indexOf('/')), key.slice(key.indexOf('/') + 1)];
+    if (this.deadEnds().has(key)) {
+      q(`UPDATE frontier SET status = 'queued', error = NULL WHERE host IN (?, ?) AND status = 'skipped' AND error LIKE 'Learned dead end%'${seg === '*' ? '' : ' AND (url LIKE ? OR url LIKE ?)'}`)
+        .run(host, `www.${host}`, ...(seg === '*' ? [] : [`https://${host}/${seg}/%`, `https://www.${host}/${seg}/%`]));
+    }
+    const known = this.deadEnds();
+    if (!known.delete(key)) return false;
+    this.saveKv('spider.deadEnds', Object.fromEntries(known));
+    return true;
+  }
+
+  isDeadEnd(u) {
+    const known = this.deadEnds();
+    if (!known.size) return false;
+    const url = new URL(u);
+    const host = bare(url.hostname);
+    const seg = deadEndSection(url);
+    const hit = known.get(`${host}/*`) || (seg && (known.get(`${host}/${seg}`) || known.get(`${host}/${seg.split('/')[0]}`)));
+    // Language dead ends only apply while languages are restricted.
+    return !!hit && (hit.reason !== 'language' || this.cfg.languages.length > 0);
+  }
+
+  // Called with every page that wasn't indexed, and with every one that was
+  // (`ok`), which resets the counts for its site.
+  learnFromPage(page, d) {
+    if (!page.url) return;
+    const host = bare(new URL(page.url).hostname);
+    const seg = deadEndSection(new URL(page.url));
+    if (d.ok) {
+      this.misses.delete(`lang:${host}`);
+      this.misses.delete(`empty:${host}`);
+      this.misses.delete(`empty:${host}/${seg}`);
+      return;
+    }
+    const bump = (k) => { const n = (this.misses.get(k) || 0) + 1; this.misses.set(k, n); return n; };
+    const hub = this.cfg.hubHosts.includes(host);
+    const langs = this.cfg.languages;
+    if (langs.length && page.lang && !langs.includes(page.lang)) {
+      const code = localeOf(page.url);
+      if (code === page.lang) this.learnDeadEnd(`${host}/${code}`, 'language');
+      else if (!code && bump(`lang:${host}`) >= 5 && !hub) this.learnDeadEnd(`${host}/*`, 'language');
+    } else if (/^Too short \(0 words/.test(d.reason || '')) {
+      if (seg && bump(`empty:${host}/${seg}`) >= 10) this.learnDeadEnd(`${host}/${seg}`, 'empty');
+      else if (bump(`empty:${host}`) >= 25 && !hub) this.learnDeadEnd(`${host}/*`, 'empty');
+    }
   }
 
   saveKv(k, v) {
@@ -254,7 +316,7 @@ export class Spider extends EventEmitter {
     const dismissed = this.dismissedHubs();
     const eligible = (host) => {
       const home = `https://${host}/`;
-      return host && !isNonNewsHost(host) && !configured.has(host) && !dismissed.has(host) && !this.isSkipped(home) && this.urlAllowedByPatterns(home) && !this.rule(host)?.blocked;
+      return host && !isNonNewsHost(host) && !this.isDeadEnd(home) && !configured.has(host) && !dismissed.has(host) && !this.isSkipped(home) && this.urlAllowedByPatterns(home) && !this.rule(host)?.blocked;
     };
     // Rules may have changed since a site was added; drop the ones that no longer qualify.
     const kept = current.filter((a) => eligible(a.host)).slice(0, limit);
@@ -329,8 +391,21 @@ export class Spider extends EventEmitter {
     return 0;
   }
 
+  // A site that refuses page after page (403s, or 404s for links that work in
+  // a browser) is blocking the crawler: 10 in a row rest it for 6 hours,
+  // doubling to 2 days. Returns the minutes, or 0.
+  hostRefused(h) {
+    h.refuseStreak = (h.refuseStreak || 0) + 1;
+    if (h.refuseStreak < REFUSAL_LIMIT) return 0;
+    const minutes = Math.min(2880, 360 * 2 ** (h.refuseStreak - REFUSAL_LIMIT));
+    h.pausedUntil = Date.now() + minutes * 60e3;
+    h.next_allowed_at = Math.max(h.next_allowed_at, h.pausedUntil);
+    return minutes;
+  }
+
   hostOk(h) {
     h.failStreak = 0;
+    h.refuseStreak = 0;
     h.pausedUntil = 0;
   }
 
@@ -545,12 +620,13 @@ export class Spider extends EventEmitter {
     h.errors++;
     const attempts = row.attempts + 1;
     const serverSide = !permanent; // timeouts, connection errors, 5xx
-    const paused = serverSide ? this.hostFailed(h) : 0;
+    const refused = [401, 403, 404, 410].includes(err.status);
+    const paused = serverSide ? this.hostFailed(h) : refused ? this.hostRefused(h) : 0;
     const retry = !permanent && attempts < this.cfg.maxAttempts;
     // Feeds and sitemaps that fail permanently (4xx) three times in a row are
     // retired; starting pages keep trying, since an admin chose them.
     const recurring = RECURRING.has(row.kind) && !(permanent && row.kind !== 'hub' && attempts >= 3);
-    const reason = `${err.message}${retry && !recurring ? ` (attempt ${attempts} of ${this.cfg.maxAttempts}, will retry)` : ''}${paused ? `; ${h.failStreak} failures in a row, so this site rests for ${paused} min` : ''}`;
+    const reason = `${err.message}${retry && !recurring ? ` (attempt ${attempts} of ${this.cfg.maxAttempts}, will retry)` : ''}${paused ? `; ${serverSide ? `${h.failStreak} failures` : `${h.refuseStreak} refusals`} in a row, so this site rests for ${paused >= 120 ? `${Math.round(paused / 60)} h` : `${paused} min`}` : ''}`;
     this.log(row, { outcome: 'error', http: err.status || null, reason });
     // Recurring URLs keep their schedule (with backoff); articles retry 5, 25, 125 min apart.
     const nextAt = recurring ? now + this.recurringDelay(row, 0) : now + 60e3 * 5 ** Math.min(attempts, 4);
@@ -662,15 +738,22 @@ export class Spider extends EventEmitter {
     }
 
     const page = extractPage(body, res.url || row.url, { respectNofollow: this.cfg.respectNofollow });
-    const queued = this.followLinks(row, page);
-    const feeds = this.discoverFeeds(row, page);
-    const notes = [queued ? `${queued} new links` : null, feeds ? `${feeds} feeds found` : null, truncated ? `cut at ${Math.round(bytes / 1024)} KB` : null];
+    const cut = truncated ? `cut at ${Math.round(bytes / 1024)} KB` : null;
+    const linksAndFeeds = () => {
+      const queued = this.followLinks(row, page);
+      const feeds = this.discoverFeeds(row, page);
+      return { queued, feeds, notes: [queued ? `${queued} new links` : null, feeds ? `${feeds} feeds found` : null, cut] };
+    };
     if (row.kind === 'hub') {
+      const { queued, feeds, notes } = linksAndFeeds();
       this.guessFeeds(row, page, h);
       this.log(row, { outcome: 'hub', http, bytes, reason: notes.filter(Boolean).join('; ') || 'nothing new' });
       return this.done(row, { ...meta, fresh: queued + feeds });
     }
+    // Links are followed from starting pages and from pages worth indexing;
+    // an off-topic page's links lead further off-topic.
     const r = this.indexPage(row, page);
+    const { notes } = r.indexedOk || r.outcome === 'duplicate' || this.cfg.relevance === 'all' ? linksAndFeeds() : { notes: [cut] };
     this.log(row, { outcome: r.outcome, http, bytes, reason: [r.reason, ...notes].filter(Boolean).join('; ') || null });
     // Fresh articles are fetched again later to catch updates.
     const fresh = page.published_at && Date.now() - page.published_at < 3 * 86400e3;
@@ -693,7 +776,7 @@ export class Spider extends EventEmitter {
       const filtering = this.cfg.relevance !== 'all' && !isAiHost(row.host);
       for (const u of parsed.urls) {
         const ageH = u.lastmod ? (Date.now() - u.lastmod) / 3600e3 : 72;
-        if (this.isKnownTranslation(u.url) || isListingUrl(u.url)) continue;
+        if (this.isDeadEnd(u.url) || isListingUrl(u.url)) continue;
         // Judge by the Google News title when there is one, else by a descriptive slug.
         if (filtering && (u.title ? !this.isRelevantText(u.title) : slugRelevance(u.url) === false)) continue;
         if (this.enqueue(u.url, { kind: 'article', priority: 6 + Math.max(0, 3 - ageH / 12), depth: 1, via: row.url })) n++;
@@ -772,7 +855,11 @@ export class Spider extends EventEmitter {
         const depth = row.depth + 1;
         if (!sameHost) external.push(link.url);
         if (depth > this.cfg.maxDepth) continue;
+        // On general news sites, a descriptive slug that isn't about AI (and an
+        // anchor that isn't either) means an off-topic story: not worth a fetch.
+        const offTopic = !aiAnchor && this.cfg.relevance !== 'all' && !isAiHost(toHost) && slugRelevance(link.url) === false;
         if (sameHost && fromTrusted) {
+          if (offTopic) continue;
           if (article) enq(link.url, { kind: 'article', priority: 6 + (aiAnchor ? 2 : 0) - row.depth * 0.5 + (isAiHost(toHost) ? 1 : 0), depth, via: row.url });
           else if (aiAnchor && depth <= 2) enq(link.url, { kind: 'page', priority: 3.5, depth, via: row.url });
         } else if (sameHost) {
@@ -791,10 +878,10 @@ export class Spider extends EventEmitter {
     const d = this.decide(page);
     if (!d.ok) {
       if (d.outcome === 'duplicate') this.stats.duplicates++;
-      this.learnTranslation(page);
+      this.learnFromPage(page, d);
       return d;
     }
-    this.langMisses.delete(bare(page.site || ''));
+    this.learnFromPage(page, d);
     const existed = !!q('SELECT 1 FROM docs WHERE url = ? AND fetched_at IS NOT NULL').get(page.url);
     const { id } = upsertDoc({
       url: page.url, type: 'article', title: page.title, description: page.description, body: page.text || '',
@@ -836,7 +923,7 @@ export class Spider extends EventEmitter {
     const rule = this.rule(u.hostname);
     if (rule?.blocked) step('Site rule', false, 'Blocked by a per-site rule.');
     const h = this.host(u.hostname);
-    if (h.pausedUntil > Date.now()) step('Site health', false, `This site is resting after ${h.failStreak} failures in a row, until ${new Date(h.pausedUntil).toISOString().slice(11, 16)} UTC.`);
+    if (h.pausedUntil > Date.now()) step('Site health', false, `This site is resting after ${Math.max(h.failStreak || 0, h.refuseStreak || 0)} ${h.refuseStreak >= REFUSAL_LIMIT ? 'refusals' : 'failures'} in a row, until ${new Date(h.pausedUntil).toISOString().slice(11, 16)} UTC.`);
     try {
       await this.ensureRobots(h, u.protocol);
     } catch (err) {
@@ -970,7 +1057,7 @@ export class Spider extends EventEmitter {
   // Sites currently resting after repeated failures.
   resting() {
     const now = Date.now();
-    return [...this.hostCache.values()].filter((h) => h.pausedUntil > now).map((h) => ({ host: h.host, until: h.pausedUntil, failures: h.failStreak }));
+    return [...this.hostCache.values()].filter((h) => h.pausedUntil > now).map((h) => ({ host: h.host, until: h.pausedUntil, failures: Math.max(h.failStreak || 0, h.refuseStreak || 0), refused: (h.refuseStreak || 0) >= REFUSAL_LIMIT }));
   }
 
   // ---------- stats ----------
@@ -1001,6 +1088,7 @@ export class Spider extends EventEmitter {
       ignoringRobots: [...this.cfg.hostRules.values()].filter((r) => r.ignoreRobots).map((r) => r.host),
       resting: this.resting(),
       autoHubs: this.autoHubs(),
+      deadEnds: [...this.deadEnds()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.at - a.at).slice(0, 200),
       session: { ...this.stats, recent: undefined },
       recent: this.ring.slice(0, 40),
     };
@@ -1028,6 +1116,14 @@ export class Spider extends EventEmitter {
     this._st = { at: now, v };
     return v;
   }
+}
+
+// The section a dead end covers: the first path segment, or the first two
+// when the first is a locale (nvidia.com/en-us/geforce, not all of /en-us).
+function deadEndSection(url) {
+  const segs = url.pathname.toLowerCase().split('/').filter(Boolean);
+  if (/^[a-z]{2}([-_][a-z]{2})?$/.test(segs[0] || '') && segs[1]) return `${segs[0]}/${segs[1]}`;
+  return segs[0] || '';
 }
 
 // Undated pages its site section indexed in the last day (see decide()).

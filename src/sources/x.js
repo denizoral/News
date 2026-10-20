@@ -85,14 +85,23 @@ async function viaApi(token) {
 
 // Shapes one RSSHub/Nitter feed entry. List feeds mix authors, so the handle
 // comes from the status URL rather than from the account we asked for.
+// Profile pictures by handle. Feed entries don't carry them, but RSSHub's
+// per-user feeds name one in the channel <image>, so they're learned there and
+// applied to every post by that account, including ones from list feeds.
+const avatars = new Map();
+export const xAvatar = (handle) => avatars.get(handle?.toLowerCase()) || null;
+
+// Media URLs arrive HTML-escaped (&amp;) and at full size; the feed needs neither.
+const mediaUrl = (u) => u && decodeEntities(u).replace(/([?&]name=)orig\b/, '$1medium');
+
 export function feedEntryToItem(e, fallbackHandle) {
   const [, handle = fallbackHandle, id] = e.url.match(/(?:x|twitter)\.com\/(\w+)\/status\/(\d+)/) || [];
   if (!id || !handle || /^RT by|^R to|^RT @/.test(e.title)) return null;
   const html = e.summaryHtml || '';
-  const img = html.match(/<img[^>]+src="([^"]+)"/)?.[1];
-  const link = [...html.matchAll(/<a[^>]+href="([^"]+)"/g)].map((m) => m[1]).find((u) => /^https?:/.test(u) && !/(?:x|twitter)\.com|t\.co\/|twimg\.com/.test(u));
+  const img = mediaUrl(html.match(/<img[^>]+src="([^"]+)"/)?.[1]);
+  const link = [...html.matchAll(/<a[^>]+href="([^"]+)"/g)].map((m) => decodeEntities(m[1])).find((u) => /^https?:/.test(u) && !/(?:x|twitter)\.com|t\.co\/|twimg\.com/.test(u));
   const text = stripHtml(html.replace(/<br\s*\/?>/gi, ' ')) || e.title;
-  return toItem({ id, handle, name: e.author?.replace(/^@/, '') || handle, text, createdAt: e.publishedAt, image: img, link });
+  return toItem({ id, handle, name: e.author?.replace(/^@/, '') || handle, avatar: xAvatar(handle), text, createdAt: e.publishedAt, image: img, link });
 }
 
 async function viaFeeds(urlFor) {
@@ -117,8 +126,11 @@ const rsshubBase = () => process.env.RSSHUB_URL.replace(/\/$/, '');
 const listIds = () => (process.env.X_LIST_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
 
 async function fetchRsshub(path) {
-  const entries = parseFeed(await getText(`${rsshubBase()}/twitter/${path}/${RSSHUB_PARAMS}`, { timeout: 30000, retries: 0 }));
-  return entries.map((e) => feedEntryToItem(e, path.split('/').pop())).filter(Boolean);
+  const xml = await getText(`${rsshubBase()}/twitter/${path}/${RSSHUB_PARAMS}`, { timeout: 30000, retries: 0 });
+  const [kind, who] = path.split('/');
+  const avatar = kind === 'user' && xml.match(/<image>\s*<url>([^<]+)<\/url>/)?.[1];
+  if (avatar) avatars.set(who.toLowerCase(), decodeEntities(avatar).trim());
+  return parseFeed(xml).map((e) => feedEntryToItem(e, who)).filter(Boolean);
 }
 
 const rsshub = rotation('rsshub', (handle) => fetchRsshub(`user/${handle}`), RSSHUB_PER_RUN, 1500);

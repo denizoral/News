@@ -2,6 +2,7 @@
 // by account group, handle and text, newest first, paged with a time cursor.
 
 import { X_ACCOUNTS } from './config.js';
+import { xAvatar } from './sources/x.js';
 
 export const X_GROUPS = [
   ['lab', 'Labs'],
@@ -37,11 +38,15 @@ function index(store) {
     acct.avatar ||= p.avatar || null;
     accounts.set(key, acct);
   }
+  for (const a of accounts.values()) a.avatar ||= xAvatar(a.handle);
   memo = { version: store.version, size: store.items.size, posts, accounts: [...accounts.values()] };
   return memo;
 }
 
 const groupOf = (p) => GROUP_OF.get(p.handle.toLowerCase()) || p.group || 'people';
+
+// Posts stored before avatars and unescaped media URLs existed get both here.
+const cleanUrl = (u) => u && u.replace(/&amp;/g, '&');
 
 function shape(p) {
   return {
@@ -51,8 +56,8 @@ function shape(p) {
     text: p.summary || p.title,
     author: p.author,
     handle: p.handle,
-    avatar: p.avatar || null,
-    image: p.image || null,
+    avatar: p.avatar || xAvatar(p.handle),
+    image: cleanUrl(p.image) || null,
     group: groupOf(p),
     publishedAt: p.publishedAt,
     likes: p.engagement?.score || 0,

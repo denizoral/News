@@ -66,3 +66,19 @@ test('embed timeline parsing skips replies and retweets', async () => {
   assert.throws(() => parseEmbedTimeline('<html></html>', 'x'));
   assert.ok(embedQueue().length > 0);
 });
+
+test('RSSHub list feed entries take the handle from each status URL', async () => {
+  const { feedEntryToItem } = await import('../src/sources/x.js');
+  const xml = `<rss><channel>
+    <item><title>Odds on the new model release just moved</title><link>https://x.com/Polymarket/status/111</link>
+      <description><![CDATA[Odds on the new model release just moved<br><a href="https://polymarket.com/event/abc">polymarket.com/event/abc</a><img src="https://pbs.twimg.com/media/a.jpg">]]></description>
+      <pubDate>Tue, 20 Oct 2026 12:00:00 GMT</pubDate><author>Polymarket</author></item>
+    <item><title>RT @someone: not ours</title><link>https://x.com/sama/status/222</link><description>x</description></item>
+  </channel></rss>`;
+  const items = parseFeed(xml).map((e) => feedEntryToItem(e, 'listid')).filter(Boolean);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].handle, 'Polymarket');
+  assert.equal(items[0].url, 'https://x.com/Polymarket/status/111');
+  assert.equal(items[0].linkUrl, 'https://polymarket.com/event/abc');
+  assert.equal(items[0].image, 'https://pbs.twimg.com/media/a.jpg');
+});

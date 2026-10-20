@@ -53,10 +53,14 @@ export const X_ACCOUNTS = [
   { handle: 'TheRundownAI', group: 'scoops' },
   { handle: 'ai_for_success', group: 'scoops' },
   { handle: 'deedydas', group: 'scoops' },
-  { handle: 'Polymarket', group: 'scoops', aiOnly: true },
+
+  // Prediction markets: every post, not just AI ones. They break news early.
+  { handle: 'Polymarket', group: 'scoops' },
+  { handle: 'PolymarketIntel', group: 'scoops' },
+  { handle: 'Kalshi', group: 'scoops' },
 ];
 
-// Bluesky mirrors of AI voices. Public, no auth, fast.
+// Bluesky mirrors of AI voices. Only used while X is down (see crawler.js).
 export const BLUESKY_ACCOUNTS = [
   'simonwillison.net',
   'karpathy.bsky.social',

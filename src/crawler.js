@@ -28,8 +28,24 @@ export const SOURCES = {
   showhn: fetchShowHN,
 };
 
+// Bluesky is a backup for X: it only runs while X has been failing, and its
+// posts are dropped again once X comes back.
+const X_GRACE_MS = 15 * 60e3;
+function xHealthy(store) {
+  const x = store.sourceStatus.x;
+  if (x?.ok && x.count > 0) store.xLastGood = x.lastRun;
+  return Date.now() - (store.xLastGood || 0) < X_GRACE_MS;
+}
+
 export async function runSource(store, name) {
   const started = Date.now();
+  if (name === 'bluesky' && xHealthy(store)) {
+    let dropped = 0;
+    for (const [id, it] of store.items) if (it.platform === 'bluesky') store.items.delete(id), dropped++;
+    store.sourceStatus.bluesky = { ok: true, count: 0, added: 0, errors: 0, error: null, standby: true, lastRun: Date.now(), ms: 0 };
+    if (dropped) console.log(`[crawl] bluesky     standby (X is up), dropped ${dropped} posts`);
+    return;
+  }
   try {
     const out = await SOURCES[name]();
     if (name === 'polymarket') store.setMarkets(out.markets);

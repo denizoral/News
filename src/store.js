@@ -186,3 +186,16 @@ function dedupeBuilds(items, now) {
     .sort((a, b) => b.score - a.score)
     .slice(0, 240);
 }
+
+// The snapshot as the page receives it. Markets carry fields the server needs
+// for matching and indexing (each outcome's question and slug, liquidity,
+// entities) that the page never reads; they were over half the markets' bytes.
+export function publicSnapshot(snap) {
+  const markets = snap.markets.map(({ liquidity, entities, outcomes, volume, volume24h, ...m }) => ({
+    ...m,
+    volume: Math.round(volume || 0),
+    volume24h: Math.round(volume24h || 0),
+    outcomes: outcomes.map((o) => ({ label: o.label, yes: o.yes, change24h: o.change24h })),
+  }));
+  return { ...snap, markets };
+}

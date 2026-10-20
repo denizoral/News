@@ -4,7 +4,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { Store } from '../src/store.js';
+import { Store, publicSnapshot } from '../src/store.js';
 import { crawlAll } from '../src/crawler.js';
 
 const store = new Store();
@@ -19,7 +19,7 @@ console.log(`stories with markets: ${snap.stories.filter((s) => s.markets?.lengt
 if (process.argv.includes('--static')) {
   const out = path.resolve('public/data/snapshot.json');
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, JSON.stringify(snap));
+  fs.writeFileSync(out, JSON.stringify(publicSnapshot(snap)));
   console.log(`wrote ${out}`);
 }
 process.exit(0);

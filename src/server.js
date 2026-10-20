@@ -4,7 +4,7 @@
 // GET/HEAD only outside the admin API, per-IP rate limits on search, a short
 // cache for repeated searches, caps on live connections, request timeouts,
 // and no stack traces in responses. Static files are served from memory with
-// ETags and gzip.
+// ETags, Brotli and gzip.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -12,7 +12,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { Store } from './store.js';
+import { Store, publicSnapshot } from './store.js';
 import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
 import { openDb, checkpoint, closeDb } from './db.js';
 import { settings } from './settings.js';
@@ -31,6 +31,30 @@ const PROD = process.env.NODE_ENV === 'production';
 const PUBLIC = path.resolve('public');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain; charset=utf-8' };
 const MAX_QUERY = 256;
+
+// Brotli where the client takes it (every current browser over HTTPS and
+// localhost); it is 15-25% smaller than gzip on our JSON and scripts.
+export function pickEncoding(req) {
+  const ae = req.headers['accept-encoding'] || '';
+  return /\bbr\b/.test(ae) ? 'br' : /\bgzip\b/.test(ae) ? 'gzip' : null;
+}
+
+// A response body plus its compressed forms, each made on first request and
+// kept, so a hot body is compressed once rather than on every hit.
+export class Packed {
+  constructor(data, brQuality = 11) {
+    this.data = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    this.brQuality = brQuality;
+  }
+  get(enc) {
+    if (enc === 'br') {
+      this.br ??= zlib.brotliCompressSync(this.data, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: this.brQuality, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: this.data.length } });
+      return this.br;
+    }
+    if (enc === 'gzip') return (this.gz ??= zlib.gzipSync(this.data));
+    return this.data;
+  }
+}
 
 // Small TTL cache for public API responses (search, suggest).
 class TtlCache {
@@ -76,8 +100,9 @@ export function createApp({ store, spider }) {
   let snap = { version: -1 };
   const snapshot = () => {
     if (snap.version !== store.snapshot.version) {
-      const json = JSON.stringify(store.snapshot);
-      snap = { version: store.snapshot.version, json, gz: zlib.gzipSync(json), etag: `"v${store.snapshot.version}-${crypto.createHash('sha1').update(json).digest('hex').slice(0, 10)}"` };
+      const json = JSON.stringify(publicSnapshot(store.snapshot));
+      // Quality 6: the snapshot changes every few minutes, so compress fast.
+      snap = { version: store.snapshot.version, body: new Packed(json, 6), etag: `"v${store.snapshot.version}-${crypto.createHash('sha1').update(json).digest('hex').slice(0, 10)}"` };
     }
     return snap;
   };
@@ -101,7 +126,7 @@ export function createApp({ store, spider }) {
       return null;
     }
     const type = TYPES[path.extname(file)] || 'application/octet-stream';
-    const entry = { data, type, gz: /text|javascript|json|svg/.test(type) ? zlib.gzipSync(data) : null, etag: `"${crypto.createHash('sha1').update(data).digest('hex').slice(0, 16)}"` };
+    const entry = { body: new Packed(data, PROD ? 11 : 4), type, compressible: /text|javascript|json|svg/.test(type), etag: `"${crypto.createHash('sha1').update(data).digest('hex').slice(0, 16)}"` };
     if (PROD) statics.set(rel, entry);
     return entry;
   }
@@ -111,11 +136,12 @@ export function createApp({ store, spider }) {
     res.end(req.method === 'HEAD' ? undefined : body);
   }
 
+  // `obj` may be a Packed body (cached responses) or anything JSON-able.
   function json(req, res, status, obj, extra = {}) {
-    const s = typeof obj === 'string' ? obj : JSON.stringify(obj);
-    const useGz = s.length > 1024 && /gzip/.test(req.headers['accept-encoding'] || '');
-    res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache', vary: 'Accept-Encoding', ...(useGz ? { 'content-encoding': 'gzip' } : {}), ...extra });
-    res.end(req.method === 'HEAD' ? undefined : useGz ? zlib.gzipSync(s) : s);
+    const body = obj instanceof Packed ? obj : new Packed(typeof obj === 'string' ? obj : JSON.stringify(obj), 4);
+    const enc = body.data.length > 1024 ? pickEncoding(req) : null;
+    res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache', vary: 'Accept-Encoding', ...(enc ? { 'content-encoding': enc } : {}), ...extra });
+    res.end(req.method === 'HEAD' ? undefined : body.get(enc));
   }
 
   function limited(req, res) {
@@ -135,7 +161,7 @@ export function createApp({ store, spider }) {
     const key = url.pathname + url.search;
     let body = cache.get(key);
     if (!body) {
-      body = JSON.stringify(compute(Object.fromEntries(url.searchParams)));
+      body = new Packed(JSON.stringify(compute(Object.fromEntries(url.searchParams))), 5);
       cache.set(key, body);
     }
     json(req, res, 200, body, { 'cache-control': 'public, max-age=15' });
@@ -164,9 +190,9 @@ export function createApp({ store, spider }) {
     if (p === '/api/snapshot') {
       const s = snapshot();
       if (req.headers['if-none-match'] === s.etag) return res.writeHead(304, { etag: s.etag }).end();
-      const gz = /gzip/.test(req.headers['accept-encoding'] || '');
-      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', etag: s.etag, 'cache-control': 'public, max-age=5', vary: 'Accept-Encoding', ...(gz ? { 'content-encoding': 'gzip' } : {}) });
-      return res.end(req.method === 'HEAD' ? undefined : gz ? s.gz : s.json);
+      const enc = pickEncoding(req);
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', etag: s.etag, 'cache-control': 'public, max-age=5', vary: 'Accept-Encoding', ...(enc ? { 'content-encoding': enc } : {}) });
+      return res.end(req.method === 'HEAD' ? undefined : s.body.get(enc));
     }
     if (p === '/api/search') return cachedApi(req, res, url, (o) => (o.type === 'images' ? searchImages(o.q || '', o) : universal(o.q || '', o)));
     if (p === '/api/suggest') return cachedApi(req, res, url, (o) => suggest(o.q || ''));
@@ -225,9 +251,9 @@ export function createApp({ store, spider }) {
     if (!f && !path.extname(rel)) f = staticFile('index.html');
     if (!f) return send(req, res, 404, 'Not found', 'text/plain; charset=utf-8');
     if (req.headers['if-none-match'] === f.etag) return res.writeHead(304, { etag: f.etag }).end();
-    const gz = f.gz && /gzip/.test(req.headers['accept-encoding'] || '');
-    res.writeHead(200, { 'content-type': f.type, etag: f.etag, 'cache-control': PROD && rel !== 'index.html' ? 'public, max-age=300' : 'no-cache', vary: 'Accept-Encoding', ...(gz ? { 'content-encoding': 'gzip' } : {}) });
-    res.end(req.method === 'HEAD' ? undefined : gz ? f.gz : f.data);
+    const enc = f.compressible ? pickEncoding(req) : null;
+    res.writeHead(200, { 'content-type': f.type, etag: f.etag, 'cache-control': PROD && rel !== 'index.html' ? 'public, max-age=300' : 'no-cache', vary: 'Accept-Encoding', ...(enc ? { 'content-encoding': enc } : {}) });
+    res.end(req.method === 'HEAD' ? undefined : f.body.get(enc));
   }
 
   const server = http.createServer((req, res) => {

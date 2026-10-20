@@ -35,9 +35,16 @@ export const ENTITIES = {
 // and treat these as weak (they need a second AI signal to count).
 const WEAK = new Set(['meta', 'apple', 'amazon', 'google', 'microsoft', 'musk', 'elon musk', 'tesla', 'china', 'chinese', 'ban', 'court', 'billion', 'arena', 'elo', 'cursor', 'asi', 'beijing', 'gpt']);
 
-const aliasList = Object.entries(ENTITIES).flatMap(([key, aliases]) =>
-  aliases.map((a) => ({ key, alias: a, re: new RegExp(`(^|[^a-z0-9])${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^a-z0-9])`, 'i') })),
-);
+const escapeRe = (a) => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const aliasKey = new Map(Object.entries(ENTITIES).flatMap(([key, aliases]) => aliases.map((a) => [a, key])));
+
+// One pass over the text instead of one regex per alias (~140): a single
+// alternation, longest alias first, matched at word boundaries. The scan
+// restarts one character after each match so overlapping aliases are still
+// found ("meta ai act" yields both meta and regulation), and an alias that
+// starts with a shorter one also credits the shorter ("meta ai" -> "meta").
+const ALIAS_RE = new RegExp(`(?<![a-z0-9])(?:${[...aliasKey.keys()].sort((a, b) => b.length - a.length).map(escapeRe).join('|')})(?![a-z0-9])`, 'g');
+const prefixAliases = new Map([...aliasKey.keys()].map((a) => [a, [...aliasKey.keys()].filter((b) => b !== a && a.startsWith(b) && !/[a-z0-9]/.test(a[b.length]))]));
 
 const AI_TERMS = /\b(ai|a\.i\.|artificial intelligence|machine learning|deep learning|llms?|large language models?|neural|chatbots?|generative|genai|gpt-?\d|transformer|agents?|agentic|inference|foundation models?|frontier models?|reasoning models?|multimodal|diffusion|fine-?tun\w*|embeddings?|rag|openai|anthropic|claude|gemini|deepmind|llama|mistral|grok|copilot|chatgpt|hugging ?face|nvidia|gpus?|datacenters?|data centers?|superintelligence|agi|vibe ?cod\w*|mcp|tokens?|weights|open-?source models?|robotics|humanoids?)\b/i;
 
@@ -55,15 +62,20 @@ export function countAiTerms(text, cap = 10) {
 }
 
 export function extractEntities(text) {
-  const t = ` ${text.toLowerCase()} `;
+  const t = text.toLowerCase();
   const found = new Map();
-  for (const { key, alias, re } of aliasList) {
-    if (re.test(t)) {
-      const strong = !WEAK.has(alias);
-      found.set(key, found.get(key) || strong);
-    }
+  const credit = (alias) => {
+    const key = aliasKey.get(alias);
+    found.set(key, found.get(key) || !WEAK.has(alias));
+  };
+  ALIAS_RE.lastIndex = 0;
+  for (let m; (m = ALIAS_RE.exec(t)); ) {
+    credit(m[0]);
+    for (const p of prefixAliases.get(m[0])) credit(p);
+    ALIAS_RE.lastIndex = m.index + 1;
   }
-  return found; // key -> strong?
+  // Same key order as ENTITIES, so callers see a stable order.
+  return new Map(Object.keys(ENTITIES).filter((k) => found.has(k)).map((k) => [k, found.get(k)])); // key -> strong?
 }
 
 const TOPIC_RULES = [

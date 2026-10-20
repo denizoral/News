@@ -13,7 +13,8 @@
     "crawl": "node --disable-warning=UNDICI-EHPA scripts/crawl-once.js",
     "build:static": "node --disable-warning=UNDICI-EHPA scripts/crawl-once.js --static",
     "test": "node --test test/*.test.js",
-    "admin": "node --disable-warning=UNDICI-EHPA scripts/admin.js"
+    "admin": "node --disable-warning=UNDICI-EHPA scripts/admin.js",
+    "bench": "node --disable-warning=UNDICI-EHPA scripts/bench.js"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",

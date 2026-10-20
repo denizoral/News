@@ -66,6 +66,13 @@ Copy `.env.example` to `.env`. Everything is optional:
   a free "script" app at reddit.com/prefs/apps fixes that.
 - `GITHUB_TOKEN`: higher GitHub search limits.
 
+## Trending now
+
+Above the lead story, **Trending now** ranks the companies and themes getting
+more coverage than usual (count in the window versus the 24 hours before, from
+at least two outlets), with a 24-hour sparkline each. Click one to filter the
+feed. `GET /api/trending?hours=1|3|6|12|24` returns the same data as JSON.
+
 ## Search engine
 
 Besides the feed, Frontier Wire runs its own crawler and search engine. Type in

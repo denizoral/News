@@ -47,6 +47,14 @@
   <main id="main">
     <!-- News -->
     <section class="view" data-view="news" aria-label="News">
+      <section class="trending" id="trending" aria-labelledby="trendTitle" hidden>
+        <div class="trend-head">
+          <h2 id="trendTitle">Trending now</h2>
+          <p class="trend-note" id="trendNote"></p>
+          <div class="chips chips-quiet" id="trendWindow" role="group" aria-label="Trending window"></div>
+        </div>
+        <ol class="trend-list" id="trendList"></ol>
+      </section>
       <div class="lead-wrap" id="lead"></div>
       <div class="layout">
         <div class="river-col">

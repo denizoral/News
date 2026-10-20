@@ -201,6 +201,13 @@ export function createApp({ store, spider }) {
       const doc = getDoc(url.searchParams.get('id'));
       return doc ? json(req, res, 200, doc, { 'x-robots-tag': 'noindex' }) : json(req, res, 404, { error: 'No document with that id.' });
     }
+    if (p === '/api/trending') {
+      const hours = Number(url.searchParams.get('hours') || 6);
+      if (![1, 3, 6, 12, 24].includes(hours)) return json(req, res, 400, { error: 'hours must be 1, 3, 6, 12 or 24.' });
+      const etag = `"t${store.snapshot.version}-${hours}"`;
+      if (req.headers['if-none-match'] === etag) return res.writeHead(304, { etag }).end();
+      return json(req, res, 200, { version: store.snapshot.version, ...store.trending(hours) }, { etag, 'cache-control': 'public, max-age=15' });
+    }
     if (p === '/api/spider') return json(req, res, 200, spider.status(), { 'cache-control': 'public, max-age=10' });
     if (p === '/api/status') return json(req, res, 200, { ...store.status(), version: store.snapshot.version, generatedAt: store.snapshot.generatedAt });
 

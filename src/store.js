@@ -3,6 +3,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { settings } from './settings.js';
 import { q } from './db.js';
+import { computeTrending } from './pipeline/trending.js';
 import { canonicalUrl } from './pipeline/text.js';
 import { clusterItems, scoreStory, matchMarkets } from './pipeline/cluster.js';
 
@@ -159,9 +160,20 @@ export class Store extends EventEmitter {
       .sort((a, b) => b.publishedAt - a.publishedAt)
       .slice(0, 80);
 
+    this._newsItems = newsItems;
+    this._trending = new Map();
     this.version++;
-    this.snapshot = { version: this.version, generatedAt: now, site: settings.publicSite(), stories: topStories, builds, markets, social, models, status: this.status() };
+    this.snapshot = { version: this.version, generatedAt: now, site: settings.publicSite(), stories: topStories, builds, markets, social, models, trending: computeTrending(newsItems, { now }), status: this.status() };
     this.emit('update', this.snapshot);
+  }
+
+  // Trending over another window (/api/trending?hours=N), cached per version.
+  trending(hours = 6) {
+    if (hours === 6) return this.snapshot.trending || computeTrending([], { hours });
+    if (!this._trending) this._trending = new Map();
+    let t = this._trending.get(hours);
+    if (!t) this._trending.set(hours, (t = computeTrending(this._newsItems || [], { now: this.snapshot.generatedAt || Date.now(), hours })));
+    return t;
   }
 
   status() {

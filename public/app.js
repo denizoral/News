@@ -21,6 +21,9 @@ const state = {
   buildFilter: store.get('fw.build', 'all'),
   marketSort: store.get('fw.msort', 'moving'),
   q: '',
+  entity: null,
+  trendHours: 6,
+  trend: null, // trending for a non-default window, fetched from the API
   limit: 60,
   open: new Set(),
   read: new Set(store.get('fw.read', [])),
@@ -42,6 +45,12 @@ function ago(ts) {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
+}
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Animated swaps of the page (tabs, filters) where the browser supports it.
+function transition(update) {
+  if (!document.startViewTransition || reducedMotion() || document.hidden) return update();
+  document.startViewTransition(update);
 }
 const time = (ts) => `<time datetime="${new Date(ts).toISOString()}" data-ts="${ts}" title="${new Date(ts).toLocaleString()}">${ago(ts)}</time>`;
 
@@ -80,6 +89,7 @@ async function refresh({ force = false } = {}) {
       state.data = next;
       state.pending = null;
       render();
+      if (state.trendHours !== 6) loadTrend({ animate: false });
     } else {
       // Don't reshuffle under someone who is reading; offer the update instead.
       state.pending = next;
@@ -126,6 +136,50 @@ function updateLive() {
 
 const marketById = () => new Map((state.data?.markets || []).map((m) => [m.id, m]));
 
+// Odds bars scale with transform (cheap to animate); [data-odds] lets the
+// renderer find values that moved since the last paint and animate them.
+const oddsKey = (m, o) => `${m.id}:${o.label}`;
+const barHtml = (m, o) => `<span class="rule" aria-hidden="true"><i data-odds="${esc(oddsKey(m, o))}" data-yes="${o.yes}" style="transform:scaleX(${(o.yes || 0).toFixed(3)})"></i></span>`;
+const pctHtml = (m, o, tag = 'span', cls = 'pct') => `<${tag} class="${cls}" data-odds="${esc(oddsKey(m, o))}" data-yes="${o.yes}">${pct(o.yes)}</${tag}>`;
+
+const shownOdds = new Map();
+function animateOdds() {
+  const motion = !reducedMotion();
+  const bars = [];
+  for (const el of $$('[data-odds]')) {
+    const key = el.dataset.odds;
+    const yes = Number(el.dataset.yes);
+    const before = shownOdds.get(key);
+    if (motion && before != null && Math.abs(before - yes) >= 0.005) {
+      if (el.tagName === 'I') {
+        el.style.transform = `scaleX(${before})`;
+        bars.push([el, yes]);
+      } else {
+        el.classList.add('tick', yes > before ? 'up' : 'down');
+      }
+    }
+  }
+  for (const el of $$('[data-odds]')) shownOdds.set(el.dataset.odds, Number(el.dataset.yes));
+  if (!bars.length) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    for (const [el, yes] of bars) el.style.transform = `scaleX(${yes.toFixed(3)})`;
+  }));
+}
+
+// New stories fade and rise in, a few at a time; ones already on screen stay put.
+const shownStories = new Set();
+function revealStories(container, { all = false } = {}) {
+  let i = 0;
+  for (const el of $$('.story[data-id]', container)) {
+    const id = el.dataset.id;
+    if ((all || (shownStories.size && !shownStories.has(id))) && i < 14 && !reducedMotion()) {
+      el.classList.add('enter');
+      el.style.setProperty('--i', i++);
+    }
+    shownStories.add(id);
+  }
+}
+
 function oddsHtml(story, max = 2) {
   if (!story.markets?.length) return '';
   const mm = marketById();
@@ -134,8 +188,8 @@ function oddsHtml(story, max = 2) {
     const label = m.binary ? m.title : `${m.title}: ${o.label}`;
     return `<div class="odd">
       <a href="${esc(m.url)}" target="_blank" rel="noopener" title="Open on Polymarket">${esc(label)}</a>
-      <span><span class="pct">${pct(o.yes)}</span>${changeHtml(o.change24h)}</span>
-      <span class="rule" aria-hidden="true"><i style="width:${(o.yes * 100).toFixed(1)}%"></i></span>
+      <span>${pctHtml(m, o)}${changeHtml(o.change24h)}</span>
+      ${barHtml(m, o)}
     </div>`;
   });
   return rows.length ? `<div class="odds" aria-label="Related Polymarket odds">${rows.join('')}</div>` : '';
@@ -230,6 +284,7 @@ function matchesQuery(text) {
 function filteredStories() {
   return state.data.stories.filter((s) =>
     (state.topic === 'All' || s.topics.includes(state.topic)) &&
+    (!state.entity || s.entities.includes(state.entity)) &&
     matchesKind(s, state.kind) &&
     matchesQuery(`${s.title} ${s.summary} ${s.sources.map((x) => x.name).join(' ')}`));
 }
@@ -280,10 +335,61 @@ function bucket(ts) {
   return 'Older';
 }
 
-function renderNews() {
+// ---------- Trending ----------
+
+const TREND_WINDOWS = [[3, '3h'], [6, '6h'], [24, '24h']];
+
+function trendData() {
+  if (state.trendHours !== 6 && state.trend?.hours === state.trendHours && state.trend.version === state.data.version) return state.trend;
+  return state.data.trending;
+}
+
+// The non-default windows come from /api/trending; the 6-hour one ships in the snapshot.
+async function loadTrend({ animate = true } = {}) {
+  if (state.trendHours === 6 || state.mode !== 'api') return renderTrending({ animate });
+  try {
+    const res = await fetch(`api/trending?hours=${state.trendHours}`);
+    if (res.ok) state.trend = await res.json();
+  } catch { /* keep the snapshot's */ }
+  if (state.view === 'news') renderTrending({ animate });
+}
+
+function sparkSvg(values) {
+  const max = Math.max(1, ...values);
+  const step = 64 / (values.length - 1);
+  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(17 - (v / max) * 15).toFixed(1)}`);
+  return `<svg class="spark" viewBox="0 0 64 18" preserveAspectRatio="none" aria-hidden="true"><path class="area" d="M0,18 L${pts.join(' L')} L64,18 Z"/><polyline points="${pts.join(' ')}"/></svg>`;
+}
+
+let trendKeys = '';
+function renderTrending({ animate = false } = {}) {
+  const t = trendData();
+  const box = $('#trending');
+  const topics = t?.topics || [];
+  box.hidden = !topics.length;
+  if (!topics.length) return;
+  $('#trendNote').textContent = `Most coverage versus the usual pace, last ${t.hours} hours`;
+  $('#trendWindow').innerHTML = state.mode === 'api'
+    ? TREND_WINDOWS.map(([h, l]) => `<button class="chip" type="button" data-trend-hours="${h}" aria-pressed="${state.trendHours === h}">${l}</button>`).join('')
+    : '';
+  const keys = topics.map((x) => x.key).join();
+  const list = $('#trendList');
+  list.classList.toggle('animate', (animate || keys !== trendKeys) && !reducedMotion());
+  trendKeys = keys;
+  list.innerHTML = topics.map((x, i) => `<li style="--i:${i}">
+    <button class="trend" type="button" data-entity="${esc(x.key)}" aria-pressed="${state.entity === x.key}" title="${x.count} stories from ${x.sources} sources, ${x.lift}× the usual rate. Click to filter.">
+      <span class="t-rank">${i + 1}</span>
+      <span class="t-name">${esc(x.label)}</span>
+      ${sparkSvg(x.spark)}
+      <span class="t-meta"><b>${x.count}</b> ${x.count === 1 ? 'story' : 'stories'}${x.lift >= 1.5 ? ` <span class="t-lift">${x.lift >= 10 ? Math.round(x.lift) : x.lift.toFixed(1)}×</span>` : ''}</span>
+    </button></li>`).join('');
+}
+
+function renderNews({ animate = false } = {}) {
+  renderTrending();
   renderChips();
   const all = filteredStories();
-  const filtered = state.topic !== 'All' || state.kind !== 'all' || state.q;
+  const filtered = state.topic !== 'All' || state.kind !== 'all' || state.q || state.entity;
   let rest = all;
   if (!filtered && state.sort === 'top') {
     const lead = pickLead(all);
@@ -310,7 +416,13 @@ function renderNews() {
   } else {
     html = shown.map((s) => storyHtml(s)).join('');
   }
+  if (state.entity) {
+    const label = trendData()?.topics.find((x) => x.key === state.entity)?.label || state.entity;
+    html = `<p class="entity-bar">Stories about <b>${esc(label)}</b> <button class="chip" type="button" data-entity="${esc(state.entity)}">Show all stories</button></p>` + html;
+  }
   $('#river').innerHTML = html;
+  revealStories($('#river'), { all: animate });
+  revealStories($('#lead'), { all: animate });
   const more = $('#moreStories');
   more.hidden = rest.length <= state.limit;
   more.textContent = `Show more stories (${rest.length - state.limit} left)`;
@@ -325,8 +437,8 @@ function renderRail() {
     const o = m.outcomes.slice().sort((a, b) => Math.abs(b.change24h || 0) - Math.abs(a.change24h || 0))[0];
     const label = m.binary ? m.title : `${m.title}: ${o.label}`;
     return `<li><a class="q" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(label)}</a>
-      <span class="rule" aria-hidden="true"><i style="width:${(o.yes * 100).toFixed(1)}%"></i></span>
-      <span class="row"><span><b class="num">${pct(o.yes)}</b> ${changeHtml(o.change24h)}</span><span class="num">$${compact(m.volume24h)} today</span></span></li>`;
+      ${barHtml(m, o)}
+      <span class="row"><span>${pctHtml(m, o, 'b', 'num')} ${changeHtml(o.change24h)}</span><span class="num">$${compact(m.volume24h)} today</span></span></li>`;
   }).join('') || '<li class="rail-note">Markets are loading.</li>';
 
   const posts = social.filter((p) => matchesQuery(`${p.title} ${p.author}`)).slice(0, 14);
@@ -412,8 +524,8 @@ function renderMarkets() {
       </header>
       <div class="outs">${m.outcomes.slice(0, 4).map((o) => `<div class="odd">
         <span class="odd-label">${esc(m.binary ? 'Yes' : o.label)}</span>
-        <span><span class="pct">${pct(o.yes)}</span>${changeHtml(o.change24h)}</span>
-        <span class="rule" aria-hidden="true"><i style="width:${(o.yes * 100).toFixed(1)}%"></i></span></div>`).join('')}</div>
+        <span>${pctHtml(m, o)}${changeHtml(o.change24h)}</span>
+        ${barHtml(m, o)}</div>`).join('')}</div>
       ${m.stories.length ? `<div class="related"><span>In the news</span>${m.stories.map((r) => {
         const s = storyById.get(r.id);
         return `<a href="${esc(s?.url || '#news')}" target="_blank" rel="noopener">${esc(r.title)}</a>`;
@@ -483,6 +595,7 @@ function render() {
   if (state.view === 'markets') renderMarkets();
   renderFoot();
   updateLive();
+  animateOdds();
   $('#newPill').hidden = !state.pending;
 }
 
@@ -497,8 +610,12 @@ function route() {
   state.view = ['news', 'builds', 'markets'].includes(v) ? v : 'news';
   const name = state.data?.site?.name || 'Frontier Wire';
   document.title = { news: name, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}` }[state.view];
-  render();
-  window.scrollTo({ top: 0 });
+  const changed = $(`.view[data-view="${state.view}"]`)?.hidden;
+  const go = () => {
+    render();
+    window.scrollTo({ top: 0 });
+  };
+  changed && state.data ? transition(go) : go();
 }
 
 // ---------- Events ----------
@@ -507,7 +624,14 @@ document.addEventListener('click', (e) => {
   const t = e.target.closest('button, a');
   if (!t) return;
   const d = t.dataset;
-  if (d.topic) { state.topic = d.topic; store.set('fw.topic', d.topic); state.limit = 60; renderNews(); }
+  if (d.entity) {
+    state.entity = state.entity === d.entity ? null : d.entity;
+    state.limit = 60;
+    transition(() => { renderNews({ animate: true }); animateOdds(); });
+    if (state.entity) $('#trending').scrollIntoView({ block: 'nearest' });
+  }
+  else if (d.trendHours) { state.trendHours = Number(d.trendHours); loadTrend(); }
+  else if (d.topic) { state.topic = d.topic; store.set('fw.topic', d.topic); state.limit = 60; renderNews({ animate: true }); animateOdds(); }
   else if (d.kind) { state.kind = d.kind; store.set('fw.kind', d.kind); state.limit = 60; renderNews(); }
   else if (d.sort) { state.sort = d.sort; store.set('fw.sort', d.sort); renderNews(); }
   else if (d.build) { state.buildFilter = d.build; store.set('fw.build', d.build); renderBuilds(); }
@@ -529,7 +653,7 @@ $('#newPill').addEventListener('click', () => {
   if (state.pending) state.data = state.pending;
   state.pending = null;
   render();
-  window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' });
 });
 
 let qTimer;
@@ -598,7 +722,7 @@ async function updateSpiderLine() {
   $('#footSpider').textContent = await spiderLine(compact);
 }
 setInterval(updateSpiderLine, 30e3);
-$('#river').innerHTML = Array.from({ length: 8 }, () => '<div class="skeleton"></div>').join('');
+$('#river').innerHTML = Array.from({ length: 6 }, () => '<div class="skeleton-card" aria-hidden="true"><i class="skeleton"></i><i class="skeleton w80"></i><i class="skeleton w40"></i></div>').join('');
 route();
 await refresh();
 updateSpiderLine();

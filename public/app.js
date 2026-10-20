@@ -295,9 +295,8 @@ function renderChips() {
   for (const s of stories) for (const t of s.topics) counts[t] = (counts[t] || 0) + 1;
   const topics = ['All', ...Object.keys(counts).sort((a, b) => counts[b] - counts[a])];
   $('#topicChips').innerHTML = topics.map((t) =>
-    `<button class="chip" type="button" data-topic="${esc(t)}" aria-pressed="${state.topic === t}">${esc(t)}${t !== 'All' ? `<span class="n">${counts[t]}</span>` : ''}</button>`).join('') +
-    `<span class="spacer"></span>` +
-    [['top', 'Top'], ['latest', 'Latest']].map(([k, l]) => `<button class="chip" type="button" data-sort="${k}" aria-pressed="${state.sort === k}">${l}</button>`).join('');
+    `<button class="chip" type="button" data-topic="${esc(t)}" aria-pressed="${state.topic === t}">${esc(t)}${t !== 'All' ? `<span class="n">${counts[t]}</span>` : ''}</button>`).join('');
+  $('#sortSeg').innerHTML = [['top', 'Top'], ['latest', 'Latest']].map(([k, l]) => `<button type="button" data-sort="${k}" aria-pressed="${state.sort === k}">${l}</button>`).join('');
   $('#kindChips').innerHTML = KINDS.map(([k, l]) => `<button class="chip" type="button" data-kind="${k}" aria-pressed="${state.kind === k}">${l}</button>`).join('');
 }
 

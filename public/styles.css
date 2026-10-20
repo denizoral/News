@@ -7,6 +7,7 @@
   --line: #d6dde5;
   --signal: #2f54eb;
   --signal-soft: #e3e9fd;
+  --on-signal: #ffffff;
   --yes: #12805c;
   --yes-soft: #d7efe5;
   --no: #c2412d;
@@ -37,6 +38,7 @@
     --line: #22364f;
     --signal: #7d9bff;
     --signal-soft: #1c2f57;
+    --on-signal: #0b1626;
     --yes: #3ccf97;
     --yes-soft: #12392f;
     --no: #ff7a63;
@@ -54,6 +56,7 @@
   --line: #22364f;
   --signal: #7d9bff;
   --signal-soft: #1c2f57;
+  --on-signal: #0b1626;
   --yes: #3ccf97;
   --yes-soft: #12392f;
   --no: #ff7a63;
@@ -127,13 +130,16 @@ img { display: block; max-width: 100%; }
 .theme:hover { color: var(--ink); }
 .theme svg { width: 18px; height: 18px; display: block; }
 
+/* Sits at the bottom so it never covers the sticky masthead or filter chips. */
 .new-pill {
-  position: fixed; top: 68px; left: 50%; transform: translateX(-50%); z-index: 30;
-  background: var(--signal); color: #fff; border: 0; border-radius: 999px; padding: 8px 16px;
-  font-weight: 700; box-shadow: var(--shadow); cursor: pointer;
-  animation: drop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1.2);
+  position: fixed; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); z-index: 30;
+  background: var(--signal); color: var(--on-signal); border: 0; border-radius: 999px; padding: 6px 14px;
+  font-size: var(--s-1); font-weight: 700; box-shadow: var(--shadow); cursor: pointer; white-space: nowrap;
+  animation: lift 0.35s cubic-bezier(0.2, 0.8, 0.2, 1.2);
 }
-@keyframes drop { from { transform: translate(-50%, -16px); opacity: 0; } }
+.new-pill:hover { filter: brightness(1.08); }
+.new-pill:focus-visible { outline-offset: 3px; }
+@keyframes lift { from { transform: translate(-50%, 16px); opacity: 0; } }
 
 main { max-width: var(--max); margin: 0 auto; padding: 28px 24px 40px; }
 
@@ -164,6 +170,16 @@ main { max-width: var(--max); margin: 0 auto; padding: 28px 24px 40px; }
 
 .filters { display: grid; gap: 10px; margin-bottom: 8px; position: sticky; top: 57px; z-index: 5; background: var(--paper); padding: 10px 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.filter-row { display: flex; align-items: flex-start; gap: 6px 16px; }
+.filter-row > .chips { flex: 1; min-width: 0; }
+/* Top / Latest: a segmented control the same height as a chip. */
+.seg { display: inline-flex; flex: none; padding: 2px; gap: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.seg button {
+  border: 0; background: transparent; border-radius: 999px; padding: 2px 12px; line-height: 1.5;
+  font-size: var(--s-1); font-weight: 600; color: var(--muted); cursor: pointer;
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
 .chip {
   border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 12px;
   font-size: var(--s-1); font-weight: 600; cursor: pointer; color: var(--ink-2);
@@ -377,6 +393,7 @@ main { max-width: var(--max); margin: 0 auto; padding: 28px 24px 40px; }
 /* ---------- Footer ---------- */
 .foot { max-width: var(--max); margin: 0 auto; padding: 24px; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--s-1); }
 .foot summary { cursor: pointer; font-weight: 600; }
+#sourceTable { overflow-x: auto; }
 .foot table { border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; }
 .foot td { padding: 3px 18px 3px 0; }
 .ok { color: var(--yes); } .bad { color: var(--no); }
@@ -451,8 +468,7 @@ mark { background: var(--signal-soft); color: inherit; border-radius: 2px; }
   .wordmark span { font-size: 1rem; }
   .search kbd { display: none; }
   .tabs { order: 3; width: 100%; overflow-x: auto; }
-  .filters { top: 98px; }
-  .new-pill { top: 108px; }
+  .filters { top: 105px; }
   .build.feature { grid-column: auto; }
 }
 @media (max-width: 560px) {
@@ -472,6 +488,8 @@ mark { background: var(--signal-soft); color: inherit; border-radius: 2px; }
   .market-list { grid-template-columns: minmax(0, 1fr); }
   .builds { grid-template-columns: minmax(0, 1fr); }
   .filters { position: static; }
+  .filter-row { flex-wrap: wrap; }
+  .filter-row > .chips { flex-basis: 100%; }
   .trend-list { grid-auto-columns: 46%; margin-right: -16px; padding-right: 16px; }
   .trend-head .chips { margin-left: 0; }
 }

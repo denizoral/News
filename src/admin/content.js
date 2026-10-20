@@ -8,6 +8,7 @@ import { q, tx } from '../db.js';
 import { parseQuery, toMatch } from '../index/search.js';
 import { mediaPath } from '../spider/media.js';
 import { HttpError } from '../security/httpkit.js';
+import { isNonNewsPath, isNonNewsHost, isAiHost, isEditorialSection, isListingUrl, sectionOf } from '../spider/policy.js';
 
 export const contentEvents = new EventEmitter();
 
@@ -120,4 +121,67 @@ export function removeContent(id, actor) {
 export function contentCounts() {
   return q(`SELECT COUNT(*) AS total, SUM(hidden) AS hidden, SUM(pinned) AS pinned, SUM(CASE WHEN locked = 1 AND hidden = 0 THEN 1 ELSE 0 END) AS edited,
     SUM(CASE WHEN fetched_at IS NOT NULL THEN 1 ELSE 0 END) AS crawled FROM docs`).get();
+}
+
+// The sections contributing most matches, so a preview shows where they are.
+function topSections(list, n = 8) {
+  const counts = new Map();
+  for (const r of list) {
+    const k = sectionOf(r.url).prefix;
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  return [...counts].sort((a, b) => b[1] - a[1]).slice(0, n).map(([section, count]) => ({ section, count }));
+}
+
+// Rechecks crawled documents against today's crawl rules, for pages indexed
+// before a rule existed: docs/help/forum and job sites, other languages, tag and
+// author listings, and generated sections (nearly every page undated, past
+// the per-section daily limit). Without `apply` it only reports. Matches are
+// hidden, not deleted, so they can be restored from Content; pinned, edited
+// and removed documents are left alone, as are starting sites for the
+// host and undated rules.
+export function reviewIndex({ apply = false, actor = null, languages = [], undatedPerSection = 0, hubHosts = [] } = {}) {
+  const rows = q('SELECT id, url, site, lang, published_at, first_seen, hidden, locked, pinned FROM docs WHERE fetched_at IS NOT NULL ORDER BY first_seen').all();
+  const hubs = new Set(hubHosts);
+  // Share of undated pages per section, over everything crawled there.
+  const sections = new Map();
+  for (const r of rows) {
+    const k = sectionOf(r.url).prefix;
+    const v = sections.get(k) || { n: 0, undated: 0 };
+    v.n++;
+    if (!r.published_at) v.undated++;
+    sections.set(k, v);
+  }
+  const reasons = { 'Docs, help, forum or jobs page': [], 'Other-language page': [], 'Tag or author listing': [], 'Generated section (undated pages past the daily limit)': [] };
+  const perDay = new Map(); // "section|day" -> undated pages kept so far
+  for (const r of rows) {
+    if (r.hidden || r.locked || r.pinned) continue;
+    const host = r.site.replace(/^www\./, '');
+    const section = sectionOf(r.url).prefix;
+    let reason = null;
+    if (isNonNewsPath(r.url) || (isNonNewsHost(host) && !hubs.has(host))) reason = 'Docs, help, forum or jobs page';
+    else if (languages.length && r.lang && !languages.includes(r.lang)) reason = 'Other-language page';
+    else if (isListingUrl(r.url)) reason = 'Tag or author listing';
+    else if (undatedPerSection && !r.published_at && !hubs.has(host) && !isAiHost(host) && !isEditorialSection(r.url)) {
+      const s = sections.get(section);
+      const key = `${section}|${Math.floor(r.first_seen / 86400e3)}`;
+      const n = (perDay.get(key) || 0) + 1;
+      perDay.set(key, n);
+      if (s.undated >= 0.9 * s.n && n > undatedPerSection) reason = 'Generated section (undated pages past the daily limit)';
+    }
+    if (reason) reasons[reason].push(r);
+  }
+  const matches = Object.values(reasons).flat();
+  if (apply && matches.length) {
+    const now = Date.now();
+    const hide = q('UPDATE docs SET hidden = 1, edited_at = ?, edited_by = ? WHERE id = ?');
+    tx(() => { for (const r of matches) hide.run(now, actor, r.id); });
+    contentEvents.emit('change', { bulk: true });
+  }
+  return {
+    checked: rows.length,
+    matched: matches.length,
+    hidden: apply ? matches.length : 0,
+    reasons: Object.entries(reasons).map(([reason, list]) => ({ reason, count: list.length, examples: list.slice(-5).map((r) => r.url), sections: topSections(list) })),
+  };
 }

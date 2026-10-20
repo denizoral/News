@@ -290,7 +290,7 @@ test('untitled sitemap entries are judged by a descriptive slug', () => {
     <url><loc>https://slug.example/fr/2026/10/19/nouvelle-ia-generative-lancee</loc></url>
     <url><loc>https://slug.example/tag/artificial-intelligence/</loc></url>
   </urlset>`;
-  assert.equal(spider.handleSitemap(row('https://slug.example/sitemap.xml', 'sitemap'), xml), 2);
+  assert.equal(spider.handleSitemap(row('https://slug.example/sitemap.xml', 'sitemap'), xml), 3, 'the French entry is queued until its section is known to be French');
   assert.ok(frontier('https://slug.example/2026/10/19/tenstorrent-ai-compute-deal'));
   assert.ok(frontier('https://slug.example/p/48213'), 'opaque URLs are kept: no way to tell');
   assert.equal(frontier('https://slug.example/local/charlotte/2026/10/19/early-voting-turnout-record'), undefined);
@@ -328,4 +328,114 @@ test('a web page where a feed should be: guesses dropped at once, known feeds af
   spider.fail(row(known, 'feed', { attempts: 2 }), h, notFeed());
   assert.equal(frontier(known).status, 'error');
   assert.equal(h.pausedUntil, 0, "the site isn't rested for it");
+});
+
+test('generated sections: undated pages are capped per section per day', () => {
+  settings.update({ 'crawler.undatedPerSection': 3 }, { role: 'owner', actor: 't' });
+  const text = 'Claude and GPT compared on benchmarks, pricing and context windows. '.repeat(30);
+  const base = { description: '', lang: 'en', isArticle: true, site: 'gen.example', text };
+  for (let i = 0; i < 3; i++) upsertDoc({ url: `https://gen.example/compare/model-${i}-vs-model-x`, type: 'article', title: `Model ${i} vs Model X`, site: 'gen.example', fetched_at: Date.now(), body: text });
+  assert.match(spider.decide({ ...base, title: 'Claude vs GPT', url: 'https://gen.example/compare/claude-vs-gpt' }).reason, /looks generated/);
+  assert.equal(spider.decide({ ...base, title: 'Claude vs GPT', url: 'https://gen.example/compare/claude-vs-gpt', published_at: Date.now() }).ok, true, 'dated pages are fine');
+  assert.equal(spider.decide({ ...base, title: 'An AI lab profile', url: 'https://gen.example/labs/some-ai-lab' }).ok, true, 'other sections are fine');
+  settings.update({ 'crawler.undatedPerSection': 10 }, { role: 'owner', actor: 't' });
+});
+
+test('forums and translations are skipped', () => {
+  const page = { title: 'Is GPT-6 any good?', description: '', lang: 'en', isArticle: true, site: 'arstechnica.com', text: 'Thoughts on the new AI model from OpenAI. '.repeat(40), published_at: Date.now() };
+  assert.match(spider.decide({ ...page, url: 'https://arstechnica.com/civis/threads/is-gpt-6-any-good.1/' }).reason, /not news/);
+  // Language comes from the page, not the URL: theverge.com/cs/ is English.
+  assert.equal(spider.decide({ ...page, url: 'https://theverge.com/cs/features/1/a-data-center-story' }).ok, true);
+  const czech = { ...page, lang: 'cs', url: 'https://unite.ai/cs/novy-ai-model/' };
+  assert.match(spider.indexPage(row(czech.url), czech).reason, /Language cs/);
+  assert.equal(spider.enqueue('https://unite.ai/cs/dalsi-ai-model-od-openai/'), false, 'the rest of a learned translation section is not queued');
+  assert.equal(spider.enqueue('https://theverge.com/cs/features/2/another-story-about-ai'), true);
+});
+
+test('the queue drops stale and excess articles, but not recrawls', () => {
+  const old = Date.now() - 100 * 3600e3;
+  const ins = (url, extra = {}) => q("INSERT INTO frontier (url, host, kind, priority, depth, status, next_at, discovered_at, fetched_at) VALUES (?, 'q.example', 'article', ?, 1, 'queued', 0, ?, ?)").run(url, extra.priority ?? 5, extra.discovered ?? Date.now(), extra.fetched ?? null);
+  ins('https://q.example/stale-story', { discovered: old });
+  ins('https://q.example/recrawl-story', { discovered: old, fetched: Date.now() - 3600e3 });
+  settings.update({ 'crawler.hostQueueCap': 100 }, { role: 'owner', actor: 't' });
+  for (let i = 0; i < 105; i++) ins(`https://q.example/fresh-${i}`, { priority: i < 5 ? 1 : 6 });
+  spider.expireQueue();
+  assert.equal(frontier('https://q.example/stale-story').status, 'skipped');
+  assert.equal(frontier('https://q.example/recrawl-story').status, 'queued');
+  assert.equal(frontier('https://q.example/fresh-0').status, 'skipped', 'lowest priority dropped first');
+  assert.equal(frontier('https://q.example/fresh-50').status, 'queued');
+  assert.equal(q("SELECT COUNT(*) n FROM frontier WHERE host = 'q.example' AND status = 'queued' AND fetched_at IS NULL").get().n, 100);
+  settings.update({ 'crawler.hostQueueCap': 3000 }, { role: 'owner', actor: 't' });
+});
+
+test('index review hides pages today\'s rules reject, and only those', async () => {
+  const { reviewIndex } = await import('../src/admin/content.js');
+  const now = Date.now();
+  const add = (url, extra = {}) => upsertDoc({ url, type: 'article', title: 'AI story', site: new URL(url).hostname, fetched_at: now, body: 'Claude and GPT. '.repeat(50), ...extra });
+  add('https://rev.example/docs/setup-guide');
+  add('https://rev.example/cs/novy-model', { lang: 'cs' });
+  add('https://rev.example/2026/10/20/a-real-ai-story', { published_at: now });
+  for (let i = 0; i < 4; i++) add(`https://rev.example/compare/m${i}-vs-x`);
+  const { id: pinned } = add('https://rev.example/docs/pinned-guide');
+  q('UPDATE docs SET pinned = 1 WHERE id = ?').run(pinned);
+  const preview = reviewIndex({ languages: ['en'], undatedPerSection: 2 });
+  const by = Object.fromEntries(preview.reasons.map((r) => [r.reason, r.count]));
+  assert.equal(by['Docs, help, forum or jobs page'] >= 1, true);
+  assert.equal(by['Other-language page'] >= 1, true);
+  assert.equal(by['Generated section (undated pages past the daily limit)'] >= 2, true);
+  assert.equal(q("SELECT hidden FROM docs WHERE url = 'https://rev.example/docs/setup-guide'").get().hidden, 0, 'a preview changes nothing');
+  const r = reviewIndex({ apply: true, actor: 't', languages: ['en'], undatedPerSection: 2 });
+  assert.equal(r.hidden, preview.matched);
+  const hidden = (u) => q('SELECT hidden FROM docs WHERE url = ?').get(u).hidden;
+  assert.equal(hidden('https://rev.example/docs/setup-guide'), 1);
+  assert.equal(hidden('https://rev.example/2026/10/20/a-real-ai-story'), 0);
+  assert.equal(hidden('https://rev.example/compare/m0-vs-x'), 0, 'the first pages of a section stay');
+  assert.equal(hidden('https://rev.example/compare/m3-vs-x'), 1);
+  assert.equal(hidden('https://rev.example/docs/pinned-guide'), 0, 'pinned stories are never touched');
+});
+
+test('a whole site in another language is learned after five pages', () => {
+  const page = (i) => ({ title: `KI-Modell ${i}`, description: '', lang: 'de', isArticle: true, site: 'decoder.example', url: `https://decoder.example/ki-modell-nummer-${i}-neu`, text: 'Ein neues KI-Modell von OpenAI. '.repeat(40), published_at: Date.now() });
+  for (let i = 0; i < 4; i++) spider.indexPage(row(page(i).url), page(i));
+  assert.equal(spider.enqueue('https://decoder.example/noch-ein-ki-modell-heute'), true, 'not yet');
+  spider.indexPage(row(page(4).url), page(4));
+  assert.equal(spider.enqueue('https://decoder.example/und-noch-ein-ki-modell'), false, 'learned');
+});
+
+test('consent-screen parameters are stripped', () => {
+  assert.equal(cleanUrl('https://d.example/story/?cmpscreencustom=1'), 'https://d.example/story/');
+});
+
+test('feeds and sitemaps whose pages are never indexed are retired', () => {
+  const sm = 'https://barren.example/partners-sitemap.xml';
+  spider.enqueue(sm, { kind: 'sitemap' });
+  const now = Date.now();
+  for (let i = 0; i < 25; i++) {
+    const u = `https://barren.example/partners/find/details?id=${i}`;
+    q("INSERT INTO frontier (url, host, kind, priority, depth, status, next_at, discovered_at, via, fetched_at) VALUES (?, 'barren.example', 'article', 5, 1, 'done', 0, ?, ?, ?)").run(u, now, sm, now);
+    q("INSERT INTO crawl_log (at, url, host, kind, outcome, reason, via) VALUES (?, ?, 'barren.example', 'article', 'skipped', 'Too short', ?)").run(now, u, sm);
+  }
+  spider.enqueue('https://barren.example/partners/find/details?id=99', { via: sm });
+  const good = 'https://good.example/feed';
+  spider.enqueue(good, { kind: 'feed' });
+  for (let i = 0; i < 30; i++) q("INSERT INTO crawl_log (at, url, host, kind, outcome, via) VALUES (?, ?, 'good.example', 'article', ?, ?)").run(now, `https://good.example/a${i}`, i ? 'skipped' : 'indexed', good);
+  assert.deepEqual(spider.retireBarrenSources(), [sm]);
+  assert.equal(frontier(sm).status, 'skipped');
+  assert.equal(frontier('https://barren.example/partners/find/details?id=99').status, 'skipped', 'what it queued goes too');
+  assert.equal(frontier(good).status, 'queued', 'one indexed page is enough to stay');
+});
+
+test('dates: month-name URLs, citation tags, and dates printed on article pages', async () => {
+  const { dateInUrl, textDate } = await import('../src/spider/extract.js');
+  assert.equal(dateInUrl('https://simonwillison.net/2025/Oct/3/a-post/'), Date.UTC(2025, 9, 3));
+  assert.equal(textDate('Posted Sept. 3, 2025 by Ada'), Date.UTC(2025, 8, 3));
+  assert.equal(textDate('19 February 2025'), Date.UTC(2025, 1, 19));
+  assert.equal(textDate('March 4, 2099'), null, 'future dates are ignored');
+  const body = '<p>' + 'A study of language models and their reasoning. '.repeat(40) + '</p>';
+  const paper = extractPage(`<html><head><title>A paper</title><meta name="citation_date" content="2026/10/14"></head><body>${body}</body></html>`, 'https://papers.example/abs/1');
+  assert.equal(paper.published_at, Date.UTC(2026, 9, 14));
+  const art = extractPage(`<html><head><title>News</title><meta property="og:type" content="article"></head><body><div class="article"><h1>News</h1><div class="article-date">October 13, 2026</div>${body}</div><ul><li class="item-date">October 19, 2026</li></ul></body></html>`, 'https://news.example/n');
+  assert.equal(art.published_at, Date.UTC(2026, 9, 13), "the article's own date, not a related item's");
+  const gen = extractPage(`<html><head><title>A vs B</title><meta property="og:type" content="website"></head><body><p class="cpx-updated">Scores updated Oct 17, 2026</p>${body}</body></html>`, 'https://gen.example/compare/a-vs-b');
+  assert.equal(gen.published_at, null, 'non-articles and "updated" stamps get no date');
 });

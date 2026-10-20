@@ -8,7 +8,8 @@ import { isAiRelated, countAiTerms } from '../pipeline/classify.js';
 export const bare = (h) => String(h || '').replace(/^www\./, '');
 
 // Tracking parameters that never change what a page shows.
-const ALWAYS_STRIPPED = /^(utm_|fbclid$|gclid$|dclid$|msclkid$|mc_cid$|mc_eid$|igshid$|ref_src$|_hsenc$|_hsmi$|mkt_tok$)/i;
+// Includes consent-manager parameters (cmpscreencustom) that some sites add to every link.
+const ALWAYS_STRIPPED = /^(utm_|fbclid$|gclid$|dclid$|msclkid$|mc_cid$|mc_eid$|igshid$|ref_src$|_hsenc$|_hsmi$|mkt_tok$|cmpscreencustom$|cmpscreen$)/i;
 
 export function cleanUrl(u, strip = []) {
   const url = new URL(u);
@@ -67,11 +68,15 @@ export function isWantedSitemap(url, { languages = [], now = Date.now() } = {}) 
   }
 }
 
-// /es/, /de-de/ and similar locale prefixes, when only some languages are wanted.
+// /es/, /de-de/ and similar locale prefixes, when only some languages are
+// wanted. Used for sitemaps and feeds, where /es/sitemap.xml is reliably a
+// translation. Pages are judged by their declared language instead: a path
+// like theverge.com/cs/features/… is English.
 const LOCALES = new Set('ar bg cs da de el es et fa fi fr he hi hr hu id it ja ko lt lv ms nb nl no pl pt ro ru sk sl sr sv th tr uk vi zh'.split(' '));
+export const localeOf = (url) => new URL(url).pathname.match(/^\/([a-z]{2})(?:[-_][a-z]{2})?\//i)?.[1].toLowerCase() || null;
 export function isOtherLanguage(url, languages = []) {
   if (!languages.length) return false;
-  const code = new URL(url).pathname.match(/^\/([a-z]{2})(?:[-_][a-z]{2})?\//i)?.[1].toLowerCase();
+  const code = localeOf(url);
   return !!code && LOCALES.has(code) && !languages.includes(code);
 }
 
@@ -87,9 +92,26 @@ export function isArchiveSitemap(url, now = Date.now()) {
   return end != null && end < now - 62 * 86400e3;
 }
 
+// Editorial and research sections hold articles and papers even when a page
+// carries no date; generated pages live elsewhere (/compare, /models, /skills).
+export const isEditorialSection = (url) => /^\/(blogs?|news|newsroom|press|articles?|stories|posts?|abs|pdf|papers?|pubs|publications|research|\d{4})(\/|$)/i.test(new URL(url).pathname);
+
+// The section a page belongs to, for per-section limits: host plus first path segment.
+export function sectionOf(url) {
+  const u = new URL(url);
+  return { site: bare(u.hostname), prefix: `${u.origin}/${u.pathname.split('/')[1] || ''}` };
+}
+
 // Listing pages (a tag, topic or author's page) that sitemaps often include
 // alongside articles.
-export const isListingUrl = (url) => /\/(tags?|topics?|authors?|category|categories|section|sections|series|people|page\/\d+)(\/|$)/i.test(new URL(url).pathname);
+// /tag/ai/, /category/ml/llms/ and /page/3 are listings; /topics/security/a-long-post-slug
+// is an article that merely lives under a topic.
+export function isListingUrl(url) {
+  const segs = new URL(url).pathname.split('/').filter(Boolean);
+  if (/^page$/i.test(segs.at(-2) || '') && /^\d+$/.test(segs.at(-1) || '')) return true;
+  const i = segs.findIndex((s) => /^(tags?|topics?|authors?|category|categories|section|sections|series|people)$/i.test(s));
+  return i >= 0 && segs.slice(i + 1).every((s) => s.split(/[-_]/).length < 4);
+}
 
 // Judging an untitled link by its URL: true or false when the slug is
 // descriptive (three or more words), null when it's opaque (/p/48213).
@@ -112,9 +134,10 @@ const isAiSlug = (path) => isAiRelated(path.replace(/[-_/]/g, ' ')) || /artifici
 const looksLikePost = (u) => /\/[^/]*-[^/]*-[^/]*-[^/]*\/?$/.test(new URL(u).pathname);
 
 // Hosts that publish help pages and docs, not news; never promoted to starting sites.
-export const isNonNewsHost = (host) => /^(support|help|docs|developer-docs|status|community|forum|forums|accounts?|login|shop|store|careers|jobs)\./i.test(host);
+export const isNonNewsHost = (host) => /^(support|help|docs|developer-docs|status|community|forum|forums|accounts?|login|shop|store|careers|jobs|job-boards|boards)\./i.test(host) || /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com)$/i.test(host);
 // The same sections on a news site's own domain (claude.com/docs/…).
-const NON_NEWS_PATH = /^\/([a-z]{2}(-[a-z]{2})?\/)?(docs|documentation|help|support|kb|knowledge-base|legal|careers|jobs|pricing|login|signup)(\/|$)/i;
+export const isNonNewsPath = (url) => { try { return NON_NEWS_PATH.test(new URL(url).pathname); } catch { return false; } };
+const NON_NEWS_PATH = /^\/([a-z]{2}(-[a-z]{2})?\/)?(docs|documentation|help|support|kb|knowledge-base|legal|careers|jobs|pricing|login|signup|civis|forums?|community|threads|discussions?)(\/|$)/i;
 
 // Hosts whose whole output is about AI; everything they publish is relevant.
 const AI_HOSTS = /(openai|anthropic|deepmind|huggingface|mistral|x\.ai|the-decoder|marktechpost|unite\.ai|simonwillison|latent\.space|interconnects|jack-clark|epoch\.ai|machinelearning\.apple)/;
@@ -136,9 +159,10 @@ export function isAboutAi(page, keywords = []) {
 }
 
 // Whether a page should be indexed, and why not. `findDuplicate(hash)` returns
-// an existing document with the same text, if any; `trusted` holds the
-// starting sites, whose pages skip the help-site check.
-export function decide(page, cfg, { findDuplicate = () => null, now = Date.now(), trusted = new Set() } = {}) {
+// an existing document with the same text, if any; `undatedInSection(page)`
+// how many undated pages its site section indexed in the last day; `trusted`
+// holds the starting sites, whose pages skip the help-site check.
+export function decide(page, cfg, { findDuplicate = () => null, undatedInSection = () => 0, now = Date.now(), trusted = new Set() } = {}) {
   const text = page.text || '';
   if (page.noindex) return { ok: false, outcome: 'skipped', reason: 'Page asks not to be indexed (noindex)' };
   const host = bare(hostOf(page.url || ''));
@@ -161,6 +185,11 @@ export function decide(page, cfg, { findDuplicate = () => null, now = Date.now()
     if (!hit) return { ok: false, outcome: 'skipped', reason: 'None of the keywords appear' };
   } else if (cfg.relevance === 'ai' && !isAiHost(page.site) && !isAboutAi(page, cfg.includeKeywords)) {
     return { ok: false, outcome: 'skipped', reason: 'Not about AI' };
+  }
+  // Generated sites flood one section with undated pages. Sites the admin
+  // chose, AI publishers and editorial sections are exempt.
+  if (!page.published_at && cfg.undatedPerSection && !isAiHost(host) && !(cfg.hubHosts || []).includes(host) && !isEditorialSection(page.url) && undatedInSection(page) >= cfg.undatedPerSection) {
+    return { ok: false, outcome: 'skipped', reason: `Undated, and this section already had ${cfg.undatedPerSection} undated pages today (looks generated)` };
   }
   const dup = page.contentHash ? findDuplicate(page.contentHash) : null;
   if (dup && dup.url !== page.url) return { ok: false, outcome: 'duplicate', reason: `Same text as ${dup.url}` };

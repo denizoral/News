@@ -476,7 +476,10 @@ const VIEWS = {
           <button class="btn" type="submit">Search</button>
         </form>
         <div id="cList"><p class="muted">Loading…</p></div>
-      </section>`;
+      </section>
+      ${can('content:write') ? `<section class="card" id="reviewCard"><h2>Clean up the index</h2>
+        <p class="help">Recheck crawled pages against today's crawl rules: docs, help and forum pages, translations, tag and author listings, and undated pages past the daily limit per section. Matches are hidden, not deleted, so you can restore any of them above (State: Hidden). Pinned and hand-edited stories are never touched.</p>
+        <p><button class="btn" id="reviewPreview">Preview</button></p><div id="reviewOut"></div></section>` : ''}`;
     const load = async () => {
       sessionStorage.setItem('adm.content', new URLSearchParams({ q: state.q, type: state.type, state: state.state, page: state.page }).toString());
       const r = await api('GET', `/content?${new URLSearchParams({ q: state.q, type: state.type, state: state.state, page: state.page })}`);
@@ -488,6 +491,22 @@ const VIEWS = {
         <div class="row" style="margin-top:12px"><button class="btn small" data-page="-1" ${state.page <= 1 ? 'disabled' : ''}>Previous</button><span class="muted small">Page ${state.page} of ${Math.max(1, pages)}</span><button class="btn small" data-page="1" ${state.page >= pages ? 'disabled' : ''}>Next</button></div>`
         : '<p class="empty">No documents match. Clear the search or choose Everything.</p>';
     };
+    const review = async () => {
+      const r = await act(() => api('POST', '/content/review', {}));
+      $('#reviewOut').innerHTML = `<p class="muted small">${fmt(r.checked)} crawled pages checked, ${fmt(r.matched)} match.</p>
+        <div class="table-wrap"><table><thead><tr><th>Rule</th><th>Pages</th><th>Examples</th></tr></thead><tbody>
+        ${r.reasons.map((x) => `<tr><td>${esc(x.reason)}</td><td class="num">${fmt(x.count)}</td><td class="trunc">${x.examples.map((u) => `<span class="sub">${esc(u)}</span>`).join('') || '<span class="muted">—</span>'}</td></tr>`).join('')}
+        </tbody></table></div>
+        ${r.matched ? `<p style="margin-top:12px"><button class="btn danger" id="reviewApply" data-n="${r.matched}">Hide ${fmt(r.matched)} pages</button></p>` : ''}`;
+    };
+    $('#reviewPreview')?.addEventListener('click', () => review().catch(() => {}));
+    $('#reviewOut')?.addEventListener('click', async (e) => {
+      const b = e.target.closest('#reviewApply');
+      if (!b || !(await confirmAction({ title: `Hide ${fmt(Number(b.dataset.n))} pages?`, body: 'They disappear from the site and search. You can restore them from this page at any time.', confirm: 'Hide pages', danger: true }))) return;
+      await act(() => api('POST', '/content/review', { apply: true }), (r) => `${fmt(r.hidden)} pages hidden.`);
+      $('#reviewOut').innerHTML = '';
+      load();
+    });
     $('#cFilter').addEventListener('submit', (e) => {
       e.preventDefault();
       Object.assign(state, { q: e.target.q.value.trim(), type: e.target.type.value, state: e.target.state.value, page: 1 });

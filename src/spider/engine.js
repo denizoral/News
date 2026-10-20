@@ -30,7 +30,7 @@ import { parseFeed } from '../sources/rss.js';
 import { readText } from './body.js';
 import { downloadImage, enforceBudget } from './media.js';
 import { upsertDoc, findByContentHash, addInlinks } from '../index/documents.js';
-import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, isOtherLanguage, slugRelevance, isListingUrl } from './policy.js';
+import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, localeOf } from './policy.js';
 
 export { inQuietHours };
 
@@ -57,6 +57,7 @@ export class Spider extends EventEmitter {
     this.running = false;
     this.stats = { fetched: 0, indexed: 0, duplicates: 0, blocked: 0, errors: 0, deferred: 0, images: 0, feeds: 0, startedAt: Date.now(), recent: [] };
     this.inflightUrls = new Map(); // url -> { host, kind, started }
+    this.langMisses = new Map(); // host -> pages in a row in an unwanted language
     this.ring = []; // newest crawl-log entries, for the live view
     this.minutes = new Map(); // minute -> fetches, last hour
     this.backoff = new Map(); // recurring url -> interval multiplier
@@ -102,7 +103,7 @@ export class Spider extends EventEmitter {
   urlAllowedByPatterns(u) { return allowedByPatterns(u, this.cfg); }
   isAiHost(h) { return isAiHost(h); }
   isRelevantText(t) { return isRelevantText(t, this.cfg.includeKeywords); }
-  decide(page) { return decide(page, this.cfg, { findDuplicate: findByContentHash, trusted: this.trusted }); }
+  decide(page) { return decide(page, this.cfg, { findDuplicate: findByContentHash, undatedInSection, trusted: this.trusted }); }
 
   // ---------- frontier ----------
 
@@ -111,7 +112,7 @@ export class Spider extends EventEmitter {
     let u;
     try {
       u = this.cleanUrl(canonicalUrl(url));
-      if (!/^https?:\/\//.test(u) || this.isSkipped(u)) return false;
+      if (!/^https?:\/\//.test(u) || this.isSkipped(u) || this.isKnownTranslation(u)) return false;
     } catch {
       return false;
     }
@@ -143,8 +144,8 @@ export class Spider extends EventEmitter {
       }
       // Untitled sitemap entries whose URL says they're off-topic.
       if (this.cfg.relevance !== 'all') {
-        for (const r of q("SELECT url, host FROM frontier WHERE kind = 'article' AND via = 'sitemap' AND status = 'queued'").all()) {
-          if (isListingUrl(r.url) || (!isAiHost(r.host) && (slugRelevance(r.url) === false || isOtherLanguage(r.url, this.cfg.languages)))) q("UPDATE frontier SET status = 'skipped', error = 'Off-topic by its URL' WHERE url = ?").run(r.url);
+        for (const r of q("SELECT url, host FROM frontier WHERE kind = 'article' AND status = 'queued' AND (via = 'sitemap' OR via IN (SELECT url FROM frontier WHERE kind = 'sitemap'))").all()) {
+          if (isListingUrl(r.url) || this.isKnownTranslation(r.url) || (!isAiHost(r.host) && slugRelevance(r.url) === false)) q("UPDATE frontier SET status = 'skipped', error = 'Off-topic by its URL' WHERE url = ?").run(r.url);
         }
       }
       // Starting pages removed in the dashboard stop being rechecked.
@@ -191,6 +192,48 @@ export class Spider extends EventEmitter {
     } catch {
       return new Set();
     }
+  }
+
+  // Translation sections, learned from pages: once example.com/cs/… turns out
+  // to be Czech while only other languages are wanted, the rest of that
+  // section isn't queued.
+  translations() {
+    if (!this._translations) {
+      try {
+        this._translations = new Set(JSON.parse(q("SELECT v FROM kv WHERE k = 'spider.translations'").get()?.v || '[]'));
+      } catch {
+        this._translations = new Set();
+      }
+    }
+    return this._translations;
+  }
+
+  // A whole site in another language (the-decoder.de beside the-decoder.com)
+  // is learned after 5 such pages in a row with none in a wanted language.
+  learnTranslation(page) {
+    const langs = this.cfg.languages;
+    if (!langs.length || !page.lang || langs.includes(page.lang) || !page.url) return;
+    const host = bare(new URL(page.url).hostname);
+    const code = localeOf(page.url);
+    let key = code === page.lang ? `${host}/${code}` : null;
+    if (!key && !code) {
+      const misses = (this.langMisses.get(host) || 0) + 1;
+      this.langMisses.set(host, misses);
+      if (misses >= 5 && !this.cfg.hubHosts.includes(host)) key = `${host}/*`;
+    }
+    if (!key) return;
+    const known = this.translations();
+    if (known.has(key)) return;
+    known.add(key);
+    this.saveKv('spider.translations', [...known].slice(-5000));
+  }
+
+  isKnownTranslation(u) {
+    if (!this.cfg.languages.length) return false;
+    const host = bare(new URL(u).hostname);
+    if (this.translations().has(`${host}/*`)) return true;
+    const code = localeOf(u);
+    return !!code && !this.cfg.languages.includes(code) && this.translations().has(`${host}/${code}`);
   }
 
   saveKv(k, v) {
@@ -375,6 +418,8 @@ export class Spider extends EventEmitter {
     if (now - this.autoHubsAt > AUTO_HUB_EVERY_MS) {
       this.autoHubsAt = now;
       try { this.discoverHubs(now); } catch (e) { console.warn('[spider] hub discovery failed', e.message); }
+      try { this.expireQueue(now); } catch (e) { console.warn('[spider] queue expiry failed', e.message); }
+      try { this.retireBarrenSources(now); } catch (e) { console.warn('[spider] source review failed', e.message); }
     }
     const cap = this.cfg.maxPagesPerMinute;
     if (cap && this.stats.recent.filter((t) => t > now - 60e3).length >= cap) {
@@ -422,6 +467,43 @@ export class Spider extends EventEmitter {
           this.active--;
         });
     }
+  }
+
+  // Keeps the queue bounded: articles nobody got to in time are stale news,
+  // and one huge sitemap shouldn't hold a site's queue forever. Recrawls and
+  // retries (fetched before) are left alone. Returns how many were dropped.
+  expireQueue(now = Date.now()) {
+    let n = 0;
+    const kinds = "kind IN ('article', 'page') AND status = 'queued' AND fetched_at IS NULL";
+    if (this.cfg.queueMaxAgeHours) {
+      n += q(`UPDATE frontier SET status = 'skipped', error = 'Expired: not fetched in time' WHERE ${kinds} AND discovered_at < ?`).run(now - this.cfg.queueMaxAgeHours * 3600e3).changes;
+    }
+    const cap = this.cfg.hostQueueCap;
+    for (const r of q(`SELECT host FROM frontier WHERE ${kinds} GROUP BY host HAVING COUNT(*) > ?`).all(cap)) {
+      n += q(`UPDATE frontier SET status = 'skipped', error = 'Over the per-site queue limit' WHERE url IN (
+          SELECT url FROM frontier WHERE host = ? AND ${kinds} ORDER BY priority DESC, discovered_at DESC LIMIT -1 OFFSET ?)`).run(r.host, cap).changes;
+    }
+    if (n) console.log(`[spider] dropped ${n} stale or excess URLs from the queue`);
+    return n;
+  }
+
+  // Feeds and sitemaps whose pages never get indexed (a partner directory, a
+  // site that blocks every article) are retired with what they queued: 25 or
+  // more of their pages fetched in a week and not one indexed. Starting pages
+  // are left alone. Returns the retired sources.
+  retireBarrenSources(now = Date.now()) {
+    const barren = q(`SELECT c.via AS url, COUNT(*) AS n FROM crawl_log c JOIN frontier f ON f.url = c.via
+        WHERE c.at > ? AND c.kind = 'article' AND f.kind IN ('feed', 'sitemap') AND f.status = 'queued'
+        AND c.outcome IN ('indexed', 'updated', 'duplicate', 'not-modified', 'skipped', 'error')
+      GROUP BY c.via HAVING n >= 25 AND SUM(c.outcome IN ('indexed', 'updated', 'duplicate', 'not-modified')) = 0`).all(now - 7 * 86400e3);
+    for (const b of barren) {
+      tx(() => {
+        q("UPDATE frontier SET status = 'skipped', error = ? WHERE url = ?").run(`None of the ${b.n} pages it led to in the last week were indexed`, b.url);
+        q("UPDATE frontier SET status = 'skipped', error = 'Its feed or sitemap was retired' WHERE via = ? AND status = 'queued' AND fetched_at IS NULL").run(b.url);
+      });
+      console.log(`[spider] retired ${b.url}: none of ${b.n} pages indexed`);
+    }
+    return barren.map((b) => b.url);
   }
 
   // How long until a recurring URL is checked again, after a run that found `fresh` new URLs.
@@ -611,10 +693,10 @@ export class Spider extends EventEmitter {
       const filtering = this.cfg.relevance !== 'all' && !isAiHost(row.host);
       for (const u of parsed.urls) {
         const ageH = u.lastmod ? (Date.now() - u.lastmod) / 3600e3 : 72;
-        if (isOtherLanguage(u.url, this.cfg.languages) || isListingUrl(u.url)) continue;
+        if (this.isKnownTranslation(u.url) || isListingUrl(u.url)) continue;
         // Judge by the Google News title when there is one, else by a descriptive slug.
         if (filtering && (u.title ? !this.isRelevantText(u.title) : slugRelevance(u.url) === false)) continue;
-        if (this.enqueue(u.url, { kind: 'article', priority: 6 + Math.max(0, 3 - ageH / 12), depth: 1, via: 'sitemap' })) n++;
+        if (this.enqueue(u.url, { kind: 'article', priority: 6 + Math.max(0, 3 - ageH / 12), depth: 1, via: row.url })) n++;
       }
     });
     return n;
@@ -709,8 +791,10 @@ export class Spider extends EventEmitter {
     const d = this.decide(page);
     if (!d.ok) {
       if (d.outcome === 'duplicate') this.stats.duplicates++;
+      this.learnTranslation(page);
       return d;
     }
+    this.langMisses.delete(bare(page.site || ''));
     const existed = !!q('SELECT 1 FROM docs WHERE url = ? AND fetched_at IS NOT NULL').get(page.url);
     const { id } = upsertDoc({
       url: page.url, type: 'article', title: page.title, description: page.description, body: page.text || '',
@@ -944,6 +1028,12 @@ export class Spider extends EventEmitter {
     this._st = { at: now, v };
     return v;
   }
+}
+
+// Undated pages its site section indexed in the last day (see decide()).
+function undatedInSection(page) {
+  const { site, prefix } = sectionOf(page.url);
+  return q("SELECT COUNT(*) AS n FROM docs WHERE site = ? AND published_at IS NULL AND fetched_at > ? AND url LIKE ?").get(site, Date.now() - 86400e3, `${prefix}/%`).n;
 }
 
 // Feeds and sitemaps mostly arrive as XML; tell them apart by their root

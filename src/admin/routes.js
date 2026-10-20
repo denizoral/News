@@ -16,7 +16,7 @@ import { clientIp, parseAllowlist, securityHeaders, readJson, sendJson, HttpErro
 import { randomPassword } from '../security/passwords.js';
 import * as auth from './auth.js';
 import { audit, listAudit } from './audit.js';
-import { listContent, getContent, updateContent, removeContent, contentCounts } from './content.js';
+import { listContent, getContent, updateContent, removeContent, contentCounts, reviewIndex } from './content.js';
 import { runRetention, optimizeIndex } from '../index/retention.js';
 import { MEDIA_DIR } from '../spider/media.js';
 
@@ -160,6 +160,14 @@ export function createAdminRouter({ store, spider, runNow, sourceNames }) {
     audit(req, { user: a.user, action: 'content.update', target: `${r.doc.id} ${r.doc.url}`, detail: r.changed });
     store.scheduleRebuild();
     return r.doc;
+  });
+
+  // Recheck the index against today's crawl rules. A preview unless `apply` is true.
+  route('POST', '/content/review', { permission: 'content:write', limit: 1024 }, ({ req, a, body }) => {
+    const apply = body.apply === true;
+    const r = reviewIndex({ apply, actor: a.user.username, languages: settings.get('crawler.languages'), undatedPerSection: settings.get('crawler.undatedPerSection'), hubHosts: settings.spider().hubHosts });
+    if (apply) audit(req, { user: a.user, action: 'content.review_index', target: 'index', detail: { hidden: r.hidden } });
+    return r;
   });
 
   route('POST', '/content/(\\d+)/remove', { permission: 'content:write' }, ({ req, a, params }) => {

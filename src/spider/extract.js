@@ -61,9 +61,38 @@ function dateFrom(...vals) {
   return null;
 }
 
-function dateInUrl(url) {
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+export function dateInUrl(url) {
   const m = url.match(/\/(20\d{2})[/-](\d{1,2})[/-](\d{1,2})(?:\/|$|-)/) || url.match(/\/(20\d{2})(\d{2})(\d{2})\//);
-  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null;
+  if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  // Month names, as blogs like simonwillison.net use: /2025/Oct/3/slug/
+  const n = url.match(/\/(20\d{2})\/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\/(\d{1,2})(?:\/|$)/i);
+  return n ? Date.UTC(+n[1], MONTHS.indexOf(n[2].toLowerCase()), +n[3]) : null;
+}
+
+// A date written out for readers ("February 19, 2025", "19 Feb 2025"), for
+// pages that carry no machine-readable date. Future dates are ignored.
+const MONTH_RE = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const TEXT_DATE = new RegExp(`\\b${MONTH_RE}\\.? (\\d{1,2}),? (20\\d\\d)\\b|\\b(\\d{1,2}) ${MONTH_RE}\\.? (20\\d\\d)\\b`, 'i');
+export function textDate(text) {
+  const m = String(text || '').match(TEXT_DATE);
+  if (!m) return null;
+  const [mon, day, year] = m[1] ? [m[1], m[2], m[3]] : [m[5], m[4], m[6]];
+  const t = Date.UTC(+year, MONTHS.indexOf(mon.slice(0, 3).toLowerCase()), +day);
+  return t <= Date.now() + 86400e3 ? t : null;
+}
+
+// Last resort: an element styled as a date (the article's own comes before
+// related-article lists), else the first date near the top of the article.
+// "Updated" stamps are not publication dates.
+function visibleDate(document) {
+  for (const el of document.querySelectorAll('[itemprop="datePublished"], [class*="date"], [class*="Date"], [class*="publish"], [class*="posted"]')) {
+    if (/update|modified/i.test(el.getAttribute('class') || '')) continue;
+    const d = textDate(el.textContent);
+    if (d) return d;
+  }
+  const root = document.querySelector('article') || document.querySelector('main') || document.body;
+  return textDate((root?.textContent || '').replace(/\s+/g, ' ').slice(0, 1500));
 }
 
 // Heuristic: does this URL look like an individual article rather than a listing?
@@ -101,8 +130,10 @@ export function extractPage(html, pageUrl, { respectNofollow = true } = {}) {
   const ogImage = meta(document, 'og:image', 'og:image:url', 'twitter:image', 'twitter:image:src') || [].concat(art?.image || [])[0]?.url || [].concat(art?.image || [])[0];
   const author = meta(document, 'author', 'article:author', 'parsely-author') || [].concat(art?.author || []).map((a) => a?.name || a).filter((a) => typeof a === 'string').join(', ');
   const published = dateFrom(
-    meta(document, 'article:published_time', 'og:article:published_time', 'datePublished', 'pubdate', 'parsely-pub-date', 'sailthru.date', 'date', 'DC.date.issued'),
-    art?.datePublished, art?.dateCreated,
+    meta(document, 'article:published_time', 'og:article:published_time', 'datePublished', 'pubdate', 'parsely-pub-date', 'sailthru.date', 'date', 'DC.date.issued', 'dc.date', 'DC.date'),
+    // Papers (arXiv, research sites) use Highwire citation tags.
+    meta(document, 'citation_publication_date', 'citation_online_date', 'citation_date'),
+    art?.datePublished, art?.dateCreated, art?.uploadDate,
     document.querySelector('time[datetime]')?.getAttribute('datetime'),
   ) || dateInUrl(canonical);
   const ogType = meta(document, 'og:type') || '';
@@ -117,6 +148,10 @@ export function extractPage(html, pageUrl, { respectNofollow = true } = {}) {
     if (u && !feeds.includes(u) && !/comments?\/feed|\/comments\b/i.test(u)) feeds.push(u);
     if (feeds.length >= 5) break;
   }
+
+  // Read before Readability, which rewrites the DOM. Only pages that declare
+  // themselves articles get a date read off the page.
+  const shownDate = !published && (art || /article/i.test(ogType)) ? visibleDate(document) : null;
 
   // Links (before Readability, which rewrites the DOM).
   const links = [];
@@ -166,6 +201,7 @@ export function extractPage(html, pageUrl, { respectNofollow = true } = {}) {
   }
 
   const isArticle = !!art || /article/i.test(ogType) || (looksLikeArticleUrl(canonical) && text.length > 800);
+  const publishedAt = published || shownDate;
   const contentHash = text.length > 300 ? crypto.createHash('sha1').update(text.slice(0, 5000).toLowerCase().replace(/\s+/g, ' ')).digest('hex') : null;
 
   return {
@@ -174,7 +210,7 @@ export function extractPage(html, pageUrl, { respectNofollow = true } = {}) {
     description: clip(description, 500),
     text,
     author: clip(author || '', 200),
-    published_at: published,
+    published_at: publishedAt,
     lang,
     siteName,
     isArticle,

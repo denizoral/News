@@ -112,16 +112,29 @@ the oldest images first.
     minutes, doubling up to 6 hours.
   - Feeds and sitemaps that answer 404 (or another permanent error), or turn
     out to be ordinary web pages, three times in a row are retired instead of
-    being rechecked forever.
+    being rechecked forever. So are feeds and sitemaps whose pages never get
+    indexed (25 fetched in a week, none indexed), with everything they queued.
+  - The queue stays bounded: articles not fetched within 72 hours are dropped as
+    stale news, and each site keeps at most 3,000 queued articles (best first).
 - **What it extracts:**
   - The article text, using Mozilla Readability, or the JSON-LD article body when
     the HTML is hard to parse.
+  - The publication date from meta tags, JSON-LD, `<time>`, paper citation tags
+    (arXiv), dates in the URL (`/2025/Oct/3/`), or, for pages that say they're
+    articles, the date printed on the page.
   - Title, author, date and images, from Open Graph, JSON-LD and meta tags.
   - Character encodings are detected the way browsers do it (byte-order mark,
     header, `<meta charset>`), including correct Windows-1252.
 - **What it skips:** `noindex` pages, exact duplicates, pages in languages other
-  than English (configurable), help/docs/careers pages, and pages that aren't
-  about AI. A page counts as about AI if its headline or summary says so, or the
+  than English (configurable), help/docs/forum/jobs pages, and pages that aren't
+  about AI. Translated sections (`/cs/…`) and whole sites in another language
+  are learned from the pages themselves and no longer queued. Generated pages
+  (comparisons, directories) are capped: a site section indexes at most 20
+  undated pages a day, except on starting sites and in blog, news and research
+  sections.
+- **Cleaning up later:** Content → *Clean up the index* in the dashboard rechecks
+  everything already indexed against today's rules, shows what matches, and
+  hides it (restorable) when you confirm. A page counts as about AI if its headline or summary says so, or the
   body keeps coming back to it.
 - **State:** the queue lives in the database, so a restart picks up where it
   left off. Logs go to `data/logs/server.log` (rotated at 10 MB).

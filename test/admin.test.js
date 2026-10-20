@@ -277,6 +277,20 @@ test('admin API: sign-in, 2FA, CSRF, roles, validation, brute force', async (t) 
     assert.equal((await owner2.call('PATCH', `/api/admin/users/${nb}`, { role: 'superuser' })).status, 400);
   });
 
+  await t.test('index review previews, then hides, and is audited', async () => {
+    upsertDoc({ url: 'https://news.example.com/docs/how-to-set-up-claude', type: 'article', title: 'How to set up Claude', site: 'news.example.com', fetched_at: Date.now(), body: 'Claude setup guide text' });
+    await owner2.refresh();
+    const preview = await owner2.call('POST', '/api/admin/content/review', {});
+    assert.equal(preview.status, 200);
+    assert.ok(preview.data.matched >= 1);
+    assert.equal(q("SELECT hidden FROM docs WHERE url = 'https://news.example.com/docs/how-to-set-up-claude'").get().hidden, 0);
+    const applied = await owner2.call('POST', '/api/admin/content/review', { apply: true });
+    assert.equal(applied.data.hidden, preview.data.matched);
+    assert.equal(q("SELECT hidden FROM docs WHERE url = 'https://news.example.com/docs/how-to-set-up-claude'").get().hidden, 1);
+    assert.ok(q("SELECT 1 FROM audit_log WHERE action = 'content.review_index'").get(), 'audited');
+    assert.equal((await anon.call('POST', '/api/admin/content/review', { apply: true })).status, 401);
+  });
+
   await t.test('content moderation reaches the public site and survives re-ingest', async () => {
     const { id } = upsertDoc({ url: 'https://news.example.com/a-story', type: 'article', title: 'Original headline about Claude', description: 'x', body: 'Claude text body', site: 'news.example.com', published_at: Date.now() });
     await owner2.refresh();

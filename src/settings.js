@@ -66,6 +66,9 @@ const DEFS = [
   // Crawler: pace and schedule
   { key: 'crawler.maxPagesPerMinute', group: 'crawler', section: 'pace', label: 'Pages per minute, all sites (0 = no cap)', type: 'int', min: 0, max: 100000, default: 0, role: 'admin' },
   { key: 'crawler.quietHours', group: 'crawler', section: 'pace', label: 'Quiet hours (UTC)', help: 'No crawling in this window, e.g. 01:00-06:00. Leave empty to crawl around the clock.', type: 'string', max: 11, default: '', role: 'admin', validate: (v) => (!v || /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/.test(v) ? null : 'Use HH:MM-HH:MM in 24-hour UTC, e.g. 01:00-06:00.') },
+  { key: 'crawler.queueMaxAgeHours', group: 'crawler', section: 'pace', label: 'Drop unfetched articles after (hours)', help: "News goes stale: articles still waiting after this long leave the queue, so it doesn't grow forever. 0 keeps them.", type: 'int', min: 0, max: 2160, default: 72, role: 'admin' },
+  { key: 'crawler.hostQueueCap', group: 'crawler', section: 'pace', label: 'Queued articles per site', help: 'Beyond this, the lowest-priority, oldest ones are dropped.', type: 'int', min: 100, max: 1000000, default: 3000, role: 'admin' },
+  { key: 'crawler.undatedPerSection', group: 'crawler', section: 'indexing', label: 'Undated pages per section per day', help: 'Generated pages (comparisons, directories) usually have no date. A site section (example.com/compare/…) indexes at most this many undated pages a day. Starting sites and AI publishers are exempt. 0 turns the limit off.', type: 'int', min: 0, max: 100000, default: 20, role: 'admin' },
   { key: 'crawler.feedRecrawlMin', group: 'crawler', section: 'pace', label: 'Recheck feeds every (min)', type: 'int', min: 2, max: 1440, default: 20, role: 'admin' },
   { key: 'crawler.adaptiveRecrawl', group: 'crawler', section: 'pace', label: 'Adapt recheck intervals', help: 'Starting pages, sitemaps and feeds that keep yielding nothing new are checked less often (up to 8 times the interval) and go back to normal as soon as they have news.', type: 'bool', default: true, role: 'admin' },
   { key: 'crawler.honorCrawlDelay', group: 'crawler', section: 'pace', label: 'Honor Crawl-delay from robots.txt', help: 'When off, only the minimum gap per site applies.', type: 'bool', default: true, role: 'admin' },
@@ -346,10 +349,10 @@ class Settings extends EventEmitter {
     return {
       enabled: g('enabled'), concurrency: g('concurrency'), hostDelayMs: g('hostDelayMs'), hostDailyBudget: g('hostDailyBudget'),
       maxDepth: g('maxDepth'), followExternal: g('followExternal'), hubRecrawlMin: g('hubRecrawlMin'), sitemapRecrawlMin: g('sitemapRecrawlMin'),
-      imagesPerPage: g('imagesPerPage'), imageConcurrency: g('imageConcurrency'), hubs: g('hubs'), skipHosts: g('skipHosts'),
+      imagesPerPage: g('imagesPerPage'), imageConcurrency: g('imageConcurrency'), hubs: g('hubs'), hubHosts: g('hubs').map((u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } }), skipHosts: g('skipHosts'),
       hostRules: new Map(g('hostRules').map((r) => [r.host, r])),
       obeyRobots: g('obeyRobots'),
-      discoverFeeds: g('discoverFeeds'), feedsPerSite: g('feedsPerSite'), feedRecrawlMin: g('feedRecrawlMin'), adaptiveRecrawl: g('adaptiveRecrawl'),
+      discoverFeeds: g('discoverFeeds'), feedsPerSite: g('feedsPerSite'), feedRecrawlMin: g('feedRecrawlMin'), queueMaxAgeHours: g('queueMaxAgeHours'), hostQueueCap: g('hostQueueCap'), undatedPerSection: g('undatedPerSection'), adaptiveRecrawl: g('adaptiveRecrawl'),
       autoHubs: g('autoHubs'), hostFailureLimit: g('hostFailureLimit'),
       botName: g('botName'), contactUrl: g('contactUrl'), acceptLanguage: g('acceptLanguage'),
       timeoutMs: g('timeoutSec') * 1000, maxPageBytes: g('maxPageKb') * 1024, maxRedirects: g('maxRedirects'), maxAttempts: g('maxAttempts'),

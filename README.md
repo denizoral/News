@@ -328,3 +328,18 @@ test/                node:test unit tests (npm test)
 ```
 
 Keyboard: `/` search (arrow keys pick a suggestion), `j`/`k` move between stories, `Esc` clears search.
+
+## Tech tab classifier
+
+The Tech tab is filled by `src/sources/tech.js`: general tech feeds and the
+Hacker News front page, minus anything the AI filter claims, sorted by a local
+zero-shot classifier (`classifier/server.py`, GLiClass base, CPU, about 1 GB of
+RAM and ~100 ms per headline). Only unseen items are classified.
+
+    python3 -m venv /opt/wire-classifier/venv
+    /opt/wire-classifier/venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+    /opt/wire-classifier/venv/bin/pip install gliclass
+    /opt/wire-classifier/venv/bin/python classifier/server.py   # listens on 127.0.0.1:8765
+
+Point the site elsewhere with `CLASSIFIER_URL`. If the classifier is down, the
+Tech source reports an error and keeps the stories it already has.

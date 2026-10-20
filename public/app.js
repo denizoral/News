@@ -20,6 +20,9 @@ const state = {
   sort: store.get('fw.sort', 'top'),
   buildFilter: store.get('fw.build', 'all'),
   marketSort: store.get('fw.msort', 'moving'),
+  techTopic: store.get('fw.techtopic', 'All'),
+  techSort: store.get('fw.techsort', 'top'),
+  techLimit: 40,
   xGroup: store.get('fw.xgroup', 'all'),
   xHandle: null,
   xq: '',
@@ -454,6 +457,32 @@ function renderRail() {
     `<li><a href="${esc(m.url)}" target="_blank" rel="noopener" title="${esc(m.title)}">${esc(m.title)}</a><span>${compact(m.engagement?.likes ?? m.engagement?.score)} likes</span></li>`).join('');
 }
 
+// ---------- Tech view ----------
+// Non-AI technology stories, labelled by the server's topic classifier.
+
+const TECH_TOPICS = ['General', 'Software', 'Security', 'Gadgets', 'Platforms', 'AI'];
+
+function renderTech({ animate = false } = {}) {
+  const all = state.data.tech || [];
+  const counts = {};
+  for (const s of all) counts[s.topic] = (counts[s.topic] || 0) + 1;
+  const topics = ['All', ...TECH_TOPICS.filter((t) => counts[t])];
+  if (!topics.includes(state.techTopic)) state.techTopic = 'All';
+  $('#techChips').innerHTML =
+    topics.map((t) => `<button class="chip" type="button" data-techtopic="${esc(t)}" aria-pressed="${state.techTopic === t}">${esc(t === 'AI' ? 'AI-adjacent' : t)}<span class="n">${t === 'All' ? all.length : counts[t]}</span></button>`).join('');
+  $('#techSortSeg').innerHTML = [['top', 'Top'], ['latest', 'Latest']].map(([k, l]) => `<button type="button" data-techsort="${k}" aria-pressed="${state.techSort === k}">${l}</button>`).join('');
+
+  let list = all.filter((s) => state.techTopic === 'All' || s.topic === state.techTopic).filter((s) => matchesQuery(`${s.title} ${s.summary || ''}`));
+  if (state.techSort === 'latest') list = list.slice().sort((a, b) => b.publishedAt - a.publishedAt);
+  const shown = list.slice(0, state.techLimit);
+  $('#techRiver').innerHTML = shown.map((s) => storyHtml(s).replace('class="story', `data-topic="${esc(s.topic)}" class="story`)).join('') ||
+    `<p class="empty">${all.length ? 'No tech stories match.' : 'Tech stories appear after the first classified crawl (every 10 minutes).'}</p>`;
+  revealStories($('#techRiver'), { all: animate });
+  const more = $('#moreTech');
+  more.hidden = list.length <= state.techLimit;
+  more.textContent = `Show more (${list.length - state.techLimit} left)`;
+}
+
 // ---------- X view ----------
 // Posts come from /api/x (every X post we hold, filterable and paged). On a
 // static build it falls back to the X posts in the snapshot.
@@ -655,7 +684,7 @@ function renderMarkets() {
 
 // ---------- Footer ----------
 
-const SOURCE_LABELS = { x: 'X', polymarket: 'Polymarket', hackernews: 'Hacker News', reddit: 'Reddit', bluesky: 'Bluesky', googlenews: 'Google News', rss: 'Lab blogs, press and newsletters', scraped: 'Lab news pages', openrouter: 'OpenRouter models', huggingface: 'Hugging Face', github: 'GitHub', producthunt: 'Product Hunt', showhn: 'Show HN' };
+const SOURCE_LABELS = { x: 'X', polymarket: 'Polymarket', hackernews: 'Hacker News', reddit: 'Reddit', bluesky: 'Bluesky', googlenews: 'Google News', rss: 'Lab blogs, press and newsletters', scraped: 'Lab news pages', openrouter: 'OpenRouter models', huggingface: 'Hugging Face', github: 'GitHub', producthunt: 'Product Hunt', showhn: 'Show HN', tech: 'Tech (classified)' };
 
 function renderFoot() {
   const st = state.data.status || {};
@@ -712,6 +741,7 @@ function render() {
   if (!state.data) return;
   if (state.view === 'news') renderNews();
   if (state.view === 'x') renderX();
+  if (state.view === 'tech') renderTech();
   if (state.view === 'builds') renderBuilds();
   if (state.view === 'markets') renderMarkets();
   renderFoot();
@@ -728,9 +758,9 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  state.view = ['news', 'x', 'builds', 'markets'].includes(v) ? v : 'news';
+  state.view = ['news', 'x', 'tech', 'builds', 'markets'].includes(v) ? v : 'news';
   const name = state.data?.site?.name || 'Frontier Wire';
-  document.title = { news: name, x: `On X · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}` }[state.view];
+  document.title = { news: name, x: `On X · ${name}`, tech: `Tech · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}` }[state.view];
   const changed = $(`.view[data-view="${state.view}"]`)?.hidden;
   const go = () => {
     render();
@@ -756,6 +786,8 @@ document.addEventListener('click', (e) => {
   else if (d.kind) { state.kind = d.kind; store.set('fw.kind', d.kind); state.limit = 60; renderNews(); }
   else if (d.sort) { state.sort = d.sort; store.set('fw.sort', d.sort); renderNews(); }
   else if (d.build) { state.buildFilter = d.build; store.set('fw.build', d.build); renderBuilds(); }
+  else if (d.techtopic) { state.techTopic = d.techtopic; state.techLimit = 40; store.set('fw.techtopic', d.techtopic); transition(() => renderTech({ animate: true })); }
+  else if (d.techsort) { state.techSort = d.techsort; store.set('fw.techsort', d.techsort); transition(() => renderTech({ animate: true })); }
   else if (d.xgroup) { state.xGroup = d.xgroup; state.xHandle = null; store.set('fw.xgroup', d.xgroup); loadX({ animate: true }); }
   else if (d.xhandle) { state.xHandle = state.xHandle === d.xhandle ? null : d.xhandle; loadX({ animate: true }); }
   else if (d.msort) { state.marketSort = d.msort; store.set('fw.msort', d.msort); renderMarkets(); }
@@ -772,6 +804,7 @@ document.addEventListener('click', (e) => {
 
 $('#moreStories').addEventListener('click', () => { state.limit += 60; renderNews(); });
 $('#moreX').addEventListener('click', () => loadX({ append: true }));
+$('#moreTech').addEventListener('click', () => { state.techLimit += 40; renderTech(); });
 let xqTimer;
 $('#xq').addEventListener('input', (e) => {
   clearTimeout(xqTimer);

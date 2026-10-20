@@ -102,3 +102,13 @@ test('X feed filters by group, handle and text, and pages by time', async () => 
   assert.equal(all.groups.find(([k]) => k === 'markets')[2], 1);
   assert.equal(all.status.strategy, 'rsshub');
 });
+
+test('tech classifier keeps only confident technology labels', async () => {
+  const { isTech, TECH_TOPIC } = await import('../src/sources/tech.js');
+  assert.equal(isTech({ label: 'software', score: 0.99 }), true);
+  assert.equal(isTech({ label: 'cybersecurity', score: 0.96 }), true);
+  assert.equal(isTech({ label: 'technology', score: 0.87 }), false);
+  assert.equal(isTech({ label: 'politics', score: 1 }), false);
+  assert.equal(isTech(null), false);
+  assert.equal(TECH_TOPIC.cybersecurity, 'Security');
+});

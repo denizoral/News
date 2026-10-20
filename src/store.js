@@ -137,6 +137,20 @@ export class Store extends EventEmitter {
     stories.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.score - a.score);
     const topStories = stories.slice(0, 400).map(({ _group, weakEntities, ...s }) => s);
 
+    // Tech tab: classified non-AI technology news, clustered the same way. A
+    // story's topic is the one most of its articles were filed under.
+    const techStories = clusterItems(all.filter((i) => i.section === 'tech'))
+      .map((s) => {
+        const votes = {};
+        for (const it of s._group) votes[it.topic] = (votes[it.topic] || 0) + 1;
+        s.topic = Object.keys(votes).sort((a, b) => votes[b] - votes[a])[0] || 'General';
+        s.score = scoreStory(s, now);
+        return s;
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 150)
+      .map(({ _group, weakEntities, ...s }) => s);
+
     // Markets: attach the stories that point at each one.
     const marketStories = new Map();
     for (const s of topStories) for (const m of s.markets || []) {
@@ -163,7 +177,7 @@ export class Store extends EventEmitter {
     this._newsItems = newsItems;
     this._trending = new Map();
     this.version++;
-    this.snapshot = { version: this.version, generatedAt: now, site: settings.publicSite(), stories: topStories, builds, markets, social, models, trending: computeTrending(newsItems, { now }), status: this.status() };
+    this.snapshot = { version: this.version, generatedAt: now, site: settings.publicSite(), stories: topStories, tech: techStories, builds, markets, social, models, trending: computeTrending(newsItems, { now }), status: this.status() };
     this.emit('update', this.snapshot);
   }
 

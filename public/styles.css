@@ -455,6 +455,18 @@ main { max-width: var(--max); margin: 0 auto; padding: 28px 24px 40px; }
 
 mark { background: var(--signal-soft); color: inherit; border-radius: 2px; }
 
+/* ---------- Tech view ---------- */
+#techRiver .story[data-topic] { position: relative; }
+#techRiver .story[data-topic]::before {
+  content: attr(data-topic); display: inline-block; margin-bottom: 4px; font-size: 0.6875rem; font-weight: 800;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--topic, var(--muted)); grid-column: 1;
+}
+#techRiver .story[data-topic='Security'] { --topic: var(--no); }
+#techRiver .story[data-topic='Software'] { --topic: var(--signal); }
+#techRiver .story[data-topic='Gadgets'] { --topic: #b06ad9; }
+#techRiver .story[data-topic='Platforms'] { --topic: #c98a12; }
+#techRiver .story[data-topic='AI'] { --topic: var(--yes); }
+
 /* ---------- X view ---------- */
 .tabs a.tab-x { display: inline-flex; align-items: center; gap: 5px; }
 .tabs a.tab-x svg { width: 13px; height: 13px; }
@@ -503,11 +515,11 @@ mark { background: var(--signal-soft); color: inherit; border-radius: 2px; }
 .x-link:hover { color: var(--signal); }
 .x-foot .open { margin-left: auto; }
 .x-foot .open:hover { color: var(--signal); }
-.tag { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; background: var(--track); color: var(--ink-2); }
-.tag:empty { display: none; }
-.tag-lab { background: var(--signal-soft); color: var(--signal); }
-.tag-markets { background: var(--yes-soft); color: var(--yes); }
-.tag-scoops { background: color-mix(in srgb, var(--no) 14%, transparent); color: var(--no); }
+.xpost .tag { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; background: var(--track); color: var(--ink-2); }
+.xpost .tag:empty { display: none; }
+.xpost .tag-lab { background: var(--signal-soft); color: var(--signal); }
+.xpost .tag-markets { background: var(--yes-soft); color: var(--yes); }
+.xpost .tag-scoops { background: color-mix(in srgb, var(--no) 14%, transparent); color: var(--no); }
 
 /* New posts slide in and glow briefly; the stagger keeps a burst readable. */
 .xpost.enter { animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 40ms); }

@@ -133,6 +133,29 @@ export const POLYMARKET = {
   minVolume: 5000,
 };
 
+// Tech tab: general technology outlets. Their AI stories are left to the News
+// tab; everything else is classified (see src/sources/tech.js).
+export const TECH_FEEDS = [
+  { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml', weight: 1.2 },
+  { name: 'Ars Technica', url: 'https://feeds.arstechnica.com/arstechnica/index', weight: 1.2 },
+  { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', weight: 1.1 },
+  { name: 'The Register', url: 'https://www.theregister.com/headlines.atom', weight: 1.0 },
+  { name: 'Engadget', url: 'https://www.engadget.com/rss.xml', weight: 0.9 },
+  { name: '9to5Google', url: 'https://9to5google.com/feed/', weight: 0.8 },
+  { name: '9to5Mac', url: 'https://9to5mac.com/feed/', weight: 0.8 },
+];
+
+// The local zero-shot classifier. The extra non-tech labels give borderline
+// headlines somewhere else to land; only a confident tech top label is kept.
+export const TECH_CLASSIFIER = {
+  url: process.env.CLASSIFIER_URL || 'http://127.0.0.1:8765',
+  labels: ['artificial intelligence', 'technology', 'software', 'cybersecurity', 'consumer electronics', 'internet platforms',
+    'science', 'business', 'politics', 'world news', 'crime', 'sports', 'entertainment', 'health', 'lifestyle', 'food'],
+  techLabels: ['artificial intelligence', 'technology', 'software', 'cybersecurity', 'consumer electronics', 'internet platforms'],
+  minScore: 0.95,
+  batch: 32,
+};
+
 // Cadence per source, in seconds. Social and markets refresh fastest.
 export const SCHEDULE = {
   x: 120,
@@ -148,6 +171,7 @@ export const SCHEDULE = {
   github: 1800,
   producthunt: 900,
   showhn: 300,
+  tech: 600,
 };
 
 export const RETENTION_HOURS = 72;

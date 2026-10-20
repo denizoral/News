@@ -25,6 +25,7 @@
       <nav class="tabs" aria-label="Sections">
         <a href="#news" data-view="news">News</a>
         <a href="#x" data-view="x" class="tab-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.8 3h3.1l-6.8 7.8L22 21h-6.2l-4.9-6.4L5.3 21H2.2l7.3-8.3L1.9 3h6.4l4.4 5.8L17.8 3Zm-1.1 16.2h1.7L7.4 4.7H5.6l11.1 14.5Z" fill="currentColor"/></svg><span>X</span></a>
+        <a href="#tech" data-view="tech">Tech</a>
         <a href="#builds" data-view="builds">Built with AI</a>
         <a href="#markets" data-view="markets">Markets</a>
       </nav>
@@ -107,6 +108,22 @@
       <ol class="x-accounts" id="xAccounts" aria-label="Accounts"></ol>
       <ol class="x-feed" id="xFeed"></ol>
       <button class="more" id="moreX" type="button" hidden>Older posts</button>
+    </section>
+
+    <!-- Tech -->
+    <section class="view" data-view="tech" aria-label="Tech" hidden>
+      <div class="view-head">
+        <h1>Tech, beyond AI</h1>
+        <p>What's changing across software, security, gadgets and the platforms everyone uses. Sorted from general tech outlets and the Hacker News front page by an on-server classifier.</p>
+      </div>
+      <div class="filters" role="group" aria-label="Filter tech stories">
+        <div class="filter-row">
+          <div class="chips" id="techChips"></div>
+          <div class="seg" id="techSortSeg" role="group" aria-label="Sort tech stories"></div>
+        </div>
+      </div>
+      <div id="techRiver" class="river"></div>
+      <button class="more" id="moreTech" type="button" hidden>Show more</button>
     </section>
 
     <!-- Builds -->

@@ -3,6 +3,7 @@ import { fetchFeeds, fetchGoogleNews, fetchScraped } from './sources/rss.js';
 import { fetchHackerNews, fetchReddit, fetchBluesky } from './sources/community.js';
 import { fetchX, xStatus, embedStatus } from './sources/x.js';
 import { fetchPolymarket } from './sources/polymarket.js';
+import { fetchTech, techStatus } from './sources/tech.js';
 import { fetchHuggingFace, fetchGitHub, fetchProductHunt, fetchShowHN, fetchOpenRouter } from './sources/builds.js';
 import { ingestAggregatorItems, ingestMarkets } from './index/documents.js';
 
@@ -26,6 +27,7 @@ export const SOURCES = {
   github: fetchGitHub,
   producthunt: fetchProductHunt,
   showhn: fetchShowHN,
+  tech: fetchTech,
 };
 
 // Bluesky is a backup for X: it only runs while X has been failing, and its
@@ -68,6 +70,7 @@ export async function runSource(store, name) {
       error: ok ? null : out.errors?.[0]?.error,
       lastRun: Date.now(),
       ms: Date.now() - started,
+      ...(name === 'tech' ? { classifier: { ...techStatus } } : {}),
       ...(name === 'x' ? { strategy: xStatus.strategy, ...(xStatus.strategy !== 'api' ? embedStatus() : {}) } : {}),
     };
     if (process.env.DEBUG && out.errors?.length) console.warn(`[${name}]`, out.errors.slice(0, 3));

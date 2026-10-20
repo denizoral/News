@@ -34,7 +34,7 @@ function toItem({ id, handle, name, avatar, text, createdAt, likes = 0, reposts 
     kind: 'social',
     platform: 'x',
     group: acct?.group || 'people',
-    weight: acct?.group === 'lab' ? 1.5 : acct?.group === 'scoops' ? 1.2 : 1.1,
+    weight: acct?.group === 'lab' ? 1.5 : acct?.group === 'scoops' || acct?.group === 'markets' ? 1.2 : 1.1,
     engagement: { score: likes + 3 * reposts, comments: replies },
   };
 }
@@ -146,7 +146,7 @@ async function viaRsshub() {
 
 const EMBED_HOSTS = ['https://syndication.twitter.com', 'https://cdn.syndication.twimg.com'];
 const EMBED_PER_RUN = Number(process.env.X_EMBED_PER_RUN) || 4;
-const REVISIT_MIN = { lab: 10, scoops: 6, people: 25 };
+const REVISIT_MIN = { lab: 10, scoops: 6, markets: 6, people: 25 };
 
 // A rotation fetches a few accounts per run, most overdue first, and caches each
 // account's posts so every run still returns the full set. Rate limits back it

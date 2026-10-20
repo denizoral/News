@@ -26,6 +26,7 @@ import { contentEvents } from './admin/content.js';
 import { RateLimiter } from './security/ratelimit.js';
 import { clientIp, securityHeaders } from './security/httpkit.js';
 import { startFileLog } from './logfile.js';
+import { xFeed } from './xfeed.js';
 
 const PROD = process.env.NODE_ENV === 'production';
 const PUBLIC = path.resolve('public');
@@ -195,6 +196,7 @@ export function createApp({ store, spider }) {
       return res.end(req.method === 'HEAD' ? undefined : s.body.get(enc));
     }
     if (p === '/api/search') return cachedApi(req, res, url, (o) => (o.type === 'images' ? searchImages(o.q || '', o) : universal(o.q || '', o)));
+    if (p === '/api/x') return cachedApi(req, res, url, (o) => xFeed(store, o));
     if (p === '/api/suggest') return cachedApi(req, res, url, (o) => suggest(o.q || ''));
     if (p === '/api/doc') {
       if (limited(req, res)) return;

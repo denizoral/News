@@ -82,3 +82,23 @@ test('RSSHub list feed entries take the handle from each status URL', async () =
   assert.equal(items[0].linkUrl, 'https://polymarket.com/event/abc');
   assert.equal(items[0].image, 'https://pbs.twimg.com/media/a.jpg');
 });
+
+test('X feed filters by group, handle and text, and pages by time', async () => {
+  const { xFeed } = await import('../src/xfeed.js');
+  const post = (id, handle, t, text = `post ${id}`) => [`x:${id}`, { id: `x:${id}`, platform: 'x', handle, author: handle, title: text, summary: '', publishedAt: t, url: `https://x.com/${handle}/status/${id}` }];
+  const store = {
+    version: 1,
+    items: new Map([post(1, 'Polymarket', 3000, 'BREAKING: odds move'), post(2, 'OpenAI', 2000), post(3, 'karpathy', 1000), ['n:1', { id: 'n:1', platform: 'rss', title: 'not x' }]]),
+    modFor: () => null,
+    sourceStatus: { x: { ok: true, strategy: 'rsshub', lastRun: 5 } },
+  };
+  const all = xFeed(store, { limit: 2 });
+  assert.deepEqual(all.posts.map((p) => p.id), ['x:1', 'x:2']);
+  assert.equal(all.nextBefore, 2000);
+  assert.deepEqual(xFeed(store, { before: all.nextBefore }).posts.map((p) => p.id), ['x:3']);
+  assert.deepEqual(xFeed(store, { group: 'markets' }).posts.map((p) => p.handle), ['Polymarket']);
+  assert.deepEqual(xFeed(store, { handle: 'openai' }).posts.map((p) => p.id), ['x:2']);
+  assert.deepEqual(xFeed(store, { q: 'odds' }).posts.map((p) => p.id), ['x:1']);
+  assert.equal(all.groups.find(([k]) => k === 'markets')[2], 1);
+  assert.equal(all.status.strategy, 'rsshub');
+});

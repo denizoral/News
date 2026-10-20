@@ -55,9 +55,9 @@ export const X_ACCOUNTS = [
   { handle: 'deedydas', group: 'scoops' },
 
   // Prediction markets: every post, not just AI ones. They break news early.
-  { handle: 'Polymarket', group: 'scoops' },
-  { handle: 'PolymarketIntel', group: 'scoops' },
-  { handle: 'Kalshi', group: 'scoops' },
+  { handle: 'Polymarket', group: 'markets' },
+  { handle: 'PolymarketIntel', group: 'markets' },
+  { handle: 'Kalshi', group: 'markets' },
 ];
 
 // Bluesky mirrors of AI voices. Only used while X is down (see crawler.js).

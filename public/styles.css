@@ -455,6 +455,77 @@ main { max-width: var(--max); margin: 0 auto; padding: 28px 24px 40px; }
 
 mark { background: var(--signal-soft); color: inherit; border-radius: 2px; }
 
+/* ---------- X view ---------- */
+.tabs a.tab-x { display: inline-flex; align-items: center; gap: 5px; }
+.tabs a.tab-x svg { width: 13px; height: 13px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.x-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+.x-status { display: inline-flex; align-items: center; gap: 8px; font-size: var(--s-1); color: var(--muted); white-space: nowrap; }
+.x-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--read); }
+.x-status .dot.on { background: var(--yes); animation: breathe 2.4s ease-in-out infinite; }
+.x-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; position: sticky; top: 57px; z-index: 5; background: var(--paper); padding: 10px 0; }
+.x-find input { font: inherit; font-size: var(--s-1); width: 220px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.x-find input:focus { outline: none; border-color: var(--signal); }
+
+.x-accounts { list-style: none; margin: 6px 0 14px; padding: 4px 2px 8px; display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: thin; }
+.x-accounts li { scroll-snap-align: start; flex: none; }
+.x-acct { display: grid; justify-items: center; gap: 5px; width: 64px; padding: 0; border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 0.6875rem; }
+.x-acct .ring { position: relative; width: 50px; height: 50px; border-radius: 50%; padding: 3px; display: grid; place-items: center; transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
+.x-acct .ring::before { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--line); }
+.x-acct.hot .ring::before { border: 0; background: conic-gradient(from var(--spin, 0deg), var(--signal), var(--yes), var(--signal)); animation: spin 4s linear infinite; -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px)); }
+.x-acct img { position: relative; width: 44px; height: 44px; border-radius: 50%; background: var(--track); object-fit: cover; }
+.x-acct .h { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.x-acct:hover .ring { transform: translateY(-2px) scale(1.04); }
+.x-acct[aria-pressed='true'] { color: var(--ink); font-weight: 700; }
+.x-acct[aria-pressed='true'] .ring::before { border-color: var(--ink); border-width: 2.5px; }
+@property --spin { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+@keyframes spin { to { --spin: 360deg; } }
+
+.x-feed { list-style: none; margin: 0; padding: 0; max-width: 720px; }
+.xpost { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; padding: 14px 16px; margin-bottom: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); transition: border-color 0.2s ease, transform 0.2s ease; }
+.xpost:hover { border-color: color-mix(in srgb, var(--ink-2) 45%, var(--line)); }
+.xpost .av { width: 40px; height: 40px; border-radius: 50%; background: var(--track); object-fit: cover; }
+.xpost .who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: var(--s-1); color: var(--muted); }
+.xpost .who b { color: var(--ink); font-size: var(--s0); }
+.xpost .handle { border: 0; background: none; padding: 0; color: inherit; cursor: pointer; }
+.xpost .handle:hover { color: var(--signal); }
+.xpost .when { margin-left: auto; }
+.xpost .when:hover { color: var(--ink); }
+.xpost p { margin: 4px 0 0; color: var(--ink); font-size: var(--s0); line-height: 1.5; overflow-wrap: anywhere; white-space: pre-line; }
+.xpost p a { color: var(--signal); }
+.xpost p a:hover { text-decoration: underline; }
+.x-img { display: block; margin-top: 10px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); max-height: 420px; }
+.x-img img { width: 100%; height: 100%; max-height: 420px; object-fit: cover; transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+.x-img:hover img { transform: scale(1.02); }
+.x-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 10px; font-size: var(--s-1); color: var(--muted); }
+.x-link { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 6px; border-radius: 999px; background: var(--paper); color: var(--ink-2); font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.x-link img { width: 16px; height: 16px; border-radius: 3px; }
+.x-link:hover { color: var(--signal); }
+.x-foot .open { margin-left: auto; }
+.x-foot .open:hover { color: var(--signal); }
+.tag { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; background: var(--track); color: var(--ink-2); }
+.tag:empty { display: none; }
+.tag-lab { background: var(--signal-soft); color: var(--signal); }
+.tag-markets { background: var(--yes-soft); color: var(--yes); }
+.tag-scoops { background: color-mix(in srgb, var(--no) 14%, transparent); color: var(--no); }
+
+/* New posts slide in and glow briefly; the stagger keeps a burst readable. */
+.xpost.enter { animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 40ms); }
+.xpost.is-new.enter { animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both, glow 2.4s ease-out both; animation-delay: calc(var(--i, 0) * 40ms); }
+@keyframes glow { 0%, 30% { border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft), var(--shadow); } }
+.skeleton-post { box-shadow: none; }
+.skeleton-post .av.skeleton { width: 40px; height: 40px; border-radius: 50%; margin: 0; }
+.skeleton-post .skeleton { display: block; margin-bottom: 8px; }
+
+@media (max-width: 860px) { .x-bar { top: 98px; } }
+@media (max-width: 560px) {
+  .x-bar { position: static; }
+  .x-find, .x-find input { width: 100%; }
+  .xpost { padding: 12px; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; }
+  .xpost .av { width: 34px; height: 34px; }
+  .x-accounts { margin-right: -16px; padding-right: 16px; }
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1080px) {
   .layout { grid-template-columns: minmax(0, 1fr); }

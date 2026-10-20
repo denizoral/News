@@ -20,6 +20,10 @@ const state = {
   sort: store.get('fw.sort', 'top'),
   buildFilter: store.get('fw.build', 'all'),
   marketSort: store.get('fw.msort', 'moving'),
+  xGroup: store.get('fw.xgroup', 'all'),
+  xHandle: null,
+  xq: '',
+  x: null, // { key, version, posts, nextBefore, groups, accounts, status }
   q: '',
   entity: null,
   trendHours: 6,
@@ -450,6 +454,123 @@ function renderRail() {
     `<li><a href="${esc(m.url)}" target="_blank" rel="noopener" title="${esc(m.title)}">${esc(m.title)}</a><span>${compact(m.engagement?.likes ?? m.engagement?.score)} likes</span></li>`).join('');
 }
 
+// ---------- X view ----------
+// Posts come from /api/x (every X post we hold, filterable and paged). On a
+// static build it falls back to the X posts in the snapshot.
+
+const X_GROUP_LABEL = { lab: 'Lab', people: 'Person', scoops: 'Scoop', markets: 'Market' };
+const shownX = new Set();
+const xKey = () => `${state.xGroup}|${state.xHandle || ''}|${state.xq}`;
+
+function linkifyPost(text) {
+  return highlight(text)
+    .replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u.replace(/^https?:\/\/(www\.)?/, '').slice(0, 42)}${u.length > 50 ? '…' : ''}</a>`)
+    .replace(/(^|[\s(])@(\w{1,15})/g, '$1<a href="https://x.com/$2" target="_blank" rel="noopener">@$2</a>');
+}
+
+function staticX() {
+  const all = (state.data?.social || []).filter((p) => p.platform === 'x');
+  const q = state.xq.toLowerCase();
+  const posts = all
+    .filter((p) => (state.xGroup === 'all' || p.group === state.xGroup) && (!state.xHandle || p.handle === state.xHandle) && (!q || `${p.title} ${p.author}`.toLowerCase().includes(q)))
+    .map((p) => ({ ...p, text: p.summary || p.title, likes: p.engagement?.score || 0, replies: p.engagement?.comments || 0 }));
+  const accounts = new Map();
+  for (const p of all) if (!accounts.has(p.handle)) accounts.set(p.handle, { handle: p.handle, name: p.author, avatar: p.avatar, group: p.group, latest: p.publishedAt, count: 0 });
+  for (const p of all) accounts.get(p.handle).count++;
+  const counts = {};
+  for (const p of all) counts[p.group] = (counts[p.group] || 0) + 1;
+  return {
+    posts, nextBefore: null, accounts: [...accounts.values()],
+    groups: [['all', 'All', all.length], ['lab', 'Labs', counts.lab || 0], ['people', 'People', counts.people || 0], ['scoops', 'Scoops', counts.scoops || 0], ['markets', 'Markets', counts.markets || 0]],
+    status: { ok: all.length > 0 },
+  };
+}
+
+async function loadX({ append = false, animate = false } = {}) {
+  const key = xKey();
+  const version = state.data?.version;
+  let next;
+  if (state.mode === 'api') {
+    const qs = new URLSearchParams({ group: state.xGroup, limit: '40' });
+    if (state.xHandle) qs.set('handle', state.xHandle);
+    if (state.xq) qs.set('q', state.xq);
+    if (append && state.x?.nextBefore) qs.set('before', state.x.nextBefore);
+    if (!state.x) $('#xFeed').innerHTML = skeletonX();
+    try {
+      const res = await fetch(`api/x?${qs}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      next = await res.json();
+    } catch {
+      next = staticX();
+    }
+  } else next = staticX();
+  if (key !== xKey()) return; // a newer filter won the race
+  if (append && state.x) next = { ...next, posts: [...state.x.posts, ...next.posts] };
+  else if (!animate && state.x?.key === key) {
+    // A live refresh: keep anything already paged in below the fresh page.
+    const seen = new Set(next.posts.map((p) => p.id));
+    const oldest = next.posts.at(-1)?.publishedAt ?? Infinity;
+    next.posts.push(...state.x.posts.filter((p) => !seen.has(p.id) && p.publishedAt < oldest));
+  }
+  state.x = { ...next, key, version };
+  const draw = () => drawX({ animate });
+  animate ? transition(draw) : draw();
+}
+
+function skeletonX() {
+  return Array.from({ length: 6 }, () => `<li class="xpost skeleton-post" aria-hidden="true"><span class="av skeleton"></span><span><span class="skeleton w40"></span><span class="skeleton"></span><span class="skeleton w80"></span></span></li>`).join('');
+}
+
+function renderX() {
+  if (!state.x || state.x.version !== state.data?.version || state.x.key !== xKey()) loadX();
+  else drawX();
+}
+
+function drawX({ animate = false } = {}) {
+  const x = state.x;
+  if (!x) return;
+  $('#xGroups').innerHTML = x.groups.filter(([k, , n]) => k === 'all' || n).map(([k, l, n]) =>
+    `<button class="chip" type="button" data-xgroup="${k}" aria-pressed="${state.xGroup === k}">${l}<span class="n">${compact(n)}</span></button>`).join('');
+
+  const hour = Date.now() - 3600e3;
+  $('#xAccounts').innerHTML = x.accounts.filter((a) => a.count).slice(0, 40).map((a) =>
+    `<li><button type="button" class="x-acct${a.latest > hour ? ' hot' : ''}" data-xhandle="${esc(a.handle)}" aria-pressed="${state.xHandle === a.handle}" title="${esc(a.name || a.handle)} · ${a.count} posts">
+      <span class="ring"><img src="${esc(a.avatar || fav('x.com'))}" alt="" loading="lazy" width="44" height="44"></span>
+      <span class="h">@${esc(a.handle)}</span>
+    </button></li>`).join('');
+
+  const st = x.status || {};
+  $('#xStatus').innerHTML = st.ok ? `<i class="dot on"></i>Live${st.lastRun ? ` · checked ${ago(st.lastRun)}` : ''}` : `<i class="dot"></i>${st.error ? 'X source is having trouble' : 'Waiting for X'}`;
+
+  const fresh = [];
+  $('#xFeed').innerHTML = x.posts.map((p) => {
+    const isNew = shownX.size && !shownX.has(p.id);
+    if (animate || isNew) fresh.push(p.id);
+    const link = p.linkUrl ? `<a class="x-link" href="${esc(p.linkUrl)}" target="_blank" rel="noopener"><img src="${esc(fav(host(p.linkUrl)))}" alt="" width="16" height="16" loading="lazy">${esc(host(p.linkUrl))}</a>` : '';
+    return `<li class="xpost${isNew ? ' is-new' : ''}" data-id="${esc(p.id)}">
+      <img class="av" src="${esc(p.avatar || fav('x.com'))}" alt="" loading="lazy" width="40" height="40">
+      <div class="body">
+        <div class="who"><b>${esc(p.author || p.handle)}</b><button type="button" class="handle" data-xhandle="${esc(p.handle)}">@${esc(p.handle)}</button><span class="tag tag-${esc(p.group)}">${X_GROUP_LABEL[p.group] || ''}</span><a class="when" href="${esc(p.url)}" target="_blank" rel="noopener">${time(p.publishedAt)}</a></div>
+        <p>${linkifyPost(p.text || '')}</p>
+        ${p.image ? `<a class="x-img" href="${esc(p.url)}" target="_blank" rel="noopener"><img src="${esc(p.image)}" alt="" loading="lazy"></a>` : ''}
+        <div class="x-foot">${link}${p.likes ? `<span class="num">♥ ${compact(p.likes)}</span>` : ''}${p.replies ? `<span class="num">${compact(p.replies)} replies</span>` : ''}<a class="open" href="${esc(p.url)}" target="_blank" rel="noopener">Open on X ↗</a></div>
+      </div>
+    </li>`;
+  }).join('') || `<li class="empty">${state.xq || state.xHandle ? 'No posts match.' : 'No X posts yet. They appear once the X source has run; see Sources at the bottom of the page.'}</li>`;
+
+  if (!reducedMotion()) {
+    let i = 0;
+    for (const id of fresh.slice(0, 16)) {
+      const el = $(`.xpost[data-id="${CSS.escape(id)}"]`, $('#xFeed'));
+      if (!el) continue;
+      el.classList.add('enter');
+      el.style.setProperty('--i', i++);
+    }
+  }
+  for (const p of x.posts) shownX.add(p.id);
+  $('#moreX').hidden = !x.nextBefore;
+}
+
 // ---------- Builds view ----------
 
 const BUILD_FILTERS = [
@@ -590,6 +711,7 @@ function render() {
   $$('.tabs a').forEach((a) => (a.dataset.view === state.view ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   if (!state.data) return;
   if (state.view === 'news') renderNews();
+  if (state.view === 'x') renderX();
   if (state.view === 'builds') renderBuilds();
   if (state.view === 'markets') renderMarkets();
   renderFoot();
@@ -606,9 +728,9 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  state.view = ['news', 'builds', 'markets'].includes(v) ? v : 'news';
+  state.view = ['news', 'x', 'builds', 'markets'].includes(v) ? v : 'news';
   const name = state.data?.site?.name || 'Frontier Wire';
-  document.title = { news: name, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}` }[state.view];
+  document.title = { news: name, x: `On X · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}` }[state.view];
   const changed = $(`.view[data-view="${state.view}"]`)?.hidden;
   const go = () => {
     render();
@@ -634,6 +756,8 @@ document.addEventListener('click', (e) => {
   else if (d.kind) { state.kind = d.kind; store.set('fw.kind', d.kind); state.limit = 60; renderNews(); }
   else if (d.sort) { state.sort = d.sort; store.set('fw.sort', d.sort); renderNews(); }
   else if (d.build) { state.buildFilter = d.build; store.set('fw.build', d.build); renderBuilds(); }
+  else if (d.xgroup) { state.xGroup = d.xgroup; state.xHandle = null; store.set('fw.xgroup', d.xgroup); loadX({ animate: true }); }
+  else if (d.xhandle) { state.xHandle = state.xHandle === d.xhandle ? null : d.xhandle; loadX({ animate: true }); }
   else if (d.msort) { state.marketSort = d.msort; store.set('fw.msort', d.msort); renderMarkets(); }
   else if (d.toggle) {
     state.open.has(d.toggle) ? state.open.delete(d.toggle) : state.open.add(d.toggle);
@@ -647,6 +771,12 @@ document.addEventListener('click', (e) => {
 });
 
 $('#moreStories').addEventListener('click', () => { state.limit += 60; renderNews(); });
+$('#moreX').addEventListener('click', () => loadX({ append: true }));
+let xqTimer;
+$('#xq').addEventListener('input', (e) => {
+  clearTimeout(xqTimer);
+  xqTimer = setTimeout(() => { state.xq = e.target.value.trim(); loadX({ animate: true }); }, 220);
+});
 
 $('#newPill').addEventListener('click', () => {
   if (state.pending) state.data = state.pending;

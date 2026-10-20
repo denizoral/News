@@ -24,6 +24,7 @@
       <p class="tagline" id="tagline" hidden></p>
       <nav class="tabs" aria-label="Sections">
         <a href="#news" data-view="news">News</a>
+        <a href="#x" data-view="x" class="tab-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.8 3h3.1l-6.8 7.8L22 21h-6.2l-4.9-6.4L5.3 21H2.2l7.3-8.3L1.9 3h6.4l4.4 5.8L17.8 3Zm-1.1 16.2h1.7L7.4 4.7H5.6l11.1 14.5Z" fill="currentColor"/></svg><span>X</span></a>
         <a href="#builds" data-view="builds">Built with AI</a>
         <a href="#markets" data-view="markets">Markets</a>
       </nav>
@@ -85,6 +86,27 @@
           </section>
         </aside>
       </div>
+    </section>
+
+    <!-- X -->
+    <section class="view" data-view="x" aria-label="X" hidden>
+      <div class="view-head x-head">
+        <div>
+          <h1>On X</h1>
+          <p>Labs, researchers, leakers and prediction markets, as they post. Newest first, updating live.</p>
+        </div>
+        <span class="x-status" id="xStatus" role="status" aria-live="polite"></span>
+      </div>
+      <div class="x-bar">
+        <div class="chips" id="xGroups" role="group" aria-label="Filter accounts"></div>
+        <label class="x-find">
+          <span class="visually-hidden">Filter posts</span>
+          <input id="xq" type="search" placeholder="Filter posts" autocomplete="off" />
+        </label>
+      </div>
+      <ol class="x-accounts" id="xAccounts" aria-label="Accounts"></ol>
+      <ol class="x-feed" id="xFeed"></ol>
+      <button class="more" id="moreX" type="button" hidden>Older posts</button>
     </section>
 
     <!-- Builds -->

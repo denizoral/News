@@ -46,6 +46,66 @@ export function isUsefulFeed(feedUrl, pageUrl) {
   return isAiSlug(content.join('/'));
 }
 
+// Of the sitemaps robots.txt lists, the ones likely to hold recent articles:
+// all of a short list, or the news/post/dated ones of a long one. Image,
+// video, tag and author sitemaps never hold news.
+const NEWSY_SITEMAP = /news|post|article|\d{4}|\/sitemaps?([-_]index)?\.xml(\.gz)?$/i;
+const OFF_TOPIC_SITEMAP = /(^|[/_-])(images?|videos?|tags?|topics?|categor(y|ies)|authors?|pages?|products?|sections?|hubs?|stores?|locations?)([/_.-]|\d|$)/i;
+export function pickSitemaps(listed = [], opts = {}) {
+  const useful = listed.filter((sm) => isWantedSitemap(sm, opts));
+  return useful.length <= 3 ? useful : useful.filter((sm) => NEWSY_SITEMAP.test(sm)).slice(0, 6);
+}
+
+// A sitemap worth rechecking: one that lists articles (not tags, authors or
+// images), not a translation the crawler won't index, and not a monthly or
+// yearly archive (Sitemap_Index_Feb_2022.xml.gz).
+export function isWantedSitemap(url, { languages = [], now = Date.now() } = {}) {
+  try {
+    return !OFF_TOPIC_SITEMAP.test(new URL(url).pathname) && !isOtherLanguage(url, languages) && !isArchiveSitemap(url, now);
+  } catch {
+    return false;
+  }
+}
+
+// /es/, /de-de/ and similar locale prefixes, when only some languages are wanted.
+const LOCALES = new Set('ar bg cs da de el es et fa fi fr he hi hr hu id it ja ko lt lv ms nb nl no pl pt ro ru sk sl sr sv th tr uk vi zh'.split(' '));
+export function isOtherLanguage(url, languages = []) {
+  if (!languages.length) return false;
+  const code = new URL(url).pathname.match(/^\/([a-z]{2})(?:[-_][a-z]{2})?\//i)?.[1].toLowerCase();
+  return !!code && LOCALES.has(code) && !languages.includes(code);
+}
+
+// Dated sitemaps older than two months only list old articles.
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+export function isArchiveSitemap(url, now = Date.now()) {
+  const path = new URL(url).pathname.toLowerCase();
+  const ym = path.match(/(?<!\d)(20\d\d)[-_/]?(0[1-9]|1[0-2])(?!\d)/);
+  const my = path.match(new RegExp(`(${MONTHS.join('|')})[a-z]*[-_]?(20\\d\\d)(?!\\d)`));
+  const y = path.match(/(?<!\d)(20\d\d)(?!\d)/);
+  // The first moment after the period the sitemap covers.
+  const end = ym ? Date.UTC(+ym[1], +ym[2], 1) : my ? Date.UTC(+my[2], MONTHS.indexOf(my[1]) + 1, 1) : y ? Date.UTC(+y[1] + 1, 0, 1) : null;
+  return end != null && end < now - 62 * 86400e3;
+}
+
+// Listing pages (a tag, topic or author's page) that sitemaps often include
+// alongside articles.
+export const isListingUrl = (url) => /\/(tags?|topics?|authors?|category|categories|section|sections|series|people|page\/\d+)(\/|$)/i.test(new URL(url).pathname);
+
+// Judging an untitled link by its URL: true or false when the slug is
+// descriptive (three or more words), null when it's opaque (/p/48213).
+export function slugRelevance(url) {
+  let path;
+  try {
+    path = decodeURIComponent(new URL(url).pathname);
+  } catch {
+    return null;
+  }
+  const words = path.split(/[^a-z0-9]+/i).filter((w) => /[a-z]/i.test(w));
+  const slug = path.split('/').filter(Boolean).pop() || '';
+  if (slug.split(/[-_]/).length < 3) return null;
+  return isAiSlug(path) || isAiRelated(words.join(' '));
+}
+
 // URL paths often run words together ("artificialintelligenceai") or abbreviate ("/ai/").
 const isAiSlug = (path) => isAiRelated(path.replace(/[-_/]/g, ' ')) || /artificial-?intelligence|machine-?learning|generative-?ai|(^|\/)(ai|ml|llms?|genai)(\/|$)/i.test(path);
 
@@ -53,6 +113,8 @@ const looksLikePost = (u) => /\/[^/]*-[^/]*-[^/]*-[^/]*\/?$/.test(new URL(u).pat
 
 // Hosts that publish help pages and docs, not news; never promoted to starting sites.
 export const isNonNewsHost = (host) => /^(support|help|docs|developer-docs|status|community|forum|forums|accounts?|login|shop|store|careers|jobs)\./i.test(host);
+// The same sections on a news site's own domain (claude.com/docs/…).
+const NON_NEWS_PATH = /^\/([a-z]{2}(-[a-z]{2})?\/)?(docs|documentation|help|support|kb|knowledge-base|legal|careers|jobs|pricing|login|signup)(\/|$)/i;
 
 // Hosts whose whole output is about AI; everything they publish is relevant.
 const AI_HOSTS = /(openai|anthropic|deepmind|huggingface|mistral|x\.ai|the-decoder|marktechpost|unite\.ai|simonwillison|latent\.space|interconnects|jack-clark|epoch\.ai|machinelearning\.apple)/;
@@ -80,7 +142,8 @@ export function decide(page, cfg, { findDuplicate = () => null, now = Date.now()
   const text = page.text || '';
   if (page.noindex) return { ok: false, outcome: 'skipped', reason: 'Page asks not to be indexed (noindex)' };
   const host = bare(hostOf(page.url || ''));
-  if (host && isNonNewsHost(host) && !trusted.has(host)) return { ok: false, outcome: 'skipped', reason: 'Help, docs or store page, not news' };
+  const path = (() => { try { return new URL(page.url).pathname; } catch { return ''; } })();
+  if (host && ((isNonNewsHost(host) && !trusted.has(host)) || NON_NEWS_PATH.test(path))) return { ok: false, outcome: 'skipped', reason: 'Help, docs or store page, not news' };
   if (!page.title) return { ok: false, outcome: 'skipped', reason: 'No title' };
   const head = `${page.title} ${page.description}`.toLowerCase();
   const bad = cfg.excludeKeywords.find((k) => head.includes(k));

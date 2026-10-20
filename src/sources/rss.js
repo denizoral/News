@@ -24,8 +24,29 @@ function imageOf(entry, html) {
   return img ? decodeEntities(img[1]) : null;
 }
 
-// Parse any RSS 2.0 / Atom / RDF document into plain entries.
+// JSON Feed (jsonfeed.org) 1.0/1.1, which some blogs publish instead of RSS.
+function parseJsonFeed(body) {
+  const doc = JSON.parse(body);
+  return arr(doc.items).filter((e) => e && typeof e === 'object').map((e) => {
+    const rawSummary = String(e.summary || e.content_html || e.content_text || '');
+    const author = e.authors?.[0]?.name || e.author?.name || '';
+    return {
+      title: stripHtml(String(e.title || '')),
+      url: String(e.url || e.external_url || '').trim(),
+      summaryHtml: rawSummary,
+      summary: clip(stripHtml(rawSummary), 320),
+      publishedAt: Date.parse(e.date_published || e.date_modified) || null,
+      author: stripHtml(String(author)),
+      image: e.image || e.banner_image || null,
+      source: '',
+      sourceUrl: null,
+    };
+  });
+}
+
+// Parse any RSS 2.0 / Atom / RDF / JSON Feed document into plain entries.
 export function parseFeed(xml) {
+  if (/^\s*\{/.test(xml)) return parseJsonFeed(xml);
   const doc = parser.parse(xml);
   const entries = doc.rss ? arr(doc.rss.channel?.item) : doc.feed ? arr(doc.feed.entry) : arr(doc['rdf:RDF']?.item);
   return entries.map((e) => {

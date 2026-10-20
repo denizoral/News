@@ -2,6 +2,8 @@
 // charset detection in the order browsers use: byte-order mark, HTTP header,
 // then <meta charset> / http-equiv / XML declaration in the first few KB.
 
+import zlib from 'node:zlib';
+
 export async function readBody(res, limit) {
   const chunks = [];
   let size = 0;
@@ -52,7 +54,45 @@ export function decode(buf, contentType) {
   }
 }
 
+// Sitemaps are often gzip files (sitemap.xml.gz). That isn't Content-Encoding,
+// which fetch already undoes, so inflate here, under the same size cap so a
+// small compressed file can't expand to fill memory. A cut-off stream still
+// yields what decoded before the cut.
+export function gunzipCapped(buf, limit) {
+  return new Promise((resolve) => {
+    const out = [];
+    let size = 0;
+    let truncated = false;
+    const z = zlib.createGunzip({ finishFlush: zlib.constants.Z_SYNC_FLUSH });
+    z.on('data', (c) => {
+      if (truncated) return;
+      if (size + c.length > limit) {
+        out.push(c.subarray(0, limit - size));
+        size = limit;
+        truncated = true;
+        z.destroy();
+      } else {
+        out.push(c);
+        size += c.length;
+      }
+    });
+    const finish = () => resolve({ buf: Buffer.concat(out), truncated });
+    z.on('end', finish);
+    z.on('close', finish);
+    z.on('error', finish);
+    z.end(buf);
+  });
+}
+
+const isGzip = (buf) => buf[0] === 0x1f && buf[1] === 0x8b;
+
 export async function readText(res, limit) {
-  const { buf, truncated } = await readBody(res, limit);
-  return { text: decode(buf, res.headers.get('content-type') || ''), bytes: buf.length, truncated };
+  let { buf, truncated } = await readBody(res, limit);
+  const bytes = buf.length;
+  if (isGzip(buf)) {
+    const inflated = await gunzipCapped(buf, limit);
+    buf = inflated.buf;
+    truncated ||= inflated.truncated;
+  }
+  return { text: decode(buf, res.headers.get('content-type') || ''), bytes, truncated };
 }

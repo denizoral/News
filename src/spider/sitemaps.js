@@ -6,8 +6,22 @@ import { XMLParser } from 'fast-xml-parser';
 const parser = new XMLParser({ ignoreAttributes: true, removeNSPrefix: true, processEntities: true });
 const arr = (x) => (x == null ? [] : Array.isArray(x) ? x : [x]);
 
+// A sitemap cut off at the size cap is still useful: keep every complete
+// entry and close the root element.
+function parseTolerant(xml) {
+  try {
+    return parser.parse(xml);
+  } catch (err) {
+    for (const [item, root] of [['url', 'urlset'], ['sitemap', 'sitemapindex']]) {
+      const end = xml.lastIndexOf(`</${item}>`);
+      if (end > 0 && new RegExp(`<${root}[\\s>]`).test(xml.slice(0, 4000))) return parser.parse(`${xml.slice(0, end + item.length + 3)}</${root}>`);
+    }
+    throw err;
+  }
+}
+
 export function parseSitemap(xml, { maxAgeDays = 7, maxUrls = 300, now = Date.now() } = {}) {
-  const doc = parser.parse(xml);
+  const doc = parseTolerant(xml);
   const cutoff = now - maxAgeDays * 86400e3;
   if (doc.sitemapindex) {
     const maps = arr(doc.sitemapindex.sitemap).map((s) => ({ url: String(s.loc || '').trim(), lastmod: Date.parse(s.lastmod) || null }));

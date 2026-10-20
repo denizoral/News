@@ -89,7 +89,7 @@ const DEFS = [
   { key: 'crawler.excludeKeywords', group: 'crawler', section: 'indexing', label: 'Skip pages mentioning', help: 'One per line, matched in the title and description.', type: 'words', maxItems: 500, default: [], role: 'admin' },
   { key: 'crawler.minWords', group: 'crawler', section: 'indexing', label: 'Minimum words', help: 'Shorter pages are not indexed.', type: 'int', min: 0, max: 10000, default: 100, role: 'admin' },
   { key: 'crawler.maxArticleAgeDays', group: 'crawler', section: 'indexing', label: 'Skip articles older than (days, 0 = any age)', type: 'int', min: 0, max: 36500, default: 0, role: 'admin' },
-  { key: 'crawler.languages', group: 'crawler', section: 'indexing', label: 'Languages', help: 'Two-letter codes, one per line (en, de…). Empty means any language.', type: 'words', maxItems: 50, default: [], role: 'admin', validate: (list) => list.find((l) => !/^[a-z]{2}$/.test(l)) ? 'Use two-letter language codes like en or de.' : null },
+  { key: 'crawler.languages', group: 'crawler', section: 'indexing', label: 'Languages', help: 'Two-letter codes, one per line (en, de…). Pages, sitemaps and feeds in other languages are skipped. Empty means any language.', type: 'words', maxItems: 50, default: ['en'], role: 'admin', validate: (list) => list.find((l) => !/^[a-z]{2}$/.test(l)) ? 'Use two-letter language codes like en or de.' : null },
   { key: 'crawler.recrawlHours', group: 'crawler', section: 'indexing', label: 'Recheck fresh articles after (hours, 0 = never)', help: 'Articles from the last 3 days are fetched again to pick up updates and corrections.', type: 'int', min: 0, max: 168, default: 0, role: 'admin' },
 
   // Sources (aggregator)

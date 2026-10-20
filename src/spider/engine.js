@@ -30,12 +30,18 @@ import { parseFeed } from '../sources/rss.js';
 import { readText } from './body.js';
 import { downloadImage, enforceBudget } from './media.js';
 import { upsertDoc, findByContentHash, addInlinks } from '../index/documents.js';
-import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost } from './policy.js';
+import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, isOtherLanguage, slugRelevance, isListingUrl } from './policy.js';
 
 export { inQuietHours };
 
 const LOG_RING = 500;
 const RECURRING = new Set(['hub', 'sitemap', 'feed']);
+
+// Where sites usually keep sitemaps and feeds they don't advertise. Guessed
+// addresses are tried once and dropped if nothing is there.
+const GUESS = 'guess';
+const SITEMAP_GUESSES = ['/sitemap.xml', '/sitemap_index.xml', '/news-sitemap.xml'];
+const FEED_GUESSES = ['/feed', '/feed.xml', '/rss.xml', '/atom.xml', '/index.xml'];
 const MAX_BACKOFF = 8; // recurring URLs are checked at most 8x less often
 const AUTO_HUB_EVERY_MS = 30 * 60e3;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -131,6 +137,15 @@ export class Spider extends EventEmitter {
       // Feeds queued under older rules that the current rules wouldn't follow.
       for (const r of q("SELECT url FROM frontier WHERE kind = 'feed' AND status = 'queued'").all()) {
         if (!isUsefulFeed(r.url)) q("UPDATE frontier SET status = 'skipped', error = 'Not a site-wide or AI feed' WHERE url = ?").run(r.url);
+      }
+      for (const r of q("SELECT url FROM frontier WHERE kind = 'sitemap' AND status = 'queued'").all()) {
+        if (!isWantedSitemap(r.url, { languages: this.cfg.languages })) q("UPDATE frontier SET status = 'skipped', error = 'Archive or other-language sitemap' WHERE url = ?").run(r.url);
+      }
+      // Untitled sitemap entries whose URL says they're off-topic.
+      if (this.cfg.relevance !== 'all') {
+        for (const r of q("SELECT url, host FROM frontier WHERE kind = 'article' AND via = 'sitemap' AND status = 'queued'").all()) {
+          if (isListingUrl(r.url) || (!isAiHost(r.host) && (slugRelevance(r.url) === false || isOtherLanguage(r.url, this.cfg.languages)))) q("UPDATE frontier SET status = 'skipped', error = 'Off-topic by its URL' WHERE url = ?").run(r.url);
+        }
       }
       // Starting pages removed in the dashboard stop being rechecked.
       const current = new Set(hubs.map((u) => canonicalUrl(u)));
@@ -303,9 +318,9 @@ export class Spider extends EventEmitter {
     h.crawl_delay_ms = d != null ? Math.min(d * 1000, 60000) : null;
     // Sitemaps of trusted hosts are the fastest way to learn about new articles.
     if (this.cfg.useSitemaps && this.trusted.has(bare(h.host))) {
-      for (const sm of h.parsed.sitemaps.slice(0, 6)) {
-        if (/news|post|article|\d{4}|sitemap\.xml$|sitemap_index/i.test(sm)) this.enqueue(sm, { kind: 'sitemap', priority: 9, depth: 0, via: 'robots.txt' });
-      }
+      for (const sm of pickSitemaps(h.parsed.sitemaps, { languages: this.cfg.languages })) this.enqueue(sm, { kind: 'sitemap', priority: 9, depth: 0, via: 'robots.txt' });
+      // Not every site lists its sitemap in robots.txt; try the usual places.
+      if (!h.parsed.sitemaps.length) for (const p of SITEMAP_GUESSES) this.enqueue(`${scheme}//${h.host}${p}`, { kind: 'sitemap', priority: 8, depth: 0, via: GUESS });
     }
     this.saveHost(h);
   }
@@ -437,14 +452,22 @@ export class Spider extends EventEmitter {
       this.log(row, { outcome: 'deferred', http: err.status, reason: `Rate limited; this site rests for ${Math.round(wait / 60e3)} min` });
       return;
     }
+    const permanent = err.permanent || (err.status >= 400 && err.status < 500);
+    // A guessed feed or sitemap address that doesn't exist is simply dropped.
+    if (row.via === GUESS && permanent) {
+      q("UPDATE frontier SET status = 'skipped', http_status = ?, error = ?, fetched_at = ? WHERE url = ?").run(err.status ?? null, 'Nothing at this address', now, row.url);
+      this.log(row, { outcome: 'skipped', http: err.status, reason: `No ${row.kind} at this guessed address${err.permanent ? ` (${err.message})` : ''}` });
+      return;
+    }
     this.stats.errors++;
     h.errors++;
     const attempts = row.attempts + 1;
-    const permanent = err.status >= 400 && err.status < 500;
     const serverSide = !permanent; // timeouts, connection errors, 5xx
     const paused = serverSide ? this.hostFailed(h) : 0;
     const retry = !permanent && attempts < this.cfg.maxAttempts;
-    const recurring = RECURRING.has(row.kind);
+    // Feeds and sitemaps that fail permanently (4xx) three times in a row are
+    // retired; starting pages keep trying, since an admin chose them.
+    const recurring = RECURRING.has(row.kind) && !(permanent && row.kind !== 'hub' && attempts >= 3);
     const reason = `${err.message}${retry && !recurring ? ` (attempt ${attempts} of ${this.cfg.maxAttempts}, will retry)` : ''}${paused ? `; ${h.failStreak} failures in a row, so this site rests for ${paused} min` : ''}`;
     this.log(row, { outcome: 'error', http: err.status || null, reason });
     // Recurring URLs keep their schedule (with backoff); articles retry 5, 25, 125 min apart.
@@ -509,6 +532,7 @@ export class Spider extends EventEmitter {
     } catch (err) {
       if (err.status === 304) {
         this.hostOk(h);
+        if (row.kind === 'hub') this.guessFeeds(row, { feeds: [] }, h);
         this.log(row, { outcome: 'not-modified', http: 304 });
         return this.done(row, { httpStatus: 304, fresh: 0 });
       }
@@ -525,6 +549,17 @@ export class Spider extends EventEmitter {
     const meta = { etag: res.headers.get('etag'), lastModified: res.headers.get('last-modified'), httpStatus: http };
     const xmlKind = sniffXml(body, type);
 
+    if (!body.trim()) {
+      this.log(row, { outcome: 'skipped', http, bytes, reason: 'Empty response' });
+      return this.done(row, { ...meta, status: RECURRING.has(row.kind) ? 'done' : 'skipped', fresh: 0 });
+    }
+    // A web page where a feed or sitemap should be: a permanent failure, so a
+    // guess is dropped and a known feed retired after three in a row (one
+    // maintenance page doesn't lose it).
+    if ((row.kind === 'feed' || row.kind === 'sitemap') && !xmlKind) {
+      throw Object.assign(new Error(`Not a ${row.kind}: the address returns ${type.split(';')[0] || 'an unknown type'}`), { permanent: true });
+    }
+    if (row.via === GUESS && xmlKind === 'feed') this.keepOneGuessedFeed(row);
     if (row.kind === 'feed' || xmlKind === 'feed') {
       const n = this.handleFeed(row, body);
       this.log(row, { outcome: 'feed', http, bytes, reason: `${n} new URLs` });
@@ -549,6 +584,7 @@ export class Spider extends EventEmitter {
     const feeds = this.discoverFeeds(row, page);
     const notes = [queued ? `${queued} new links` : null, feeds ? `${feeds} feeds found` : null, truncated ? `cut at ${Math.round(bytes / 1024)} KB` : null];
     if (row.kind === 'hub') {
+      this.guessFeeds(row, page, h);
       this.log(row, { outcome: 'hub', http, bytes, reason: notes.filter(Boolean).join('; ') || 'nothing new' });
       return this.done(row, { ...meta, fresh: queued + feeds });
     }
@@ -569,10 +605,15 @@ export class Spider extends EventEmitter {
     }
     let n = 0;
     tx(() => {
-      for (const sm of parsed.sitemaps) if (this.enqueue(sm.url, { kind: 'sitemap', priority: 8.5, depth: 0, via: row.url })) n++;
+      for (const sm of parsed.sitemaps) {
+        if (isWantedSitemap(sm.url, { languages: this.cfg.languages }) && this.enqueue(sm.url, { kind: 'sitemap', priority: 8.5, depth: 0, via: row.url })) n++;
+      }
+      const filtering = this.cfg.relevance !== 'all' && !isAiHost(row.host);
       for (const u of parsed.urls) {
         const ageH = u.lastmod ? (Date.now() - u.lastmod) / 3600e3 : 72;
-        if (u.title && this.cfg.relevance !== 'all' && !this.isRelevantText(u.title) && !isAiHost(hostOf(u.url))) continue;
+        if (isOtherLanguage(u.url, this.cfg.languages) || isListingUrl(u.url)) continue;
+        // Judge by the Google News title when there is one, else by a descriptive slug.
+        if (filtering && (u.title ? !this.isRelevantText(u.title) : slugRelevance(u.url) === false)) continue;
         if (this.enqueue(u.url, { kind: 'article', priority: 6 + Math.max(0, 3 - ageH / 12), depth: 1, via: 'sitemap' })) n++;
       }
     });
@@ -599,6 +640,26 @@ export class Spider extends EventEmitter {
     });
     this.stats.feeds++;
     return n;
+  }
+
+  // A starting site that advertises no feed often still has one at a usual
+  // address. Tried once per site: the guesses stay in the frontier afterwards.
+  guessFeeds(row, page, h) {
+    if (!this.cfg.discoverFeeds || page.feeds?.length || !this.trusted.has(bare(h.host))) return;
+    if (q("SELECT 1 FROM frontier WHERE host = ? AND kind = 'feed' LIMIT 1").get(row.host)) return;
+    // At the site root, and under the starting page's folder (example.com/blog/feed).
+    const u = new URL(row.url);
+    const folder = u.pathname.replace(/\/[^/]*\.[a-z]+$/i, '/').replace(/\/$/, '');
+    for (const base of new Set([u.origin, u.origin + folder])) {
+      for (const p of FEED_GUESSES) this.enqueue(base + p, { kind: 'feed', priority: 8, depth: 0, via: GUESS });
+    }
+  }
+
+  // One working guessed feed per site is enough: /feed, /feed.xml and
+  // /rss.xml are usually the same feed. (Guessed sitemaps differ, so all stay.)
+  keepOneGuessedFeed(row) {
+    q("UPDATE frontier SET status = 'skipped', error = 'Another feed address for this site works' WHERE host = ? AND kind = 'feed' AND via = ? AND status = 'queued' AND url != ?")
+      .run(row.host, GUESS, row.url);
   }
 
   // Feeds advertised by pages on trusted sites (or pages that are about AI) are followed, a few per site.
@@ -885,9 +946,11 @@ export class Spider extends EventEmitter {
   }
 }
 
-// Feeds and sitemaps both arrive as XML; tell them apart by their root element.
+// Feeds and sitemaps mostly arrive as XML; tell them apart by their root
+// element. JSON Feed is recognised by its version URL.
 export function sniffXml(body, type = '') {
   const head = body.slice(0, 2000);
+  if (/^\s*\{/.test(head) && /jsonfeed\.org\/version/i.test(head)) return 'feed';
   if (/<(rss|rdf:RDF)[\s>]|<feed[\s>][^]*xmlns=["']http:\/\/www\.w3\.org\/2005\/Atom/i.test(head) || /<feed[\s>]/i.test(head) && /atom/i.test(type)) return 'feed';
   if (/<(urlset|sitemapindex)[\s>]/i.test(head)) return 'sitemap';
   if (/(rss|atom)\+xml/i.test(type)) return 'feed';

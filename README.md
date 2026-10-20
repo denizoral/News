@@ -84,8 +84,17 @@ the oldest images first.
   `src/config.js`, plus the full page behind every link the aggregator finds.
 - **How it finds new articles:**
   - It rechecks those starting pages every 15 minutes and their sitemaps every 30.
-  - It reads the RSS/Atom feeds that pages advertise, every 20 minutes. Only
-    site-wide and AI-topic feeds are followed, not per-post comment feeds.
+    Gzipped sitemaps (`.xml.gz`) are read too, and a sitemap cut off at the size
+    cap still yields every complete entry.
+  - Sitemaps that list tags, authors or images, monthly archives older than two
+    months, and translations in languages it doesn't index are left out. Sitemap
+    entries without a title are judged by their URL slug.
+  - It reads the RSS/Atom and JSON Feed feeds that pages advertise, every 20
+    minutes. Only site-wide and AI-topic feeds are followed, not per-post
+    comment feeds.
+  - When a starting site advertises no sitemap or feed, it tries the usual
+    addresses once (`/sitemap.xml`, `/news-sitemap.xml`, `/feed`, `/rss.xml`, …)
+    and drops the ones that don't exist.
   - Sites that keep producing indexed articles are promoted to starting pages
     automatically, up to 25. You can review and dismiss them in the dashboard.
   - It follows links freely inside starting sites, and one hop out to other
@@ -101,13 +110,17 @@ the oldest images first.
     site rests for as long as it asks, without counting as an error.
   - After 8 failures in a row (timeouts, server errors), a site rests for 15
     minutes, doubling up to 6 hours.
+  - Feeds and sitemaps that answer 404 (or another permanent error), or turn
+    out to be ordinary web pages, three times in a row are retired instead of
+    being rechecked forever.
 - **What it extracts:**
   - The article text, using Mozilla Readability, or the JSON-LD article body when
     the HTML is hard to parse.
   - Title, author, date and images, from Open Graph, JSON-LD and meta tags.
   - Character encodings are detected the way browsers do it (byte-order mark,
     header, `<meta charset>`), including correct Windows-1252.
-- **What it skips:** `noindex` pages, exact duplicates, and pages that aren't
+- **What it skips:** `noindex` pages, exact duplicates, pages in languages other
+  than English (configurable), help/docs/careers pages, and pages that aren't
   about AI. A page counts as about AI if its headline or summary says so, or the
   body keeps coming back to it.
 - **State:** the queue lives in the database, so a restart picks up where it

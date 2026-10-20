@@ -196,3 +196,136 @@ test('help and docs pages are not news unless the site is a starting page', asyn
   assert.match(spider.decide(page).reason, /not news/);
   assert.equal(decide(page, spider.cfg, { trusted: new Set(['support.claude.com']) }).ok, true);
 });
+
+test('JSON Feed is read like RSS', async () => {
+  const { parseFeed } = await import('../src/sources/rss.js');
+  const body = JSON.stringify({ version: 'https://jsonfeed.org/version/1.1', title: 'Blog', items: [{ id: '1', url: 'https://json.example/2026/new-llm-agent-release', title: 'A new LLM agent', content_text: 'An agent built on a new model.', date_published: new Date().toISOString(), authors: [{ name: 'Ada' }] }] });
+  assert.equal(sniffXml(body, 'application/feed+json'), 'feed');
+  const [e] = parseFeed(body);
+  assert.equal(e.url, 'https://json.example/2026/new-llm-agent-release');
+  assert.equal(e.author, 'Ada');
+  assert.equal(spider.handleFeed(row('https://json.example/feed.json', 'feed'), body), 1);
+});
+
+test('gzip sitemaps are inflated, under the size cap', async () => {
+  const zlib = await import('node:zlib');
+  const { readText, gunzipCapped } = await import('../src/spider/body.js');
+  const xml = '<?xml version="1.0"?><urlset><url><loc>https://gz.example/a</loc></url></urlset>';
+  const res = new Response(zlib.gzipSync(xml), { headers: { 'content-type': 'application/x-gzip' } });
+  const out = await readText(res, 1 << 20);
+  assert.equal(out.text, xml);
+  assert.equal(sniffXml(out.text), 'sitemap');
+  // A gzip bomb stops at the cap.
+  const bomb = zlib.gzipSync(Buffer.alloc(50 << 20));
+  const capped = await gunzipCapped(bomb, 1 << 20);
+  assert.equal(capped.buf.length, 1 << 20);
+  assert.equal(capped.truncated, true);
+});
+
+test('a sitemap cut off at the size cap keeps its complete entries', async () => {
+  const { parseSitemap } = await import('../src/spider/sitemaps.js');
+  const xml = '<urlset><url><loc>https://cut.example/1</loc></url><url><loc>https://cut.example/2</loc></url><url><loc>https://cut.ex';
+  assert.deepEqual(parseSitemap(xml).urls.map((u) => u.url), ['https://cut.example/1', 'https://cut.example/2']);
+});
+
+test('robots.txt sitemaps: short lists kept, long lists filtered to news', async () => {
+  const { pickSitemaps } = await import('../src/spider/policy.js');
+  assert.deepEqual(pickSitemaps(['https://a.example/sitemap-index.xml', 'https://a.example/image-sitemap.xml']), ['https://a.example/sitemap-index.xml']);
+  const long = ['tags', 'authors', 'news', 'post-2026', 'video', 'misc', 'legal', 'events'].map((n) => `https://b.example/${n}-sitemap.xml`);
+  assert.deepEqual(pickSitemaps(long), ['https://b.example/news-sitemap.xml', 'https://b.example/post-2026-sitemap.xml']);
+});
+
+test('guessed feeds are tried once per starting site and dropped when missing', () => {
+  const host = 'guess.example';
+  settings.update({ 'crawler.hubs': [...settings.get('crawler.hubs'), `https://${host}/`] }, { role: 'owner', actor: 't' });
+  const h = spider.host(host);
+  spider.guessFeeds(row(`https://${host}/`, 'hub'), { feeds: [] }, h);
+  const guesses = q("SELECT url FROM frontier WHERE host = ? AND kind = 'feed'").all(host).map((r) => r.url);
+  assert.ok(guesses.includes(`https://${host}/feed`) && guesses.includes(`https://${host}/rss.xml`));
+  spider.guessFeeds(row('https://blogpath.example/blog/', 'hub'), { feeds: [] }, spider.host('blogpath.example'));
+  // (blogpath.example isn't a starting site, so nothing is guessed there.)
+  assert.equal(q("SELECT COUNT(*) n FROM frontier WHERE host = 'blogpath.example'").get().n, 0);
+  spider.fail(row(`https://${host}/atom.xml`, 'feed', { via: 'guess' }), h, new HttpError(404, 'x'));
+  assert.equal(frontier(`https://${host}/atom.xml`).status, 'skipped', 'a missing guess is dropped, not retried');
+  spider.keepOneGuessedFeed(row(`https://${host}/feed`, 'feed', { via: 'guess' }));
+  assert.equal(frontier(`https://${host}/rss.xml`).status, 'skipped', 'one working guess is enough');
+  assert.equal(frontier(`https://${host}/feed`).status, 'queued');
+  // Not again once the site has feed rows.
+  const before = q('SELECT COUNT(*) n FROM frontier').get().n;
+  spider.guessFeeds(row(`https://${host}/`, 'hub'), { feeds: [] }, h);
+  assert.equal(q('SELECT COUNT(*) n FROM frontier').get().n, before);
+});
+
+test('feeds that keep answering 404 are retired; starting pages are not', () => {
+  const h = spider.host('dead.example');
+  const feed = 'https://dead.example/feed';
+  spider.enqueue(feed, { kind: 'feed' });
+  for (let a = 0; a < 3; a++) spider.fail(row(feed, 'feed', { attempts: a }), h, new HttpError(404, feed));
+  assert.equal(frontier(feed).status, 'error');
+  const hub = 'https://dead.example/';
+  spider.enqueue(hub, { kind: 'hub' });
+  spider.fail(row(hub, 'hub', { attempts: 5 }), h, new HttpError(404, hub));
+  assert.equal(frontier(hub).status, 'queued');
+});
+
+test('archive and other-language sitemaps are not rechecked', async () => {
+  const { isWantedSitemap, pickSitemaps } = await import('../src/spider/policy.js');
+  const now = Date.UTC(2026, 9, 20);
+  const en = { languages: ['en'], now };
+  assert.equal(isWantedSitemap('https://p.example/sv/Sitemap_Index_Feb_2022.xml.gz', { now }), false, 'old month');
+  assert.equal(isWantedSitemap('https://p.example/sitemap-2026-07.xml', en), false);
+  assert.equal(isWantedSitemap('https://p.example/sitemap-2026-10.xml', en), true, 'this month');
+  assert.equal(isWantedSitemap('https://p.example/sitemaps/2025/sitemap.xml', en), false, 'last year');
+  assert.equal(isWantedSitemap('https://p.example/es/sitemap-news.xml', en), false, 'Spanish');
+  assert.equal(isWantedSitemap('https://p.example/es/sitemap-news.xml', { now }), true, 'any language allowed');
+  assert.equal(isWantedSitemap('https://p.example/ai/sitemap.xml', en), true, '/ai/ is not a language');
+  assert.deepEqual(pickSitemaps(['https://p.example/sitemap-news.xml', 'https://p.example/de/sitemap-news.xml'], en), ['https://p.example/sitemap-news.xml']);
+});
+
+test('untitled sitemap entries are judged by a descriptive slug', () => {
+  const xml = `<urlset>
+    <url><loc>https://slug.example/local/charlotte/2026/10/19/early-voting-turnout-record</loc></url>
+    <url><loc>https://slug.example/2026/10/19/tenstorrent-ai-compute-deal</loc></url>
+    <url><loc>https://slug.example/p/48213</loc></url>
+    <url><loc>https://slug.example/fr/2026/10/19/nouvelle-ia-generative-lancee</loc></url>
+    <url><loc>https://slug.example/tag/artificial-intelligence/</loc></url>
+  </urlset>`;
+  assert.equal(spider.handleSitemap(row('https://slug.example/sitemap.xml', 'sitemap'), xml), 2);
+  assert.ok(frontier('https://slug.example/2026/10/19/tenstorrent-ai-compute-deal'));
+  assert.ok(frontier('https://slug.example/p/48213'), 'opaque URLs are kept: no way to tell');
+  assert.equal(frontier('https://slug.example/local/charlotte/2026/10/19/early-voting-turnout-record'), undefined);
+  assert.equal(frontier('https://slug.example/tag/artificial-intelligence/'), undefined, 'tag pages are listings, not articles');
+});
+
+test('docs and help sections are skipped even on news sites', () => {
+  const page = { title: 'Claude Tag for Claude Code users', description: '', lang: 'en', isArticle: true, url: 'https://claude.com/docs/claude-tag/for-claude-code-users', site: 'claude.com', text: 'Claude Code users can tag Claude. '.repeat(80) };
+  assert.match(spider.decide(page).reason, /not news/);
+  assert.equal(spider.decide({ ...page, url: 'https://claude.com/blog/claude-tag-launch' }).ok, true);
+});
+
+test('tag, author and image sitemaps are not followed', async () => {
+  const { isWantedSitemap } = await import('../src/spider/policy.js');
+  for (const u of ['https://f.example/hubs/tags-1.xml', 'https://f.example/author/authors-14.xml', 'https://f.example/image-sitemap.xml', 'https://f.example/page-sitemap.xml']) assert.equal(isWantedSitemap(u), false, u);
+  for (const u of ['https://f.example/news-sitemap.xml', 'https://f.example/post-sitemap.xml', 'https://f.example/sitemap.xml']) assert.equal(isWantedSitemap(u), true, u);
+});
+
+test('empty and text-only responses do not crash extraction', () => {
+  assert.equal(extractPage('', 'https://empty.example/').text, '');
+  assert.equal(extractPage('plain text body', 'https://empty.example/').text, 'plain text body');
+});
+
+test('a web page where a feed should be: guesses dropped at once, known feeds after three', () => {
+  const h = spider.host('page.example');
+  const notFeed = () => Object.assign(new Error('Not a feed: the address returns text/html'), { permanent: true });
+  const guess = 'https://page.example/rss.xml';
+  spider.enqueue(guess, { kind: 'feed', via: 'guess' });
+  spider.fail(row(guess, 'feed', { via: 'guess' }), h, notFeed());
+  assert.equal(frontier(guess).status, 'skipped');
+  const known = 'https://page.example/feed';
+  spider.enqueue(known, { kind: 'feed' });
+  spider.fail(row(known, 'feed'), h, notFeed());
+  assert.equal(frontier(known).status, 'queued', 'one maintenance page is not enough');
+  spider.fail(row(known, 'feed', { attempts: 2 }), h, notFeed());
+  assert.equal(frontier(known).status, 'error');
+  assert.equal(h.pausedUntil, 0, "the site isn't rested for it");
+});

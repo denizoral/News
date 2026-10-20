@@ -83,7 +83,9 @@ export function looksLikeArticleUrl(url) {
 }
 
 export function extractPage(html, pageUrl, { respectNofollow = true } = {}) {
-  const { document } = parseHTML(html);
+  // linkedom leaves documentElement null for empty or text-only input.
+  let { document } = parseHTML(html);
+  if (!document.documentElement) ({ document } = parseHTML(`<html><body>${html.replace(/[<&]/g, ' ')}</body></html>`));
   const robotsMeta = (meta(document, 'robots') || '') + ' ' + (meta(document, 'googlebot') || '');
   const noindex = /noindex/i.test(robotsMeta);
   const noarchive = /noarchive|nosnippet/i.test(robotsMeta);

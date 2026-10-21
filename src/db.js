@@ -231,6 +231,12 @@ function migrate(d) {
   add('edited_at', 'edited_at INTEGER');
   add('edited_by', 'edited_by TEXT');
   d.exec('CREATE INDEX IF NOT EXISTS docs_moderation ON docs(hidden, pinned, locked)');
+  // Crawler health that should survive a restart: refusals in a row and rests.
+  const hostCols = new Set(d.prepare('PRAGMA table_info(hosts)').all().map((c) => c.name));
+  if (!hostCols.has('refuse_streak')) d.exec('ALTER TABLE hosts ADD COLUMN refuse_streak INTEGER NOT NULL DEFAULT 0');
+  if (!hostCols.has('paused_until')) d.exec('ALTER TABLE hosts ADD COLUMN paused_until INTEGER NOT NULL DEFAULT 0');
+  // Which page queued a URL, for dropping a page's remaining links at once.
+  d.exec('CREATE INDEX IF NOT EXISTS frontier_via ON frontier(via, status)');
   d.exec('PRAGMA foreign_keys = ON');
 }
 

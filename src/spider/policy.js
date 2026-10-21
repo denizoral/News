@@ -160,11 +160,20 @@ export function isRelevantText(text, keywords = []) {
   return keywords.some((k) => t.includes(k));
 }
 
+// A stricter test for headlines from general news (GDELT): words that are AI
+// terms only in context ("ICE agents", "token economy", "weights", Transformers
+// the film) count only right after "AI".
+const AMBIGUOUS = /\b(?<!\bai[- ])(agents?|tokens?|weights|transformers?|diffusion)\b/gi;
+export function isAiHeadline(title, keywords = []) {
+  return isRelevantText(String(title).replace(AMBIGUOUS, ' '), keywords);
+}
+
 // A page is about AI when its headline or summary says so, or the body keeps
 // coming back to it. One stray mention in a long unrelated page isn't enough.
+// Words that are AI terms only in context ("ICE agents") don't count alone.
 export function isAboutAi(page, keywords = []) {
-  if (isRelevantText(`${page.title} ${page.description}`, keywords)) return true;
-  const body = (page.text || '').slice(0, 8000);
+  if (isAiHeadline(`${page.title} ${page.description}`, keywords)) return true;
+  const body = (page.text || '').slice(0, 8000).replace(AMBIGUOUS, ' ');
   const lower = body.toLowerCase();
   return countAiTerms(body, 3) >= 3 || keywords.filter((k) => lower.includes(k)).length >= 2;
 }

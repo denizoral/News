@@ -74,6 +74,8 @@ const DEFS = [
   { key: 'crawler.honorCrawlDelay', group: 'crawler', section: 'pace', label: 'Honor Crawl-delay from robots.txt', help: 'When off, only the minimum gap per site applies.', type: 'bool', default: true, role: 'admin' },
 
   // Crawler: discovery
+  { key: 'crawler.gdelt', group: 'crawler', section: 'discovery', label: 'Find articles through GDELT', help: 'GDELT lists news articles from outlets worldwide every 15 minutes, free and without a key. Articles whose headline is about AI are queued. Each check downloads about 3 MB.', type: 'bool', default: true, role: 'admin' },
+  { key: 'crawler.gdeltEveryMin', group: 'crawler', section: 'discovery', label: 'Check GDELT every (min)', type: 'int', min: 15, max: 1440, default: 30, role: 'admin' },
   { key: 'crawler.discoverFeeds', group: 'crawler', section: 'discovery', label: 'Discover and read RSS/Atom feeds', help: 'Feeds advertised by crawled pages are checked regularly for new articles, often faster than sitemaps.', type: 'bool', default: true, role: 'admin' },
   { key: 'crawler.feedsPerSite', group: 'crawler', section: 'discovery', label: 'Feeds followed per site', type: 'int', min: 0, max: 20, default: 3, role: 'admin' },
   { key: 'crawler.autoHubs', group: 'crawler', section: 'where', label: 'Discovered starting sites (0 = off)', help: 'Sites that keep producing indexed articles get their homepage added as a starting page, up to this many. Review them under Sites.', type: 'int', min: 0, max: 500, default: 25, role: 'admin' },
@@ -352,7 +354,7 @@ class Settings extends EventEmitter {
       imagesPerPage: g('imagesPerPage'), imageConcurrency: g('imageConcurrency'), hubs: g('hubs'), hubHosts: g('hubs').map((u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } }), skipHosts: g('skipHosts'),
       hostRules: new Map(g('hostRules').map((r) => [r.host, r])),
       obeyRobots: g('obeyRobots'),
-      discoverFeeds: g('discoverFeeds'), feedsPerSite: g('feedsPerSite'), feedRecrawlMin: g('feedRecrawlMin'), queueMaxAgeHours: g('queueMaxAgeHours'), hostQueueCap: g('hostQueueCap'), undatedPerSection: g('undatedPerSection'), adaptiveRecrawl: g('adaptiveRecrawl'),
+      discoverFeeds: g('discoverFeeds'), gdelt: g('gdelt'), gdeltEveryMin: g('gdeltEveryMin'), feedsPerSite: g('feedsPerSite'), feedRecrawlMin: g('feedRecrawlMin'), queueMaxAgeHours: g('queueMaxAgeHours'), hostQueueCap: g('hostQueueCap'), undatedPerSection: g('undatedPerSection'), adaptiveRecrawl: g('adaptiveRecrawl'),
       autoHubs: g('autoHubs'), hostFailureLimit: g('hostFailureLimit'),
       botName: g('botName'), contactUrl: g('contactUrl'), acceptLanguage: g('acceptLanguage'),
       timeoutMs: g('timeoutSec') * 1000, maxPageBytes: g('maxPageKb') * 1024, maxRedirects: g('maxRedirects'), maxAttempts: g('maxAttempts'),

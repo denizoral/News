@@ -849,6 +849,9 @@ const CRAWLER_TABS = {
             ${Object.entries(q.byKind).map(([k, n]) => `<tr><td>${esc({ hub: 'Starting pages (rechecked)', sitemap: 'Sitemaps (rechecked)', feed: 'RSS/Atom feeds (rechecked)', article: 'Articles', page: 'Listing pages' }[k] || k)}</td><td class="num">${fmt(n)}</td></tr>`).join('') || '<tr><td class="muted">Empty.</td></tr>'}
           </tbody></table></div><p style="margin-top:10px"><a href="#crawler/sites">Queues by site</a></p></section>
         </div>
+        ${live.gdelt ? `<section class="card"><h2>GDELT</h2>
+          <p class="muted small">News articles from outlets worldwide, listed by gdeltproject.org every 15 minutes. Those with an AI headline are queued.</p>
+          ${live.gdelt.at ? `<p>${live.gdelt.error ? `<span class="pill bad">failed</span> ${esc(live.gdelt.error)}` : `${fmt(live.gdelt.relevant || 0)} AI headlines in the last batch of ${fmt(live.gdelt.entries || 0)}, ${fmt(live.gdelt.queued || 0)} new; ${fmt(live.gdelt.total || 0)} queued in all`} <span class="muted small">· checked ${ago(live.gdelt.at)}</span></p>` : '<p class="muted">Not checked yet.</p>'}</section>` : ''}
         ${live.resting.length ? `<section class="card"><h2>Resting sites <span class="muted small">(${live.resting.length})</span></h2>
           <p class="muted small">These sites failed several times in a row (timeouts or server errors), or refused page after page (403/404, usually blocking crawlers), so the crawler is giving them a break. It tries again automatically when the time is up.</p>
           <div class="table-wrap"><table><tbody>${live.resting.map((r) => `<tr><td>${esc(r.host)}</td><td class="muted">${fmt(r.failures)} ${r.refused ? 'refusals' : 'failures'} in a row</td><td class="num muted">until ${new Date(r.until).toLocaleTimeString()}</td></tr>`).join('')}</tbody></table></div></section>` : ''}

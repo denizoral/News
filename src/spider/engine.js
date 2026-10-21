@@ -27,10 +27,11 @@ import { parseRobots, isAllowed, crawlDelay } from './robots.js';
 import { extractPage, looksLikeArticleUrl } from './extract.js';
 import { parseSitemap } from './sitemaps.js';
 import { parseFeed } from '../sources/rss.js';
-import { readText } from './body.js';
+import { readText, readBody } from './body.js';
+import { LAST_UPDATE_URL, latestGkgUrl, unzipFirst, parseGkg } from './gdelt.js';
 import { downloadImage, enforceBudget } from './media.js';
 import { upsertDoc, findByContentHash, addInlinks } from '../index/documents.js';
-import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, sectionPath, localeOf, isNonNewsPath } from './policy.js';
+import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, sectionPath, localeOf, isNonNewsPath, isAiHeadline } from './policy.js';
 
 export { inQuietHours };
 
@@ -59,6 +60,7 @@ export class Spider extends EventEmitter {
     this.running = false;
     this.stats = { fetched: 0, indexed: 0, duplicates: 0, blocked: 0, errors: 0, deferred: 0, images: 0, feeds: 0, startedAt: Date.now(), recent: [] };
     this.inflightUrls = new Map(); // url -> { host, kind, started }
+    this.linkResults = new Map(); // page URL -> { ok, missing } for the links it queued
     this.capped = new Map(); // section prefix -> UTC day it hit its undated limit
     this.misses = new Map(); // "lang:host", "empty:host/section" -> unindexed pages in a row
     this.ring = []; // newest crawl-log entries, for the live view
@@ -66,6 +68,7 @@ export class Spider extends EventEmitter {
     this.backoff = new Map(); // recurring url -> interval multiplier
     this.idleReason = null;
     this.autoHubsAt = 0;
+    this.gdeltAt = 0;
   }
 
   // ---------- configuration ----------
@@ -189,8 +192,8 @@ export class Spider extends EventEmitter {
           // The URL-slug rules only for pages never fetched (not retries or recrawls).
           else if (r.fetched_at) why = null;
           else if ((r.via === 'sitemap' || sitemaps.has(r.via)) && isListingUrl(r.url)) why = 'Off-topic by its URL';
-          // Feed entries were already judged by their titles.
-          else if (!feeds.has(r.via) && this.cfg.relevance !== 'all' && !isAiHost(host) && slugRelevance(r.url) === false) why = 'Off-topic by its URL';
+          // Feed and GDELT entries were already judged by their titles.
+          else if (!feeds.has(r.via) && r.via !== 'gdelt' && this.cfg.relevance !== 'all' && !isAiHost(host) && slugRelevance(r.url) === false) why = 'Off-topic by its URL';
         } catch {
           why = 'Unparseable URL';
         }
@@ -386,7 +389,8 @@ export class Spider extends EventEmitter {
         ? { ...row, parsed: row.robots != null ? parseRobots(row.robots) : null }
         : { host, robots: null, robots_status: null, robots_fetched_at: 0, crawl_delay_ms: null, next_allowed_at: 0, fetched_today: 0, day: today(), pages: 0, errors: 0, parsed: null };
       h.failStreak = 0;
-      h.pausedUntil = 0;
+      h.refuseStreak = row?.refuse_streak || 0;
+      h.pausedUntil = row?.paused_until || 0;
       this.hostCache.set(host, h);
     }
     if (h.day !== today()) {
@@ -397,11 +401,12 @@ export class Spider extends EventEmitter {
   }
 
   saveHost(h) {
-    q(`INSERT INTO hosts (host, robots, robots_status, robots_fetched_at, crawl_delay_ms, next_allowed_at, fetched_today, day, pages, errors)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(host) DO UPDATE SET robots = excluded.robots, robots_status = excluded.robots_status,
+    q(`INSERT INTO hosts (host, robots, robots_status, robots_fetched_at, crawl_delay_ms, next_allowed_at, fetched_today, day, pages, errors, refuse_streak, paused_until)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(host) DO UPDATE SET robots = excluded.robots, robots_status = excluded.robots_status,
        robots_fetched_at = excluded.robots_fetched_at, crawl_delay_ms = excluded.crawl_delay_ms, next_allowed_at = excluded.next_allowed_at,
-       fetched_today = excluded.fetched_today, day = excluded.day, pages = excluded.pages, errors = excluded.errors`).run(
-      h.host, h.robots, h.robots_status, h.robots_fetched_at, h.crawl_delay_ms, h.next_allowed_at, h.fetched_today, h.day, h.pages, h.errors);
+       fetched_today = excluded.fetched_today, day = excluded.day, pages = excluded.pages, errors = excluded.errors,
+       refuse_streak = excluded.refuse_streak, paused_until = excluded.paused_until`).run(
+      h.host, h.robots, h.robots_status, h.robots_fetched_at, h.crawl_delay_ms, h.next_allowed_at, h.fetched_today, h.day, h.pages, h.errors, h.refuseStreak || 0, h.pausedUntil || 0);
   }
 
   // Server-side trouble on a host (timeouts, 5xx, connection errors) opens a
@@ -521,6 +526,13 @@ export class Spider extends EventEmitter {
     const now = Date.now();
     this.idleReason = !this.cfg.enabled ? 'paused' : inQuietHours(this.cfg.quietHours, now) ? 'quiet hours' : null;
     if (this.idleReason) return;
+    if (this.cfg.gdelt && now - this.gdeltAt > this.cfg.gdeltEveryMin * 60e3) {
+      this.gdeltAt = now;
+      this.runGdelt().catch((e) => {
+        this.saveKv('spider.gdelt', { ...this.gdeltState(), at: Date.now(), error: e.message });
+        console.warn('[spider] GDELT check failed:', e.message);
+      });
+    }
     if (now - this.autoHubsAt > AUTO_HUB_EVERY_MS) {
       this.autoHubsAt = now;
       try { this.discoverHubs(now); } catch (e) { console.warn('[spider] hub discovery failed', e.message); }
@@ -573,6 +585,51 @@ export class Spider extends EventEmitter {
           this.active--;
         });
     }
+  }
+
+  // ---------- GDELT ----------
+
+  gdeltState() {
+    try {
+      return JSON.parse(q("SELECT v FROM kv WHERE k = 'spider.gdelt'").get()?.v || '{}');
+    } catch {
+      return {};
+    }
+  }
+
+  // Reads GDELT's latest batch (see gdelt.js) and queues articles whose
+  // headline is about AI. A batch already read is skipped. Returns new URLs.
+  async runGdelt() {
+    const started = Date.now();
+    const opts = { headers: { 'user-agent': this.userAgent() }, retries: 1, publicOnly: true, maxRedirects: this.cfg.maxRedirects, cooldown: false };
+    const list = await get(LAST_UPDATE_URL, { ...opts, timeout: 20000 });
+    const fileUrl = latestGkgUrl((await readText(list, 64 * 1024)).text);
+    if (!fileUrl) throw new Error('lastupdate.txt lists no GKG file');
+    const prev = this.gdeltState();
+    if (fileUrl === prev.file) return 0;
+    const res = await get(fileUrl, { ...opts, timeout: 90000 });
+    const { buf, truncated } = await readBody(res, 40 * 1024 * 1024);
+    if (truncated) throw new Error('GKG file is over 40 MB');
+    const entries = parseGkg(unzipFirst(buf).toString('utf8'));
+    // The same wire story runs on dozens of local sites: one URL per headline.
+    const seen = new Set();
+    let relevant = 0;
+    let queued = 0;
+    tx(() => {
+      for (const e of entries) {
+        const key = e.title.toLowerCase();
+        if (!e.title || seen.has(key)) continue;
+        seen.add(key);
+        if (this.cfg.relevance !== 'all' && !isAiHeadline(e.title, this.cfg.includeKeywords)) continue;
+        relevant++;
+        // Depth at the limit: the article is fetched, its links aren't followed.
+        if (this.enqueue(e.url, { kind: 'article', priority: 6.5, depth: this.cfg.maxDepth, via: 'gdelt' })) queued++;
+      }
+    });
+    const state = { file: fileUrl, at: Date.now(), entries: entries.length, relevant, queued, error: null, total: (prev.total || 0) + queued };
+    this.saveKv('spider.gdelt', state);
+    this.log({ url: fileUrl, host: 'data.gdeltproject.org', kind: 'feed', depth: 0, via: 'gdelt', _started: started }, { outcome: 'feed', http: res.status, bytes: buf.length, reason: `GDELT: ${relevant} AI headlines of ${entries.length} articles, ${queued} new URLs` });
+    return queued;
   }
 
   // Keeps the queue bounded: articles nobody got to in time are stale news,
@@ -655,6 +712,7 @@ export class Spider extends EventEmitter {
     h.errors++;
     const attempts = row.attempts + 1;
     const serverSide = !permanent; // timeouts, connection errors, 5xx
+    if (err.status === 404 || err.status === 410) this.noteLinkResult(row, false);
     const refused = [401, 403, 404, 410].includes(err.status);
     const paused = serverSide ? this.hostFailed(h) : refused ? this.hostRefused(h) : 0;
     const retry = !permanent && attempts < this.cfg.maxAttempts;
@@ -670,7 +728,25 @@ export class Spider extends EventEmitter {
     this.saveHost(h);
   }
 
+  // Some pages are full of links that don't resolve (Hugging Face paper pages
+  // link cited papers it has no page for). Once 3 of a page's links are
+  // missing and none worked, or missing ones outnumber working ones 2 to 1
+  // past 6, the rest of what it queued is dropped.
+  noteLinkResult(row, ok) {
+    if (row.kind !== 'article' || !/^https?:/.test(row.via || '')) return;
+    const r = this.linkResults.get(row.via) || { ok: 0, missing: 0, dropped: false };
+    if (ok) r.ok++;
+    else r.missing++;
+    if (this.linkResults.size > 20000) this.linkResults.clear();
+    this.linkResults.set(row.via, r);
+    if (!r.dropped && ((r.missing >= 3 && !r.ok) || (r.missing >= 6 && r.missing >= 2 * r.ok))) {
+      r.dropped = true;
+      q("UPDATE frontier SET status = 'skipped', error = 'The page that linked here keeps linking to missing pages' WHERE via = ? AND status = 'queued' AND fetched_at IS NULL").run(row.via);
+    }
+  }
+
   done(row, { status = 'done', httpStatus = 200, etag = null, lastModified = null, recrawlAt = null, fresh = 1, error = null } = {}) {
+    if (httpStatus === 200) this.noteLinkResult(row, true);
     const recurring = RECURRING.has(row.kind);
     const next = recurring ? Date.now() + this.recurringDelay(row, fresh) : recrawlAt || Date.now();
     const again = (recurring || recrawlAt) && status === 'done';
@@ -1130,6 +1206,7 @@ export class Spider extends EventEmitter {
       ignoringRobots: [...this.cfg.hostRules.values()].filter((r) => r.ignoreRobots).map((r) => r.host),
       resting: this.resting(),
       autoHubs: this.autoHubs(),
+      gdelt: this.cfg.gdelt ? this.gdeltState() : null,
       deadEnds: [...this.deadEnds()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.at - a.at).slice(0, 200),
       session: { ...this.stats, recent: undefined },
       recent: this.ring.slice(0, 40),

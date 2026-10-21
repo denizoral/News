@@ -92,6 +92,12 @@ the oldest images first.
   - It reads the RSS/Atom and JSON Feed feeds that pages advertise, every 20
     minutes. Only site-wide and AI-topic feeds are followed, not per-post
     comment feeds.
+  - It reads [GDELT](https://www.gdeltproject.org/), which lists news articles
+    from outlets worldwide every 15 minutes, free and without a key: every 30
+    minutes it downloads the latest batch (about 3 MB) and queues the articles
+    whose headline is about AI, one URL per headline (wire stories run on
+    dozens of local sites). It reads GDELT's raw files rather than its search
+    API, which rate-limits shared IPs. Turn it off under Settings → Discovery.
   - When a starting site advertises no sitemap or feed, it tries the usual
     addresses once (`/sitemap.xml`, `/news-sitemap.xml`, `/feed`, `/rss.xml`, …)
     and drops the ones that don't exist.

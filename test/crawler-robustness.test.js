@@ -548,3 +548,66 @@ test('language dead ends match region-coded paths (/zh-CN/)', () => {
   assert.equal(frontier('https://region.example/zh-CN/ai-model-2').status, 'skipped');
   assert.equal(spider.enqueue('https://region.example/zh-CN/ai-model-3'), false);
 });
+
+test('GDELT: zip, GKG rows and AI headlines', async () => {
+  const zlib = await import('node:zlib');
+  const { unzipFirst, parseGkg, latestGkgUrl } = await import('../src/spider/gdelt.js');
+  assert.equal(latestGkgUrl('1 a http://data.gdeltproject.org/gdeltv2/x.export.CSV.zip\n2 b http://data.gdeltproject.org/gdeltv2/x.gkg.csv.zip\n'), 'https://data.gdeltproject.org/gdeltv2/x.gkg.csv.zip');
+  const row = (url, title) => ['id', '20261021', '1', 'site.example', url, ...Array(21).fill(''), `<PAGE_TITLE>${title}</PAGE_TITLE>`].join('\t');
+  const csv = [row('https://a.example/2026/10/21/openai-new-model', 'OpenAI releases a new model'), row('https://b.example/local/council-vote', 'Council votes on parking'), row('https://c.example/copy-of-openai-story', 'OpenAI releases a new model'), row('https://d.example/x', 'Q&amp;A: AI agents at work')].join('\n');
+  // A minimal one-file zip (deflate), as GDELT serves.
+  const data = zlib.deflateRawSync(Buffer.from(csv));
+  const name = Buffer.from('x.gkg.csv');
+  const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(8, 8); local.writeUInt32LE(data.length, 18); local.writeUInt16LE(name.length, 26);
+  const cd = Buffer.alloc(46); cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(8, 10); cd.writeUInt32LE(data.length, 20); cd.writeUInt16LE(name.length, 28); cd.writeUInt32LE(0, 42);
+  const cdOffset = local.length + name.length + data.length;
+  const eocd = Buffer.alloc(22); eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(1, 10); eocd.writeUInt32LE(cd.length + name.length, 12); eocd.writeUInt32LE(cdOffset, 16);
+  const zip = Buffer.concat([local, name, data, cd, name, eocd]);
+  const rows = parseGkg(unzipFirst(zip).toString('utf8'));
+  assert.equal(rows.length, 4);
+  assert.equal(rows[3].title, 'Q&A: AI agents at work');
+  assert.throws(() => unzipFirst(Buffer.from('not a zip at all, definitely not')), /Not a zip/);
+  assert.throws(() => unzipFirst(zip, 10), RangeError, 'inflation is capped');
+});
+
+test('GDELT headlines: ambiguous AI words need context', async () => {
+  const { isAiHeadline } = await import('../src/spider/policy.js');
+  assert.equal(isAiHeadline('ICE agents pose as customers in Lynnwood'), false);
+  assert.equal(isAiHeadline('US agents investigate incendiary device'), false);
+  assert.equal(isAiHeadline('Reddit adds AI agents to its ad tools'), true);
+  assert.equal(isAiHeadline('Singapore manufacturers step up AI adoption'), true);
+  assert.equal(isAiHeadline('OpenAI cuts token prices'), true, 'a strong term elsewhere still counts');
+});
+
+test('a page whose links keep 404ing has its remaining links dropped', () => {
+  const src = 'https://hf.example/papers/2610.1';
+  const links = Array.from({ length: 8 }, (_, i) => `https://hf.example/papers/2610.${100 + i}`);
+  for (const u of links) spider.enqueue(u, { via: src });
+  const h = spider.host('hf.example');
+  for (const u of links.slice(0, 3)) spider.fail(row(u, 'article', { via: src }), h, new HttpError(404, u));
+  assert.equal(frontier(links[5]).status, 'skipped');
+  // A page whose links mostly work keeps them.
+  const good = 'https://hf.example/papers/2610.2';
+  const more = Array.from({ length: 5 }, (_, i) => `https://hf.example/papers/2610.${200 + i}`);
+  for (const u of more) spider.enqueue(u, { via: good });
+  spider.done(row(more[0], 'article', { via: good }), {});
+  spider.done(row(more[1], 'article', { via: good }), {});
+  for (const u of more.slice(2, 4)) spider.fail(row(u, 'article', { via: good }), h, new HttpError(404, u));
+  assert.equal(frontier(more[4]).status, 'queued');
+});
+
+test('refusal counts and rests survive a restart', () => {
+  const h = spider.host('persist.example');
+  for (let i = 0; i < 10; i++) spider.fail(row(`https://persist.example/s-${i}-a-b-c`), h, new HttpError(403, 'x'));
+  const fresh = new Spider();
+  const again = fresh.host('persist.example');
+  assert.equal(again.refuseStreak, 10);
+  assert.ok(again.pausedUntil > Date.now() + 5 * 3600e3);
+});
+
+test('"agents" alone does not make a page about AI', () => {
+  const base = { description: '', lang: 'en', isArticle: true, site: 'local.example', url: 'https://local.example/news/x', published_at: Date.now() };
+  const text = 'Federal agents arrived at the store. The agents spoke to customers while agents waited outside. '.repeat(20);
+  assert.match(spider.decide({ ...base, title: 'ICE agents pose as customers before arrest', text }).reason, /Not about AI/);
+  assert.equal(spider.decide({ ...base, title: 'Companies deploy AI agents for support', text }).ok, true);
+});

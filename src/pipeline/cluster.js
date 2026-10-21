@@ -7,9 +7,25 @@ import { extractEntities, topicsFor, ENTITIES } from './classify.js';
 
 const KIND_RANK = { lab: 5, press: 4, analysis: 3, community: 2, social: 1 };
 
-function titleTokens(item) {
-  return new Set(tokens(item.title).filter((t) => t.length > 2 || /\d/.test(t)));
-}
+// Stories are re-clustered several times a minute from mostly the same items,
+// so per-title tokens and per-URL keys are cached (both are pure).
+const memo = (fn, max = 30000) => {
+  const cache = new Map();
+  return (k) => {
+    let v = cache.get(k);
+    if (v === undefined) {
+      if (cache.size >= max) cache.clear();
+      v = fn(k);
+      cache.set(k, v);
+    }
+    return v;
+  };
+};
+const titleTokenSet = memo((title) => new Set(tokens(title).filter((t) => t.length > 2 || /\d/.test(t))));
+const urlKey = memo(canonicalUrl);
+const titleTokens = (item) => titleTokenSet(item.title);
+const storyEntities = memo(extractEntities, 10000);
+const storyTopics = memo(topicsFor, 10000);
 
 class DSU {
   constructor(n) { this.p = Array.from({ length: n }, (_, i) => i); }
@@ -27,7 +43,7 @@ export function clusterItems(items) {
   items.forEach((it, i) => {
     for (const u of [it.url, it.linkUrl]) {
       if (!u || /news\.google\.com|x\.com|bsky\.app|reddit\.com|ycombinator\.com/.test(u) && u !== it.linkUrl) continue;
-      const key = canonicalUrl(u);
+      const key = urlKey(u);
       if (byUrl.has(key)) dsu.union(byUrl.get(key), i);
       else byUrl.set(key, i);
     }
@@ -82,7 +98,7 @@ function buildStory(group) {
   const lead = pickLead(group);
   const times = group.map((i) => i.publishedAt).filter(Boolean);
   const text = group.map((i) => `${i.title} ${i.summary || ''}`).join(' ');
-  const entities = extractEntities(`${lead.title} ${lead.summary || ''} ${group.slice(0, 6).map((i) => i.title).join(' ')}`);
+  const entities = storyEntities(`${lead.title} ${lead.summary || ''} ${group.slice(0, 6).map((i) => i.title).join(' ')}`);
   const sources = [];
   const seen = new Set();
   for (const it of [...group].sort((a, b) => (a.publishedAt || 0) - (b.publishedAt || 0))) {
@@ -114,7 +130,7 @@ function buildStory(group) {
     publishedAt: times.length ? Math.min(...times) : Date.now(),
     updatedAt: times.length ? Math.max(...times) : Date.now(),
     sources,
-    topics: topicsFor(text),
+    topics: storyTopics(text),
     entities: [...entities.entries()].filter(([, strong]) => strong).map(([k]) => k),
     weakEntities: [...entities.keys()],
     _group: group,
@@ -151,37 +167,70 @@ function significant(text) {
   return new Set(tokens(text).filter((t) => !GENERIC.has(t) && !ALIAS_WORDS.has(t) && (t.length > 3 || /\d/.test(t))));
 }
 
+// Both sides change far less often than stories are rebuilt (several times a
+// minute), so the tokenised forms are cached: markets by object (replaced each
+// Polymarket crawl), stories by their text.
+const preparedMarkets = new WeakMap();
+const storyToks = new Map();
+const STORY_TOKS_MAX = 20000;
+
+function prepareMarket(m) {
+  let p = preparedMarkets.get(m);
+  if (p) return p;
+  const titleEnts = extractEntities(m.title);
+  const subjects = m.entities.filter((e) => SUBJECTS.has(e));
+  p = {
+    m,
+    toks: [...significant(m.title)],
+    subjects,
+    // Markets naming many companies ("Which company has the best model?")
+    // are about the race, not any one company; a shared name counts less.
+    subjectWeight: subjects.length > 2 ? 0.75 : 2,
+    themes: [...titleEnts.keys()].filter((e) => THEMES.has(e)),
+  };
+  preparedMarkets.set(m, p);
+  return p;
+}
+
+function storyTokens(s) {
+  const text = `${s.title} ${s.summary}`;
+  let toks = storyToks.get(text);
+  if (!toks) {
+    if (storyToks.size >= STORY_TOKS_MAX) storyToks.clear();
+    toks = significant(text);
+    storyToks.set(text, toks);
+  }
+  return toks;
+}
+
 export function matchMarkets(stories, markets) {
-  const prepared = markets.map((m) => {
-    const titleEnts = extractEntities(m.title);
-    const subjects = m.entities.filter((e) => SUBJECTS.has(e));
-    return {
-      m,
-      toks: significant(m.title),
-      subjects: new Set(subjects),
-      // Markets naming many companies ("Which company has the best model?")
-      // are about the race, not any one company; a shared name counts less.
-      subjectWeight: subjects.length > 2 ? 0.75 : 2,
-      themes: new Set([...titleEnts.keys()].filter((e) => THEMES.has(e))),
-    };
-  });
+  // Only markets sharing a company with the story can match, so index by company.
+  const bySubject = new Map();
+  for (const m of markets) {
+    const p = prepareMarket(m);
+    for (const e of p.subjects) {
+      if (!bySubject.has(e)) bySubject.set(e, []);
+      bySubject.get(e).push(p);
+    }
+  }
   for (const s of stories) {
-    const ents = new Set(s.entities);
-    const themesInStory = new Set(s.entities.filter((e) => THEMES.has(e)));
-    const sToks = significant(`${s.title} ${s.summary}`);
+    const shared = new Map(); // prepared market -> shared subject count
+    for (const e of s.entities) for (const p of bySubject.get(e) || []) shared.set(p, (shared.get(p) || 0) + 1);
     const scored = [];
-    for (const p of prepared) {
-      const sharedSubjects = [...p.subjects].filter((e) => ents.has(e));
-      if (!sharedSubjects.length) continue;
-      const sharedThemes = [...p.themes].filter((e) => themesInStory.has(e));
-      let tokOverlap = 0;
-      for (const t of p.toks) if (sToks.has(t)) tokOverlap++;
-      // A shared company alone is too loose ("Google" matches everything);
-      // require a theme or concrete words in common too.
-      if (sharedThemes.length === 0 && tokOverlap < 2) continue;
-      const score = sharedSubjects.length * p.subjectWeight + sharedThemes.length * 2.5 + tokOverlap * 1.25;
-      if (score < (sharedThemes.length ? 4.5 : 5.2)) continue;
-      scored.push({ score, m: p.m });
+    if (shared.size) {
+      const sToks = storyTokens(s);
+      for (const [p, sharedSubjects] of shared) {
+        let sharedThemes = 0;
+        for (const e of p.themes) if (s.entities.includes(e)) sharedThemes++;
+        let tokOverlap = 0;
+        for (const t of p.toks) if (sToks.has(t)) tokOverlap++;
+        // A shared company alone is too loose ("Google" matches everything);
+        // require a theme or concrete words in common too.
+        if (sharedThemes === 0 && tokOverlap < 2) continue;
+        const score = sharedSubjects * p.subjectWeight + sharedThemes * 2.5 + tokOverlap * 1.25;
+        if (score < (sharedThemes ? 4.5 : 5.2)) continue;
+        scored.push({ score, m: p.m });
+      }
     }
     scored.sort((a, b) => b.score - a.score || b.m.volume24h - a.m.volume24h);
     s.markets = scored.slice(0, 2).map(({ m, score }) => ({ id: m.id, relevance: +score.toFixed(1) }));

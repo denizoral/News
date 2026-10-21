@@ -5,6 +5,32 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-21 (08:37 run)
+
+### Story rebuild: 200 ms → 100 ms
+
+`Store.rebuild()` re-clusters every item, links markets and builds the
+snapshot about 2.5 times a minute, and it runs on the event loop: each one
+stalled requests for ~200 ms. Measured on the live `data/state.json` (3,925
+items, 180 markets), median of 8 rebuilds, Node 24.22:
+
+| Step | Before | After |
+| --- | ---: | ---: |
+| `matchMarkets` (2,409 stories × 180 markets) | 69.6 ms | **13.9 ms** |
+| `clusterItems` + `scoreStory` | 96.2 ms | **46.7 ms** |
+| Whole `rebuild()` | 199.8 ms | **99.7 ms** |
+
+- `matchMarkets` prepares each market once per Polymarket crawl (cached by
+  object), caches each story's significant tokens by text, and indexes markets
+  by company so a story is only compared with markets that share one. Output
+  is identical: 83 of 2,409 stories linked, 0 differences against the old
+  code.
+- `clusterItems` caches the pure per-string work that repeats between
+  rebuilds: title tokens, canonical URLs, entity extraction and keyword
+  topics (bounded maps, cleared when full).
+
+`npm run bench` now includes the `matchMarkets` line.
+
 ## 2026-10-21 (04:37 run)
 
 ### Live updates: hidden tabs stop downloading the snapshot

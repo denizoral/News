@@ -5,7 +5,7 @@
 
 import fs from 'node:fs';
 import zlib from 'node:zlib';
-import { clusterItems, scoreStory } from '../src/pipeline/cluster.js';
+import { clusterItems, scoreStory, matchMarkets } from '../src/pipeline/cluster.js';
 import { isAiRelated, extractEntities } from '../src/pipeline/classify.js';
 import { tokens, canonicalUrl, stripHtml } from '../src/pipeline/text.js';
 import { parseFeed } from '../src/sources/rss.js';
@@ -56,6 +56,11 @@ const now = Date.now();
 
 console.log(`runtime: ${typeof Bun !== 'undefined' ? `bun ${Bun.version}` : `node ${process.versions.node}`} · ${news.length} news items`);
 bench('clusterItems + scoreStory', () => { for (const s of clusterItems(news)) scoreStory(s, now); });
+const markets = (() => { try { return JSON.parse(fs.readFileSync('data/state.json', 'utf8')).markets || []; } catch { return []; } })();
+if (markets.length) {
+  const stories = clusterItems(news);
+  bench(`matchMarkets (${stories.length} stories × ${markets.length} markets)`, () => matchMarkets(stories, markets));
+}
 bench('parseFeed (200-item RSS)', () => parseFeed(xml));
 bench('isAiRelated + extractEntities', () => { for (const t of titles) { isAiRelated(t); extractEntities(t); } });
 bench('tokens + canonicalUrl', () => { for (const i of items) { tokens(i.title); canonicalUrl(i.url); } });

@@ -41,6 +41,9 @@ const state = {
   week: null, // { at, data, error, pending } from /api/digest
   related: new Map(), // story id -> { data, error, pending } from /api/related
   relOpen: new Set(), // story ids showing related coverage
+  relCounts: null, // { at, data: { [release id]: { n, outlets } } } from /api/releases/coverage
+  relCov: new Map(), // release id -> { data, error, pending } from /api/release
+  relCovOpen: new Set(), // release ids showing their coverage
   read: new Set(store.get('fw.read', [])),
   live: 'connecting',
   mode: 'api',
@@ -715,7 +718,7 @@ function releaseHtml(r) {
     r.context ? `<span>${fmtContext(r.context)}</span>` : '',
     fmtPrice(r) ? `<span>${fmtPrice(r)}</span>` : '',
     r.sizes?.length > 1 ? `<span>${r.sizes.length} sizes</span>` : '',
-    r.story ? `<a class="rel-story" href="${esc(r.story.url)}" target="_blank" rel="noopener">In the news ↗</a>` : '',
+    relCovBtn(r),
   ].filter(Boolean).join('');
   return `<li class="rel" data-id="${esc(r.id)}">
     <img class="rel-logo" src="${esc(releaseLogo(r))}" alt="" width="32" height="32" loading="lazy">
@@ -725,10 +728,82 @@ function releaseHtml(r) {
       <div class="rel-meta">${meta}</div>
     </div>
     <time class="rel-date" datetime="${new Date(r.date).toISOString()}">${shortDate(r.date)}</time>
+    ${relCovHtml(r)}
   </li>`;
 }
 
+// Coverage since launch (server: src/index/releases.js): the row shows how many
+// stories named the model; it opens to a count per day and the stories, with
+// the first one to report it marked.
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+async function loadRelCounts() {
+  const c = state.relCounts;
+  if (state.mode !== 'api' || c?.pending || (c && Date.now() - c.at < 5 * 60e3)) return;
+  state.relCounts = { ...c, pending: true };
+  let data = c?.data || {};
+  try {
+    const res = await fetch('api/releases/coverage');
+    if (res.ok) data = await res.json();
+  } catch {}
+  state.relCounts = { at: Date.now(), data };
+  if (state.view === 'releases') transition(() => renderReleases());
+}
+
+async function loadRelCov(id) {
+  if (state.relCov.get(id)) return;
+  state.relCov.set(id, { pending: true });
+  let entry;
+  try {
+    const res = await fetch(`api/release?id=${encodeURIComponent(id)}`);
+    const body = await res.json();
+    entry = res.ok ? { data: body } : { error: body.error };
+  } catch (e) {
+    entry = { error: e.message };
+  }
+  state.relCov.set(id, entry);
+  if (state.relCovOpen.has(id) && state.view === 'releases') transition(() => renderReleases());
+}
+
+function relCovBtn(r) {
+  const c = state.relCounts?.data?.[r.id];
+  if (c?.n) return `<button class="rel-story rel-cov-btn" type="button" data-relcov="${esc(r.id)}" aria-expanded="${state.relCovOpen.has(r.id)}" title="${esc(`Named in ${plural(c.n, 'story', 'stories')} from ${plural(c.outlets, 'outlet')} since launch`)}">${plural(c.n, 'story', 'stories')}</button>`;
+  return r.story ? `<a class="rel-story" href="${esc(r.story.url)}" target="_blank" rel="noopener">In the news ↗</a>` : '';
+}
+
+// Stories per day, the day before launch first; one bar per day.
+function relBarsHtml(series) {
+  const max = Math.max(1, ...series.map((d) => d.n));
+  const slot = Math.min(20, Math.max(8, Math.floor(280 / series.length))); // a short run still reads as a chart
+  const w = series.length * slot;
+  const bars = series.map((d, i) => {
+    const h = d.n ? Math.max(2, (d.n / max) * 30) : 0;
+    return `<rect x="${i * slot + 1}" y="${32 - h}" width="${slot - 2}" height="${h}" rx="${Math.min(3, (slot - 2) / 2)}" style="--i:${i}"><title>${esc(dayLabel(d.day, { month: 'short', day: 'numeric' }))}: ${plural(d.n, 'story', 'stories')}</title></rect>`;
+  }).join('');
+  return `<figure class="rel-bars"><svg viewBox="0 0 ${w} 33" width="${w}" height="33" role="img" aria-label="Stories per day since launch">${bars}<line x1="0" x2="${w}" y1="32.5" y2="32.5"/></svg>
+    <figcaption><span>${esc(dayLabel(series[0].day, { month: 'short', day: 'numeric' }))}</span><span>${esc(dayLabel(series.at(-1).day, { month: 'short', day: 'numeric' }))}</span></figcaption></figure>`;
+}
+
+function relCovHtml(r) {
+  if (!state.relCovOpen.has(r.id)) return '';
+  const e = state.relCov.get(r.id);
+  if (!e || e.pending) return '<div class="related rel-cov" aria-busy="true"><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i></div>';
+  if (e.error) return `<div class="related rel-cov"><p class="rail-note">${esc(e.error)}</p></div>`;
+  const c = e.data;
+  if (!c.n) return '<div class="related rel-cov"><p class="rail-note">No stories name it yet.</p></div>';
+  const first = c.first;
+  return `<div class="related rel-cov">
+    <p class="rel-cov-sum"><b>${plural(c.n, 'story', 'stories')}</b> from ${plural(c.outlets, 'outlet')} since launch.
+      First: <a href="${esc(first.url)}" target="_blank" rel="noopener">${esc(first.source)}</a>, ${shortDate(first.at)}.</p>
+    ${c.series.length > 1 ? relBarsHtml(c.series) : ''}
+    <ul>${c.items.map((it, i) => `<li style="--i:${i}"><img src="${esc(fav(it.platform ? PLATFORM_HOST[it.platform] : it.site))}" alt="" width="16" height="16" loading="lazy">
+      <a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title)}</a>
+      <span>${it.url === first.url ? '<em class="rel-first">First</em> ' : ''}${esc(it.source)}${it.outlets > 1 ? ` +${it.outlets - 1}` : ''} · ${shortDate(it.at)}</span></li>`).join('')}</ul>
+  </div>`;
+}
+
 function renderReleases({ animate = false } = {}) {
+  loadRelCounts();
   const all = (state.data.releases || []).filter((r) => matchesQuery(`${r.name} ${r.provider}`));
   setHtml($('#relChips'), REL_FILTERS.map(([k, l, f]) =>
     `<button class="chip" type="button" data-rel="${k}" aria-pressed="${state.relFilter === k}">${l}<span class="n">${all.filter(f).length}</span></button>`).join(''));
@@ -1335,6 +1410,12 @@ document.addEventListener('click', (e) => {
   else if (d.xcat) { state.xCat = d.xcat; state.xHandle = null; store.set('fw.xcat', d.xcat); loadX({ animate: true }); }
   else if (d.xhandle) { state.xHandle = state.xHandle === d.xhandle ? null : d.xhandle; loadX({ animate: true }); }
   else if (d.chartToggle) toggleChart(d.chartToggle);
+  else if (d.relcov) {
+    state.relCovOpen.has(d.relcov) ? state.relCovOpen.delete(d.relcov) : state.relCovOpen.add(d.relcov);
+    loadRelCov(d.relcov);
+    transition(() => renderReleases());
+    $(`[data-relcov="${CSS.escape(d.relcov)}"]`)?.focus();
+  }
   else if (d.related) {
     state.relOpen.has(d.related) ? state.relOpen.delete(d.related) : state.relOpen.add(d.related);
     loadRelated(d.related);

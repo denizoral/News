@@ -2,6 +2,43 @@
 
 One full-stack feature per scheduled maintenance run, newest first.
 
+## 2026-10-21 · Release coverage
+
+**Backend.**
+- **Matching:** `src/index/releases.js` finds, for every model on the
+  Releases page, the stored articles and posts that name it. It looks from
+  the day before launch to 30 days after, in English only.
+  - The name is matched as a whole version, so "Claude Opus 5" doesn't pick up
+    "Claude Opus 5.5". Spacing variants such as "Qwen3.8" and "Qwen 3.8" both
+    count.
+  - A one-word name like "Flint" or "Extract" must appear with its lab's name.
+  - Model repo pages, OpenRouter "now available" notices and translations are
+    left out.
+  - Syndicated copies collapse into one entry, with an outlet count.
+  - First reporter: the earliest article with the model in its headline.
+- **Cost:** about 0.2–0.3 s for the whole list, run in the history worker and
+  cached for 30 minutes. It warms at startup from the saved list. When the list
+  changes, the last result is served while the new one is computed.
+- **`GET /api/releases/coverage`:** story and outlet counts for every release.
+- **`GET /api/release?id=<release>`:** one release in full: count, outlets,
+  first reporter, stories per day and the top 8 stories.
+- **Fix:** releases are now merged across OpenRouter and Hugging Face even when
+  the two name the lab differently ("z-ai"/"zai-org", "deepseek"/"deepseek-ai",
+  "liquid"/"liquidai"). That removed 6 duplicate entries (128 → 122).
+
+**UI.** On a release row, "In the news ↗" (which only worked while a story was
+in the live 3-day feed) becomes "N stories". It opens a panel under the row
+with:
+- a one-line summary ("111 stories from 53 outlets since launch. First:
+  Google, Oct 13."),
+- a small bar chart of stories per day, with a tooltip per day,
+- the top stories, with logo, outlet, "+N" more outlets and date. The first
+  report is marked "First".
+
+**Motion.** The panel opens through a View Transition, the chevron turns, the
+bars grow from the baseline with a short stagger and the rows rise in. All of it
+is off under `prefers-reduced-motion`.
+
 ## 2026-10-21 · Search by meaning and related coverage
 
 **Backend.**

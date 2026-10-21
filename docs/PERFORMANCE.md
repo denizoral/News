@@ -5,6 +5,21 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-21 (20:37 run)
+
+**Main-thread SQLite.** A CPU profile of a restart showed two queries
+blocking the event loop.
+
+| Query | Before | After | Change |
+| --- | ---: | ---: | --- |
+| Moderated docs, on every feed rebuild (`store.loadModeration`) | 345 ms | <1 ms | Partial index `docs_moderated ON docs(url) WHERE hidden = 1 OR pinned = 1 OR locked = 1`; an `OR` can't use the existing `(hidden, pinned, locked)` index, so it scanned all rows. |
+| Spider hub discovery, about hourly (`discoverHubs`) | 4.7 s cold, 0.75–0.95 s warm | 145 ms | Covering index `docs_fetched (fetched_at, type, hidden, site)` plus `INDEXED BY`. The planner otherwise picked the `hidden` index, which matches nearly every row, and read whole 25 KB rows. |
+
+Both indexes are created in `migrate()`. On the 5 GB database that took 1 s.
+
+**Release coverage** (new): 122 releases cost 0.2–0.33 s of FTS phrase queries
+in the history worker, cached for 30 minutes. Cached responses take ~1 ms.
+
 ## 2026-10-21 (16:37 run)
 
 **Vector search (semantic search, related coverage).** Every article and post

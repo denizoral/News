@@ -7,6 +7,7 @@ import { fetchTech, techStatus } from './sources/tech.js';
 import { fetchReleases } from './sources/releases.js';
 import { fetchHuggingFace, fetchGitHub, fetchProductHunt, fetchShowHN, fetchOpenRouter } from './sources/builds.js';
 import { ingestAggregatorItems, ingestMarkets } from './index/documents.js';
+import { recordOdds, attachSparks, backfillOdds } from './pipeline/odds.js';
 
 // The spider (optional) receives every URL the aggregator finds.
 let spider = null;
@@ -52,7 +53,16 @@ export async function runSource(store, name) {
   }
   try {
     const out = await SOURCES[name]();
-    if (name === 'polymarket') store.setMarkets(out.markets);
+    if (name === 'polymarket') {
+      try {
+        recordOdds(out.markets);
+        attachSparks(out.markets);
+        backfillOdds(out.markets).then(() => attachSparks(out.markets)).catch((err) => console.warn(`[odds] backfill: ${err.message}`));
+      } catch (err) {
+        console.warn(`[odds] ${err.message}`);
+      }
+      store.setMarkets(out.markets);
+    }
     if (out.releases) store.setReleases(out.releases);
     const added = out.items ? store.ingest(name, out.items) : 0;
     // Everything also goes into the permanent search index.

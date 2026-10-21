@@ -2,6 +2,32 @@
 
 One full-stack feature per scheduled maintenance run, newest first.
 
+## 2026-10-21 · Polymarket odds history
+
+**Backend.** `src/pipeline/odds.js` keeps the site's own record of every AI
+market's odds in a new `odds` table in `data/wire.db`. Each Polymarket crawl
+(every 90 s) writes an outcome's price when it has moved, and at least every 30
+minutes; rows older than 30 days are pruned. So markets have a line from day
+one, their hourly history for the past week is backfilled from Polymarket's
+public price-history API (`clob.polymarket.com/prices-history`): 8 markets per
+crawl, busiest first, each only once. Every market in the snapshot carries a
+7-day `spark` of its leading outcome. `GET /api/odds?id=pm:…` returns up to
+four outcomes' full history for the chart, backfilling the other outcomes on
+first request. `/api/status` reports `odds` (rows recorded, backfills, errors).
+
+**UI.**
+- Markets tab: each card has a 7-day strip (sparkline, coloured green or red
+  by direction, plus "27% → 17%"). Click it and the card widens to a full chart:
+  one percent axis, day ticks, a line per outcome with direct labels at the end,
+  a legend, and a crosshair tooltip that reads every outcome at that moment.
+- News: stories with odds show a tiny 7-day sparkline next to the percentage.
+- Chart colours are the dataviz reference categorical slots, validated for both
+  themes; the light-mode contrast warning is met by the direct labels.
+
+**Motion.** Sparklines sweep in from the left; the expanded chart rises in and
+the card resize uses a View Transition; the chevron rotates. All of it is off
+under `prefers-reduced-motion`.
+
 ## 2026-10-21 · Who breaks news first
 
 **Backend.** `src/pipeline/scoops.js` looks at every story with two or more

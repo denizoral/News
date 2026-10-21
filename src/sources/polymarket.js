@@ -21,7 +21,8 @@ function shapeEvent(ev) {
     .map((m) => {
       const prices = parse(m.outcomePrices, []).map(Number);
       const names = parse(m.outcomes, ['Yes', 'No']);
-      const yes = prices[names.indexOf('Yes')] ?? prices[0];
+      const yesAt = Math.max(0, names.indexOf('Yes'));
+      const yes = prices[yesAt];
       return {
         label: m.groupItemTitle || m.question,
         question: m.question,
@@ -29,6 +30,8 @@ function shapeEvent(ev) {
         change24h: m.oneDayPriceChange ?? null,
         volume24h: m.volume24hr || 0,
         slug: m.slug,
+        // CLOB token of the Yes side: the key to its price history.
+        token: parse(m.clobTokenIds, [])[yesAt] || null,
         endDate: m.endDate,
       };
     })

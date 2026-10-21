@@ -135,6 +135,17 @@ END;
 
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 
+-- Polymarket odds over time: one row per outcome whenever its price moves
+-- (and at least every 30 minutes), plus hourly history backfilled from
+-- Polymarket's public price history.
+CREATE TABLE IF NOT EXISTS odds (
+  market TEXT NOT NULL,          -- pm:<event id>
+  outcome TEXT NOT NULL,         -- outcome label
+  ts INTEGER NOT NULL,           -- ms
+  yes REAL NOT NULL,
+  PRIMARY KEY (market, outcome, ts)
+) WITHOUT ROWID;
+
 -- One row per crawler fetch, for the dashboard's crawl log. Trimmed by retention.
 CREATE TABLE IF NOT EXISTS crawl_log (
   id INTEGER PRIMARY KEY,

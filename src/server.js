@@ -13,6 +13,7 @@ import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Store, publicSnapshot } from './store.js';
+import { marketHistory, backfillMarket } from './pipeline/odds.js';
 import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
 import { openDb, checkpoint, closeDb } from './db.js';
 import { settings } from './settings.js';
@@ -210,6 +211,14 @@ export function createApp({ store, spider }) {
       const etag = `"t${store.snapshot.version}-${hours}"`;
       if (req.headers['if-none-match'] === etag) return res.writeHead(304, { etag }).end();
       return json(req, res, 200, { version: store.snapshot.version, ...store.trending(hours) }, { etag, 'cache-control': 'public, max-age=15' });
+    }
+    if (p === '/api/odds') {
+      if (limited(req, res)) return;
+      const market = (store.markets || []).find((m) => m.id === url.searchParams.get('id'));
+      if (!market) return json(req, res, 404, { error: 'No market with that id.' });
+      return backfillMarket(market)
+        .catch(() => {})
+        .then(() => json(req, res, 200, { id: market.id, outcomes: marketHistory(market) }, { 'cache-control': 'public, max-age=60' }));
     }
     if (p === '/api/spider') return json(req, res, 200, spider.status(), { 'cache-control': 'public, max-age=10' });
     if (p === '/api/status') return json(req, res, 200, { ...store.status(), version: store.snapshot.version, generatedAt: store.snapshot.generatedAt });

@@ -306,6 +306,53 @@ main { max-width: var(--max); margin: 0 auto; padding: 28px 24px 40px; }
 .market .related span { color: var(--muted); }
 .market .related a:hover { color: var(--signal); }
 
+/* ---------- Odds history ---------- */
+.market-list { --s1c: #2a78d6; --s2c: #eb6834; --s3c: #1baf7a; --s4c: #eda100; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .market-list { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; }
+}
+:root[data-theme="dark"] .market-list { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; }
+.ospark { width: 100%; height: 26px; overflow: visible; transform-origin: left; }
+.ospark polyline { fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.ospark.up polyline { stroke: var(--yes); }
+.ospark.down polyline { stroke: var(--no); }
+.ospark.mini { display: inline-block; width: 44px; height: 14px; margin-right: 8px; vertical-align: -1px; }
+.odds-trend { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--muted); font: inherit; font-size: var(--s-1); text-align: left; cursor: pointer; transition: border-color 0.2s, background-color 0.2s; }
+.odds-trend b { color: var(--ink); font-weight: 700; }
+.odds-trend .odds-more { color: var(--signal); font-weight: 600; }
+.odds-trend .odds-more::after { content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 6px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: translateY(-2px) rotate(45deg); transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
+.odds-trend[aria-expanded="true"] .odds-more::after { transform: translateY(1px) rotate(-135deg); }
+.odds-trend:hover:not(:disabled) { border-color: var(--signal); background: var(--signal-soft); }
+.odds-trend:disabled { cursor: default; }
+.market .ospark:not(.mini) { animation: sweep 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.market.charted { grid-column: 1 / -1; }
+.market.charted .odds-trend { grid-template-columns: auto auto; justify-content: end; }
+.market.charted .odds-trend .ospark { display: none; }
+.odds-chart { position: relative; animation: rise 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.odds-chart.loading .skeleton { display: block; height: 200px; border-radius: var(--r-sm); }
+.odds-chart svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; }
+.odds-chart .grid { stroke: var(--line); stroke-width: 1; }
+.odds-chart .axis { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.odds-chart .lines polyline { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.odds-chart .s1 { stroke: var(--s1c); fill: var(--s1c); }
+.odds-chart .s2 { stroke: var(--s2c); fill: var(--s2c); }
+.odds-chart .s3 { stroke: var(--s3c); fill: var(--s3c); }
+.odds-chart .s4 { stroke: var(--s4c); fill: var(--s4c); }
+.odds-chart circle { stroke: var(--surface); stroke-width: 2; }
+.odds-chart .end { fill: var(--ink); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.odds-chart .cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; transition: opacity 0.15s; }
+.odds-chart .cross.on { opacity: 1; }
+.odds-tip { position: absolute; top: 4px; left: 0; z-index: 2; pointer-events: none; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); box-shadow: var(--shadow); font-size: var(--s-1); white-space: nowrap; }
+.odds-tip time { color: var(--muted); }
+.odds-tip ul, .odds-legend { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
+.odds-tip b { font-variant-numeric: tabular-nums; }
+.odds-tip i, .odds-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.odds-tip i.s1, .odds-legend i.s1 { background: var(--s1c); }
+.odds-tip i.s2, .odds-legend i.s2 { background: var(--s2c); }
+.odds-tip i.s3, .odds-legend i.s3 { background: var(--s3c); }
+.odds-tip i.s4, .odds-legend i.s4 { background: var(--s4c); }
+.odds-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; color: var(--muted); font-size: var(--s-1); }
+
 /* ---------- Search ---------- */
 .search { position: relative; margin: 0; }
 .suggest {

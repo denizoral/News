@@ -34,6 +34,8 @@ const state = {
   trend: null, // trending for a non-default window, fetched from the API
   limit: 60,
   open: new Set(),
+  chartOpen: null, // market id whose odds chart is expanded
+  charts: new Map(), // market id -> { at, outcomes } from /api/odds
   read: new Set(store.get('fw.read', [])),
   live: 'connecting',
   mode: 'api',
@@ -268,11 +270,106 @@ function oddsHtml(story, max = 2) {
     const label = m.binary ? m.title : `${m.title}: ${o.label}`;
     return `<div class="odd">
       <a href="${esc(m.url)}" target="_blank" rel="noopener" title="Open on Polymarket">${esc(label)}</a>
-      <span>${pctHtml(m, o)}${changeHtml(o.change24h)}</span>
+      <span>${oddsSpark(m.spark, 'mini')}${pctHtml(m, o)}${changeHtml(o.change24h)}</span>
       ${barHtml(m, o)}
     </div>`;
   });
   return rows.length ? `<div class="odds" aria-label="Related Polymarket odds">${rows.join('')}</div>` : '';
+}
+
+// The leading outcome's last 7 days, scaled to its own range (at least 4
+// points wide, so a flat market reads as flat). Coloured by direction.
+function oddsSpark(values, cls = '') {
+  if (!values || values.length < 2) return '';
+  const lo = Math.min(...values), hi = Math.max(...values);
+  const pad = Math.max(0, 0.04 - (hi - lo)) / 2;
+  const min = lo - pad, span = hi - lo + 2 * pad || 1;
+  const step = 100 / (values.length - 1);
+  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(22 - ((v - min) / span) * 20).toFixed(1)}`).join(' ');
+  const dir = values.at(-1) - values[0];
+  return `<svg class="ospark ${cls} ${dir > 0.005 ? 'up' : dir < -0.005 ? 'down' : ''}" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}"/></svg>`;
+}
+
+// Expanded odds chart: up to four outcomes over seven days, one y-axis in
+// percent, direct labels at the line ends, crosshair on hover.
+// Sized to the card at render time so text stays at its CSS size.
+const CHART = { w: 640, h: 200, l: 36, r: 112, t: 12, b: 24 };
+function sizeChart() {
+  const w = Math.max(300, Math.round(($('#marketList')?.clientWidth || 640) - 38));
+  Object.assign(CHART, { w, h: w < 520 ? 180 : 240, r: w < 520 ? 104 : 150 });
+}
+function oddsChartHtml(id) {
+  const c = state.charts.get(id);
+  if (!c) return '<div class="odds-chart loading" aria-busy="true"><i class="skeleton"></i></div>';
+  const series = c.outcomes.filter((o) => o.points.length > 1);
+  if (!series.length) return '<div class="odds-chart"><p class="rail-note">History starts building now; check back in an hour.</p></div>';
+  sizeChart();
+  const all = series.flatMap((o) => o.points);
+  const t0 = Math.min(...all.map((p) => p[0])), t1 = Math.max(...all.map((p) => p[0]));
+  let lo = Math.min(...all.map((p) => p[1])), hi = Math.max(...all.map((p) => p[1]));
+  lo = Math.max(0, Math.floor((lo - 0.02) * 10) / 10);
+  hi = Math.min(1, Math.ceil((hi + 0.02) * 10) / 10);
+  const { w, h, l, r, t, b } = CHART;
+  const x = (ts) => l + ((ts - t0) / (t1 - t0 || 1)) * (w - l - r);
+  const y = (v) => t + (1 - (v - lo) / (hi - lo || 1)) * (h - t - b);
+  const ticks = [lo, (lo + hi) / 2, hi];
+  const grid = ticks.map((v) => `<line class="grid" x1="${l}" x2="${w - r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="axis" x="${l - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${Math.round(v * 100)}%</text>`).join('');
+  const days = [];
+  for (let d = new Date(t0).setHours(0, 0, 0, 0) + 86400e3; d < t1; d += 86400e3) days.push(d);
+  const dayTicks = days.filter((_, i) => days.length <= 7 || i % 2 === 0).map((d) => `<text class="axis" x="${x(d).toFixed(1)}" y="${h - 6}" text-anchor="middle">${new Date(d).toLocaleDateString(undefined, { weekday: 'short' })}</text>`).join('');
+  // Direct labels at the right edge, nudged apart so they never overlap.
+  const ends = series.map((o, i) => ({ i, o, y: y(o.points.at(-1)[1]) })).sort((a, z) => a.y - z.y);
+  for (let k = 1; k < ends.length; k++) ends[k].y = Math.max(ends[k].y, ends[k - 1].y + 14);
+  const lines = series.map((o, i) => `<polyline class="s${i + 1}" points="${o.points.map(([ts, v]) => `${x(ts).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}"/>`).join('');
+  const dots = series.map((o, i) => { const [ts, v] = o.points.at(-1); return `<circle class="s${i + 1}" cx="${x(ts).toFixed(1)}" cy="${y(v).toFixed(1)}" r="4"/>`; }).join('');
+  const labels = ends.map(({ i, o, y: ly }) => `<text class="end" x="${w - r + 10}" y="${(ly + 4).toFixed(1)}">${esc(o.label.length > (CHART.w < 520 ? 10 : 16) ? `${o.label.slice(0, CHART.w < 520 ? 9 : 15)}…` : o.label)} ${pct(o.points.at(-1)[1])}</text>`).join('');
+  const legend = series.length > 1 ? `<ul class="odds-legend">${series.map((o, i) => `<li><i class="s${i + 1}"></i>${esc(o.label)}</li>`).join('')}</ul>` : '';
+  return `<div class="odds-chart" data-chart="${esc(id)}" data-t0="${t0}" data-t1="${t1}">
+    <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Odds over the last 7 days">${grid}${dayTicks}<g class="lines">${lines}</g>${dots}${labels}<line class="cross" y1="${t}" y2="${h - b}" x1="0" x2="0"/></svg>
+    <div class="odds-tip" hidden></div>${legend}</div>`;
+}
+
+async function toggleChart(id) {
+  state.chartOpen = state.chartOpen === id ? null : id;
+  transition(renderMarkets);
+  const cached = state.charts.get(id);
+  if (!state.chartOpen || (cached && Date.now() - cached.at < 120e3)) return;
+  try {
+    const res = await fetch(`api/odds?id=${encodeURIComponent(id)}`);
+    const data = res.ok ? await res.json() : { outcomes: [] };
+    state.charts.set(id, { at: Date.now(), outcomes: data.outcomes });
+  } catch {
+    state.charts.set(id, { at: Date.now(), outcomes: [] });
+  }
+  if (state.view === 'markets') renderMarkets();
+}
+
+function chartHover(e) {
+  const box = e.target.closest('.odds-chart[data-chart]');
+  const c = box && state.charts.get(box.dataset.chart);
+  if (!c) return;
+  const svg = box.querySelector('svg');
+  const tip = box.querySelector('.odds-tip');
+  const cross = box.querySelector('.cross');
+  const rect = svg.getBoundingClientRect();
+  const { w, l, r } = CHART;
+  const px = ((e.clientX - rect.left) / rect.width) * w;
+  if (e.type === 'pointerleave' || px < l || px > w - r) { tip.hidden = true; cross.classList.remove('on'); return; }
+  const t0 = +box.dataset.t0, t1 = +box.dataset.t1;
+  const ts = t0 + ((px - l) / (w - l - r)) * (t1 - t0);
+  const series = c.outcomes.filter((o) => o.points.length > 1);
+  const rows = series.map((o, i) => {
+    let v = null;
+    for (const p of o.points) { if (p[0] > ts) break; v = p[1]; }
+    return v == null ? '' : `<li><i class="s${i + 1}"></i>${esc(o.label)} <b>${pct(v)}</b></li>`;
+  }).join('');
+  cross.setAttribute('x1', px.toFixed(1));
+  cross.setAttribute('x2', px.toFixed(1));
+  cross.classList.add('on');
+  tip.innerHTML = `<time>${new Date(ts).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</time><ul>${rows}</ul>`;
+  tip.hidden = false;
+  const left = (px / w) * rect.width;
+  tip.style.transform = `translateX(${left > rect.width / 2 ? `calc(${left - 12}px - 100%)` : `${left + 12}px`})`;
 }
 
 function changeHtml(c) {
@@ -850,11 +947,14 @@ function renderMarkets() {
   if (state.marketSort === 'ending') list = list.filter((m) => m.endDate && Date.parse(m.endDate) > Date.now()).sort((a, b) => Date.parse(a.endDate) - Date.parse(b.endDate));
   const storyById = new Map(state.data.stories.map((s) => [s.id, s]));
   setHtml($('#marketList'), list.slice(0, 90).map((m) => `
-    <article class="market">
+    <article class="market${state.chartOpen === m.id ? ' charted' : ''}" data-id="${esc(m.id)}">
       <header>${m.image ? `<img src="${esc(m.image)}" alt="" loading="lazy">` : '<span></span>'}
         <div><h3><a href="${esc(m.url)}" target="_blank" rel="noopener">${highlight(m.title)}</a></h3>
         <span class="vol num">$${compact(m.volume24h)} traded today, $${compact(m.volume)} total${m.endDate ? `, ends ${new Date(m.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}</span></div>
       </header>
+      ${m.spark ? `<button class="odds-trend" type="button" data-chart-toggle="${esc(m.id)}" aria-expanded="${state.chartOpen === m.id}"${state.mode === 'api' ? '' : ' disabled'}>
+        ${oddsSpark(m.spark)}<span class="num">7 days <b>${pct(m.spark[0])} → ${pct(m.spark.at(-1))}</b></span>${state.mode === 'api' ? '<span class="odds-more">Chart</span>' : ''}</button>` : ''}
+      ${state.chartOpen === m.id ? oddsChartHtml(m.id) : ''}
       <div class="outs">${m.outcomes.slice(0, 4).map((o) => `<div class="odd">
         <span class="odd-label">${esc(m.binary ? 'Yes' : o.label)}</span>
         <span>${pctHtml(m, o)}${changeHtml(o.change24h)}</span>
@@ -976,6 +1076,7 @@ document.addEventListener('click', (e) => {
   else if (d.techsort) { state.techSort = d.techsort; store.set('fw.techsort', d.techsort); transition(() => renderTech({ animate: true })); }
   else if (d.xcat) { state.xCat = d.xcat; state.xHandle = null; store.set('fw.xcat', d.xcat); loadX({ animate: true }); }
   else if (d.xhandle) { state.xHandle = state.xHandle === d.xhandle ? null : d.xhandle; loadX({ animate: true }); }
+  else if (d.chartToggle) toggleChart(d.chartToggle);
   else if (d.msort) { state.marketSort = d.msort; store.set('fw.msort', d.msort); renderMarkets(); }
   else if (d.toggle) {
     state.open.has(d.toggle) ? state.open.delete(d.toggle) : state.open.add(d.toggle);
@@ -988,6 +1089,8 @@ document.addEventListener('click', (e) => {
   }
 });
 
+$('#marketList').addEventListener('pointermove', chartHover);
+$('#marketList').addEventListener('pointerleave', chartHover, true);
 $('#moreStories').addEventListener('click', () => { state.limit += 60; renderNews(); });
 $('#moreX').addEventListener('click', () => loadX({ append: true }));
 $('#moreTech').addEventListener('click', () => { state.techLimit += 40; renderTech(); });

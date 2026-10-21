@@ -94,6 +94,24 @@ export function marketHistory(market, { days = 7, now = Date.now(), max = 170 } 
   });
 }
 
+// The markets whose leading outcome moved most over `days` (for the weekly
+// digest): the price at the start of the window against the price now.
+export function movers(markets, { days = 7, now = Date.now(), limit = 5 } = {}) {
+  const since = now - days * DAY;
+  const at = q('SELECT yes, ts FROM odds WHERE market = ? AND outcome = ? AND ts <= ? ORDER BY ts DESC LIMIT 1');
+  const first = q('SELECT yes, ts FROM odds WHERE market = ? AND outcome = ? AND ts >= ? ORDER BY ts LIMIT 1');
+  const out = [];
+  for (const m of markets) {
+    const o = m.outcomes[0];
+    if (o?.yes == null) continue;
+    // A market younger than the window starts from its first price.
+    const start = at.get(m.id, o.label, since) || first.get(m.id, o.label, since);
+    if (!start || now - start.ts < days * DAY * 0.5) continue;
+    out.push({ id: m.id, title: m.title, url: m.url, image: m.image, label: o.label, binary: m.binary, from: start.yes, to: o.yes, change: +(o.yes - start.yes).toFixed(3), spark: m.spark || null });
+  }
+  return out.sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, limit);
+}
+
 const done = new Set(); // "market|outcome" backfilled this process
 const hasWeek = (m, o, now) => (q('SELECT MIN(ts) AS t FROM odds WHERE market = ? AND outcome = ?').get(m, o)?.t ?? Infinity) < now - 5 * DAY;
 

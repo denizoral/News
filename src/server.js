@@ -13,8 +13,9 @@ import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Store, publicSnapshot } from './store.js';
-import { marketHistory, backfillMarket } from './pipeline/odds.js';
+import { marketHistory, backfillMarket, movers } from './pipeline/odds.js';
 import { topicHistory, topicKeys, warmTopics } from './index/topics.js';
+import { weeklyDigest, digestRss } from './index/digest.js';
 import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
 import { openDb, checkpoint, closeDb } from './db.js';
 import { settings } from './settings.js';
@@ -229,6 +230,16 @@ export function createApp({ store, spider }) {
         .then((data) => json(req, res, 200, data, { 'cache-control': 'public, max-age=300' }))
         .catch((err) => json(req, res, 503, { error: `Topic history is unavailable: ${err.message}` }));
     }
+    if (p === '/api/digest' || p === '/digest.xml') {
+      if (limited(req, res)) return;
+      return weeklyDigest()
+        .then((d) => {
+          if (p === '/api/digest') return json(req, res, 200, { ...d, markets: movers(store.markets || []) }, { 'cache-control': 'public, max-age=300' });
+          const origin = `${req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'}://${/^[\w.:[\]-]+$/.test(req.headers.host || '') ? req.headers.host : 'localhost'}`;
+          send(req, res, 200, digestRss(d, { origin, name: settings.publicSite()?.name || 'Frontier Wire' }), 'application/rss+xml; charset=utf-8', { 'cache-control': 'public, max-age=1800' });
+        })
+        .catch((err) => json(req, res, 503, { error: `The digest is unavailable: ${err.message}` }));
+    }
     if (p === '/api/spider') return json(req, res, 200, spider.status(), { 'cache-control': 'public, max-age=10' });
     if (p === '/api/status') return json(req, res, 200, { ...store.status(), version: store.snapshot.version, generatedAt: store.snapshot.generatedAt });
 
@@ -330,6 +341,7 @@ function main() {
         store.save();
         startScheduler(store);
         startLabeler(store);
+        weeklyDigest().catch(() => {});
         warmTopics((store.snapshot.trending?.topics || []).slice(0, 6).map((t) => t.key));
       })
       .catch((e) => console.error('initial crawl failed', e));

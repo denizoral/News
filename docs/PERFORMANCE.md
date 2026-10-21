@@ -5,6 +5,22 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-21 (12:37 run)
+
+**Weekly digest kept off the main thread.** The digest clusters every AI item
+the aggregator stored over two weeks (this week and the one before, for
+comparison) with the front page's `clusterItems`. On live data (3,098 items
+this week, 2,377 stories) that takes 238 ms. It runs in the same worker as topic
+pages, which is now a shared module (`src/index/offload.js` plus
+`history-worker.js`), so it never blocks a request. Results are cached for 30
+minutes, served stale while a refresh runs, and warmed after start.
+
+| Request (warm) | Time |
+| --- | ---: |
+| `/api/digest` | 1.8–2.3 ms |
+| `/digest.xml` | ~1 ms |
+| `/api/topic?key=nvidia` (unchanged after the refactor) | 1.0 ms |
+
 ## 2026-10-21 (08:37 run)
 
 ### Story rebuild: 200 ms → 100 ms

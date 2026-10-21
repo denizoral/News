@@ -3,11 +3,10 @@
 // document in the permanent index (data/wire.db).
 //
 // Counting a busy topic ("OpenAI") over 30 days of FTS matches takes a second
-// or more, and node:sqlite is synchronous, so the server runs the queries in a
-// worker thread with its own read-only connection and caches the results.
+// or more, so the server runs the queries in the history worker (offload.js)
+// and caches the results.
 
-import path from 'node:path';
-import { Worker } from 'node:worker_threads';
+import { cachedJob } from './offload.js';
 import { ENTITIES } from '../pipeline/classify.js';
 import { ENTITY_LABELS } from '../pipeline/trending.js';
 import { tokens } from '../pipeline/text.js';
@@ -94,60 +93,10 @@ export function computeTopic(db, key, { now = Date.now(), days = 30, timelineDay
   return { key, label: topicLabel(key), aliases: ENTITIES[key], days, total, peak: peak?.n ? peak.day : null, series, timeline, generatedAt: now };
 }
 
-// ---- Serving: a worker thread and a cache in front of it ----
-
-const cache = new Map(); // key -> { at, data } | { pending }
-let worker = null;
-let seq = 0;
-const waiting = new Map();
-
-function getWorker() {
-  if (worker) return worker;
-  worker = new Worker(new URL('./topics-worker.js', import.meta.url), {
-    workerData: { file: path.resolve(process.env.DATA_DIR || 'data', 'wire.db') },
-  });
-  worker.unref();
-  worker.on('message', ({ id, data, error }) => {
-    const w = waiting.get(id);
-    waiting.delete(id);
-    if (w) (error ? w.reject(new Error(error)) : w.resolve(data));
-  });
-  const fail = (err) => {
-    for (const w of waiting.values()) w.reject(err);
-    waiting.clear();
-    worker = null;
-  };
-  worker.on('error', fail);
-  worker.on('exit', (code) => code && fail(new Error(`topic worker exited with ${code}`)));
-  return worker;
-}
-
-function runInWorker(key) {
-  const id = ++seq;
-  return new Promise((resolve, reject) => {
-    waiting.set(id, { resolve, reject });
-    getWorker().postMessage({ id, key });
-  });
-}
-
-// Cached for 15 minutes; a stale entry is served while it refreshes.
+// Cached for 15 minutes in the history worker (offload.js).
 export function topicHistory(key) {
   if (!ENTITIES[key]) return Promise.resolve(null);
-  const hit = cache.get(key);
-  const fresh = hit?.data && Date.now() - hit.at < TTL_MS;
-  if (fresh) return Promise.resolve(hit.data);
-  if (!hit?.pending) {
-    const pending = runInWorker(key)
-      .then((data) => cache.set(key, { at: Date.now(), data }))
-      .catch((err) => {
-        if (hit?.data) cache.set(key, hit);
-        else cache.delete(key);
-        throw err;
-      });
-    cache.set(key, { ...hit, pending });
-  }
-  const entry = cache.get(key);
-  return entry.data ? Promise.resolve(entry.data) : entry.pending.then(() => cache.get(key).data);
+  return cachedJob(`topic:${key}`, { kind: 'topic', key }, TTL_MS);
 }
 
 // Warms the cache for the topics people are most likely to open (trending

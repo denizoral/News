@@ -28,10 +28,11 @@ import { extractPage, looksLikeArticleUrl } from './extract.js';
 import { parseSitemap } from './sitemaps.js';
 import { parseFeed } from '../sources/rss.js';
 import { readText, readBody } from './body.js';
+import { DeadEnds } from './deadends.js';
 import { LAST_UPDATE_URL, latestGkgUrl, batchesSince, unzipFirst, parseGkg } from './gdelt.js';
 import { downloadImage, enforceBudget } from './media.js';
 import { upsertDoc, findByContentHash, addInlinks } from '../index/documents.js';
-import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, sectionPath, localeOf, isNonNewsPath, isAiHeadline, looksEnglish } from './policy.js';
+import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, isNonNewsPath, isAiHeadline, looksEnglish } from './policy.js';
 
 export { inQuietHours };
 
@@ -43,7 +44,6 @@ const RECURRING = new Set(['hub', 'sitemap', 'feed']);
 const GUESS = 'guess';
 const REFUSAL_LIMIT = 10;
 const FEED_MIN_WORDS = 30; // for stories indexed from a feed's summary
-const DEAD_END_REASONS = { language: 'another language', empty: 'pages come back empty', refuses: 'the site refuses the crawler' };
 const SITEMAP_GUESSES = ['/sitemap.xml', '/sitemap_index.xml', '/news-sitemap.xml'];
 const FEED_GUESSES = ['/feed', '/feed.xml', '/rss.xml', '/atom.xml', '/index.xml'];
 const MAX_BACKOFF = 8; // recurring URLs are checked at most 8x less often
@@ -63,7 +63,7 @@ export class Spider extends EventEmitter {
     this.inflightUrls = new Map(); // url -> { host, kind, started }
     this.linkResults = new Map(); // page URL -> { ok, missing } for the links it queued
     this.capped = new Map(); // section prefix -> UTC day it hit its undated limit
-    this.misses = new Map(); // "lang:host", "empty:host/section" -> unindexed pages in a row
+    this.deadEndStore = new DeadEnds(() => this.cfg);
     this.ring = []; // newest crawl-log entries, for the live view
     this.minutes = new Map(); // minute -> fetches, last hour
     this.backoff = new Map(); // recurring url -> interval multiplier
@@ -247,120 +247,13 @@ export class Spider extends EventEmitter {
     }
   }
 
-  // Dead ends, learned from fetched pages, so the rest isn't queued:
-  //   example.com/cs  a section in a language the crawler doesn't index
-  //   example.com/*   a whole site in one (the-decoder.de beside the-decoder.com)
-  //   example.com/partners  a section whose pages all come back empty (JS apps)
-  // Stored as key -> { reason, at, examples }; the dashboard can forget one.
-  deadEnds() {
-    if (!this._deadEnds) {
-      let map = {};
-      try {
-        map = JSON.parse(q("SELECT v FROM kv WHERE k = 'spider.deadEnds'").get()?.v || '{}');
-        // Earlier versions kept translations as a plain list.
-        for (const k of JSON.parse(q("SELECT v FROM kv WHERE k = 'spider.translations'").get()?.v || '[]')) map[k] ??= { reason: 'language', at: Date.now() };
-      } catch { /* start empty */ }
-      this._deadEnds = new Map(Object.entries(map));
-    }
-    return this._deadEnds;
-  }
-
-  learnDeadEnd(key, reason, { days = null } = {}) {
-    const known = this.deadEnds();
-    if (known.has(key) && !(known.get(key).until < Date.now())) return;
-    known.set(key, { reason, at: Date.now(), ...(days ? { until: Date.now() + days * 86400e3 } : {}) });
-    this.saveKv('spider.deadEnds', Object.fromEntries([...known].slice(-5000)));
-    // What's already queued there goes too.
-    const [host, seg] = [key.slice(0, key.indexOf('/')), key.slice(key.indexOf('/') + 1)];
-    const where = seg === '*' ? '' : ' AND (url LIKE ? OR url LIKE ?)';
-    const args = seg === '*' ? [] : [`https://${host}/${seg}/%`, `https://www.${host}/${seg}/%`];
-    const n = q(`UPDATE frontier SET status = 'skipped', error = ? WHERE host IN (?, ?) AND status = 'queued' AND fetched_at IS NULL AND kind IN ('article', 'page')${where}`)
-      .run(`Learned dead end: ${DEAD_END_REASONS[reason] || reason}`, host, `www.${host}`, ...args).changes;
-    console.log(`[spider] learned dead end ${key} (${reason}); ${n} queued URLs dropped`);
-  }
-
-  // Indexed pages in a wanted language on a site, or in one of its sections.
-  wantedLanguageDocs(host, section = null) {
-    const langs = this.cfg.languages;
-    if (!langs.length) return 0;
-    const inSection = section ? ' AND (url LIKE ? OR url LIKE ?)' : '';
-    const args = section ? [`https://${host}/${section}/%`, `http://${host}/${section}/%`] : [];
-    return q(`SELECT COUNT(*) AS n FROM docs WHERE site = ? AND fetched_at IS NOT NULL AND lang IN (${langs.map(() => '?').join(', ')})${inSection}`).get(host, ...langs, ...args).n;
-  }
-
-  // Language dead ends learned wrongly (a site or section with plenty of
-  // indexed pages in a wanted language) are forgotten, which requeues what
-  // they dropped. Run at startup.
-  healDeadEnds() {
-    for (const [key, v] of [...this.deadEnds()]) {
-      if (v.reason !== 'language') continue;
-      const [host, seg] = [key.slice(0, key.indexOf('/')), key.slice(key.indexOf('/') + 1)];
-      if (this.wantedLanguageDocs(host, seg === '*' ? null : seg) >= 3) {
-        this.forgetDeadEnd(key);
-        console.log(`[spider] forgot dead end ${key}: it has pages in a wanted language`);
-      }
-    }
-  }
-
-  forgetDeadEnd(key) {
-    // Pages it dropped from the queue come back.
-    const [host, seg] = [key.slice(0, key.indexOf('/')), key.slice(key.indexOf('/') + 1)];
-    if (this.deadEnds().has(key)) {
-      q(`UPDATE frontier SET status = 'queued', error = NULL WHERE host IN (?, ?) AND status = 'skipped' AND error LIKE 'Learned dead end%'${seg === '*' ? '' : ' AND (url LIKE ? OR url LIKE ?)'}`)
-        .run(host, `www.${host}`, ...(seg === '*' ? [] : [`https://${host}/${seg}/%`, `https://www.${host}/${seg}/%`]));
-    }
-    const known = this.deadEnds();
-    if (!known.delete(key)) return false;
-    this.saveKv('spider.deadEnds', Object.fromEntries(known));
-    return true;
-  }
-
-  isDeadEnd(u) {
-    const known = this.deadEnds();
-    if (!known.size) return false;
-    const url = new URL(u);
-    const host = bare(url.hostname);
-    const seg = sectionPath(url);
-    const hit = known.get(`${host}/*`) || (seg && (known.get(`${host}/${seg}`) || known.get(`${host}/${seg.split('/')[0]}`)));
-    if (!hit || hit.until < Date.now()) return false;
-    // Language dead ends only apply while languages are restricted.
-    return hit.reason !== 'language' || this.cfg.languages.length > 0;
-  }
-
-  // Called with every page that wasn't indexed, and with every one that was
-  // (`ok`), which resets the counts for its site.
-  learnFromPage(page, d) {
-    if (!page.url) return;
-    const host = bare(new URL(page.url).hostname);
-    const seg = sectionPath(new URL(page.url));
-    if (d.ok) {
-      this.misses.delete(`lang:${host}`);
-      this.misses.delete(`lang:${host}/${(new URL(page.url).pathname.split('/')[1] || '').toLowerCase()}`);
-      this.misses.delete(`empty:${host}`);
-      this.misses.delete(`empty:${host}/${seg}`);
-      return;
-    }
-    const bump = (k) => { const n = (this.misses.get(k) || 0) + 1; this.misses.set(k, n); return n; };
-    const hub = this.cfg.hubHosts.includes(host);
-    const langs = this.cfg.languages;
-    // Only pages skipped for their language count (a mislabelled English page
-    // that was skipped for something else is no evidence).
-    if (langs.length && /^Language /.test(d.reason || '')) {
-      const code = localeOf(page.url);
-      const first = (new URL(page.url).pathname.split('/')[1] || '').toLowerCase();
-      // Keyed by the actual segment (/zh-cn/, not /zh/), which is what URLs are matched on.
-      if (code === page.lang) this.learnDeadEnd(`${host}/${first}`, 'language');
-      // A section in another language under any name (/cn/ for Chinese): 3 in a row.
-      else if (first && bump(`lang:${host}/${first}`) >= 3 && this.wantedLanguageDocs(host, first) === 0) this.learnDeadEnd(`${host}/${first}`, 'language');
-      // A whole site only if nothing from it was ever indexed in a wanted
-      // language (multilingual sites like cloud.google.com have runs of
-      // translated pages).
-      else if (bump(`lang:${host}`) >= 5 && !hub && this.wantedLanguageDocs(host) === 0) this.learnDeadEnd(`${host}/*`, 'language');
-    } else if (/^Too short \(0 words/.test(d.reason || '')) {
-      if (seg && bump(`empty:${host}/${seg}`) >= 10) this.learnDeadEnd(`${host}/${seg}`, 'empty');
-      else if (bump(`empty:${host}`) >= 25 && !hub) this.learnDeadEnd(`${host}/*`, 'empty');
-    }
-  }
+  // Learned dead ends (see deadends.js); thin wrappers keep the call sites short.
+  deadEnds() { return this.deadEndStore.all(); }
+  learnDeadEnd(key, reason, opts) { return this.deadEndStore.learn(key, reason, opts); }
+  forgetDeadEnd(key) { return this.deadEndStore.forget(key); }
+  isDeadEnd(u) { return this.deadEndStore.has(u); }
+  healDeadEnds() { return this.deadEndStore.heal(); }
+  learnFromPage(page, d) { return this.deadEndStore.learnFromPage(page, d); }
 
   saveKv(k, v) {
     q('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v').run(k, JSON.stringify(v));

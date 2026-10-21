@@ -2,6 +2,43 @@
 
 One full-stack feature per scheduled maintenance run, newest first.
 
+## 2026-10-21 · This week (weekly digest + RSS)
+
+**Backend.** `src/index/digest.js` builds the week from the permanent index,
+not the live feed (which holds three days). Every AI-related item the
+aggregator stored in the last seven days (English, with a platform, so
+spidered pages don't count) is clustered into stories the same way the front
+page does. Stories are ranked by how many distinct sources covered them.
+- **Top 12:** stories with at least two sources. Outlet suffixes like
+  "… - Engadget" are trimmed.
+- **Day by day:** each day's leading story that isn't already in the top list,
+  with the day's story count.
+- **Most covered:** the companies and themes with the most stories. Change in
+  share of stories against the week before shows only once the index holds
+  enough of that week to compare.
+- **Markets that moved:** the price at the start of the week against now, from
+  the odds history (`movers()` in `odds.js`). Markets with less than half a
+  week of history are skipped.
+
+`GET /api/digest` returns all of it. `GET /digest.xml` is an RSS 2.0 feed of
+the week's biggest stories, also linked from the page `<head>`. It runs in the
+shared history worker (`offload.js`), cached for 30 minutes.
+
+**UI.** A "This week" tab (`#week`):
+- A header with the date range, story and source counts, and an RSS button.
+- "Biggest stories": the lead story with its image, then a numbered list.
+  Each story has a coverage bar scaled to the leader and its source count;
+  hovering the bar names the sources.
+- "Day by day": a compact list, newest first.
+- A side column: "Most covered" as bars linking to each topic page, "Markets
+  that moved" with 7-day sparklines and "from → to", and "Released this week"
+  from the releases feed.
+- Long X-post titles are clamped to two lines.
+
+**Motion.** Rows rise in with a stagger and the coverage bars fill from the
+left, only when a new digest arrives. The tab change uses the existing View
+Transition. All of it is off under `prefers-reduced-motion`.
+
 ## 2026-10-21 · Topic pages
 
 **Backend.** `src/index/topics.js` answers "how big has this been, and what

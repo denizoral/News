@@ -38,6 +38,7 @@ const state = {
   charts: new Map(), // market id -> { at, outcomes } from /api/odds
   topicKey: null,
   topicCache: new Map(), // topic key -> { at, data, error } from /api/topic
+  week: null, // { at, data, error, pending } from /api/digest
   read: new Set(store.get('fw.read', [])),
   live: 'connecting',
   mode: 'api',
@@ -1087,6 +1088,101 @@ function renderTopic() {
   loadTopic(key);
 }
 
+// ---------- This week (weekly digest) ----------
+
+async function loadWeek() {
+  const hit = state.week;
+  if (state.mode !== 'api' || (hit && (hit.pending || Date.now() - hit.at < 5 * 60e3))) return;
+  state.week = { ...hit, pending: true };
+  let data = hit?.data || null;
+  let error = null;
+  try {
+    const res = await fetch('api/digest');
+    const body = await res.json();
+    if (res.ok) data = body;
+    else error = body.error;
+  } catch (e) {
+    error = e.message;
+  }
+  state.week = { at: Date.now(), data, error };
+  if (state.view === 'week') renderWeek();
+}
+
+const weekRange = (d) => {
+  const a = new Date(d.from), b = new Date(d.to);
+  const same = a.getMonth() === b.getMonth();
+  return `${a.toLocaleDateString('en', { month: 'short', day: 'numeric' })} – ${b.toLocaleDateString('en', same ? { day: 'numeric' } : { month: 'short', day: 'numeric' })}`;
+};
+const ppChange = (now, before) => {
+  const pp = (now - before) * 100;
+  if (Math.abs(pp) < 0.5) return '';
+  return `<span class="wk-delta ${pp > 0 ? 'up' : 'down'}" title="Share of stories, against the week before">${pp > 0 ? '▲' : '▼'} ${Math.abs(pp).toFixed(1)} pts</span>`;
+};
+
+function weekStoryHtml(s, i, max) {
+  const meta = `<span class="tl-meta"><img src="${esc(fav(s.host))}" alt="" loading="lazy" width="14" height="14">${esc(s.source)} · ${dayLabel(new Date(s.at).toISOString().slice(0, 10), { weekday: 'short', month: 'short', day: 'numeric' })}</span>`;
+  const cover = `<span class="wk-cover" title="${esc(s.names.join(', '))}${s.sources > s.names.length ? ' and more' : ''}"><span class="wk-bar"><i style="transform:scaleX(${(s.sources / max).toFixed(3)})"></i></span><b>${s.sources}</b> sources</span>`;
+  if (i === 0) {
+    return `<li class="wk-lead" data-id="${esc(s.id)}" style="--i:0">
+      ${s.image ? `<img class="wk-img" src="${esc(s.image)}" alt="" loading="lazy" data-fallback="remove">` : ''}
+      <div><span class="wk-rank">1</span><a class="wk-title" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>${meta}${cover}</div>
+    </li>`;
+  }
+  return `<li data-id="${esc(s.id)}" style="--i:${Math.min(i, 12)}"><span class="wk-rank">${i + 1}</span>
+    <div><a class="wk-title" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>${meta}${cover}</div></li>`;
+}
+
+let weekShown = 0;
+function renderWeek() {
+  const entry = state.week;
+  const d = entry?.data;
+  document.title = `This week · ${state.data?.site?.name || 'Frontier Wire'}`;
+  const animate = !!d && weekShown !== d.generatedAt && !reducedMotion();
+  if (d) weekShown = d.generatedAt;
+
+  const sum = d
+    ? `${weekRange(d)} · ${d.totals.stories.toLocaleString()} stories from ${d.totals.outlets.toLocaleString()} sources`
+    : entry?.error ? `The digest is unavailable: ${esc(entry.error)}` : state.mode === 'api' ? 'Putting the week together…' : 'The digest needs the live server.';
+  const max = d?.top[0]?.sources || 1;
+  const top = d?.top.length ? `<ol class="wk-top${animate ? ' animate' : ''}">${d.top.map((s, i) => weekStoryHtml(s, i, max)).join('')}</ol>` : d ? '<p class="rail-note">Not enough coverage stored yet.</p>' : '<div class="topic-chart loading" aria-busy="true"><i class="skeleton"></i></div>';
+  const days = d?.byDay.length ? `<ol class="wk-days${animate ? ' animate' : ''}">${[...d.byDay].reverse().map((x, i) => `<li style="--i:${i}">
+      <time datetime="${x.day}"><b>${dayLabel(x.day, { weekday: 'short' })}</b>${dayLabel(x.day, { day: 'numeric' })}</time>
+      <div>${x.top ? `<a href="${esc(x.top.url)}" target="_blank" rel="noopener">${esc(x.top.title)}</a>` : ''}<span class="tl-meta">${x.top ? `${esc(x.top.source)} · ${x.top.sources} sources · ` : ''}${x.stories.toLocaleString()} stories that day</span></div></li>`).join('')}</ol>` : '';
+
+  const tmax = d?.topics[0]?.n || 1;
+  const topics = d?.topics.length ? `<ol class="wk-topics${animate ? ' animate' : ''}">${d.topics.map((t, i) => `<li style="--i:${i}"><a href="#topic/${esc(t.key)}">
+      <span class="wk-tname">${esc(t.label)}</span><span class="wk-tn">${t.n.toLocaleString()}${t.prevShare != null ? ppChange(t.share, t.prevShare) : ''}</span>
+      <span class="wk-bar"><i style="transform:scaleX(${(t.n / tmax).toFixed(3)})"></i></span></a></li>`).join('')}</ol>` : '';
+  const markets = d?.markets?.length ? `<ul class="topic-markets">${d.markets.map((m) => `<li><a href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.title)}</a>
+      <span class="tm-row">${oddsSpark(m.spark, 'mini')}${pct(m.from)} → <b>${pct(m.to)}</b>${m.binary ? '' : ` ${esc(m.label)}`}<span class="chg ${m.change > 0 ? 'up' : 'down'}">${m.change > 0 ? '+' : '−'}${Math.abs(Math.round(m.change * 100))} pts</span></span></li>`).join('')}</ul>` : '';
+  const since = Date.now() - 7 * 86400e3;
+  const releases = (state.data?.releases || []).filter((r) => r.date >= since).sort((a, b) => (b.notable ? 1 : 0) - (a.notable ? 1 : 0) || b.date - a.date);
+  const rel = releases.length ? `<ul class="wk-rel">${releases.slice(0, 6).map((r) => `<li><img src="${esc(releaseLogo(r))}" alt="" width="18" height="18" loading="lazy"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a><time datetime="${new Date(r.date).toISOString()}">${shortDate(r.date)}</time></li>`).join('')}</ul>${releases.length > 6 ? `<a class="rail-link" href="#releases">All ${releases.length} this week</a>` : ''}` : '';
+
+  setHtml($('#weekView'), `
+    <header class="topic-head wk-head">
+      <div>
+        <p class="kicker">Weekly digest</p>
+        <h1>The week in AI</h1>
+        <p class="topic-sum">${sum}</p>
+      </div>
+      <a class="wk-rss" href="digest.xml" title="Subscribe to the week's biggest stories">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="15" r="2" fill="currentColor"/><path d="M3 9a8 8 0 0 1 8 8M3 3a14 14 0 0 1 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>RSS</a>
+    </header>
+    <div class="topic-grid">
+      <div class="wk-main">
+        <section class="topic-timeline"><h2>Biggest stories <small>by how many sources covered them</small></h2>${top}</section>
+        ${days ? `<section class="topic-timeline"><h2>Day by day</h2>${days}</section>` : ''}
+      </div>
+      <aside class="topic-side">
+        ${topics ? `<section><h2>Most covered <small>stories</small></h2>${topics}</section>` : ''}
+        ${markets ? `<section><h2>Markets that moved</h2>${markets}</section>` : ''}
+        ${rel ? `<section><h2>Released this week</h2>${rel}</section>` : ''}
+      </aside>
+    </div>`);
+  loadWeek();
+}
+
 // ---------- Footer ----------
 
 const SOURCE_LABELS = { x: 'X', polymarket: 'Polymarket', hackernews: 'Hacker News', reddit: 'Reddit', bluesky: 'Bluesky', googlenews: 'Google News', rss: 'Lab blogs, press and newsletters', scraped: 'Lab news pages', openrouter: 'OpenRouter models', huggingface: 'Hugging Face', github: 'GitHub', producthunt: 'Product Hunt', showhn: 'Show HN', tech: 'Tech (classified)' };
@@ -1151,6 +1247,7 @@ function render() {
   if (state.view === 'builds') renderBuilds();
   if (state.view === 'markets') renderMarkets();
   if (state.view === 'topic') renderTopic();
+  if (state.view === 'week') renderWeek();
   renderFoot();
   updateLive();
   animateOdds();
@@ -1172,9 +1269,9 @@ function route() {
     const go = () => { render(); window.scrollTo({ top: 0 }); };
     return state.data ? transition(go) : go();
   }
-  state.view = ['news', 'x', 'tech', 'releases', 'builds', 'markets'].includes(v) ? v : 'news';
+  state.view = ['news', 'x', 'tech', 'week', 'releases', 'builds', 'markets'].includes(v) ? v : 'news';
   const name = state.data?.site?.name || 'Frontier Wire';
-  document.title = { news: name, x: `On X · ${name}`, tech: `Tech · ${name}`, releases: `AI releases · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}` }[state.view];
+  document.title = { news: name, x: `On X · ${name}`, tech: `Tech · ${name}`, week: `This week · ${name}`, releases: `AI releases · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}` }[state.view];
   const changed = $(`.view[data-view="${state.view}"]`)?.hidden;
   const go = () => {
     render();

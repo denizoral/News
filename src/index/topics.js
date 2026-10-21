@@ -37,7 +37,7 @@ function dayTotals(db, since, now) {
 }
 
 // Near-identical headlines (syndicated copies) show once per day.
-const headKey = (title) => tokens(title).slice(0, 6).join(' ');
+export const headKey = (title) => tokens(title).slice(0, 6).join(' ');
 
 export function computeTopic(db, key, { now = Date.now(), days = 30, timelineDays = 14, perDay = 4 } = {}) {
   if (!ENTITIES[key]) return null;

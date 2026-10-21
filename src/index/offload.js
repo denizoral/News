@@ -65,3 +65,9 @@ export function cachedJob(key, job, ttlMs) {
   const entry = cache.get(key);
   return entry.data ? Promise.resolve(entry.data) : entry.pending.then(() => cache.get(key).data);
 }
+
+// Marks a cached result stale: the next call still gets it, and refreshes it.
+export function expireJob(key) {
+  const hit = cache.get(key);
+  if (hit) hit.at = 0;
+}

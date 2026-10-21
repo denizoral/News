@@ -16,6 +16,7 @@ import { Store, publicSnapshot } from './store.js';
 import { marketHistory, backfillMarket, movers } from './pipeline/odds.js';
 import { topicHistory, topicKeys, warmTopics } from './index/topics.js';
 import { weeklyDigest, digestRss } from './index/digest.js';
+import { releasesCoverage, coverageCounts } from './index/releases.js';
 import { semanticSearch, relatedTo, keepVectorsWarm } from './index/semantic.js';
 import { startEmbedder } from './index/vectors.js';
 import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
@@ -249,6 +250,16 @@ export function createApp({ store, spider }) {
         .then((data) => json(req, res, 200, data, { 'cache-control': 'public, max-age=300' }))
         .catch((err) => json(req, res, 503, { error: `Topic history is unavailable: ${err.message}` }));
     }
+    // Release coverage: counts for the whole list, or one release in full.
+    if (p === '/api/releases/coverage' || p === '/api/release') {
+      if (limited(req, res)) return;
+      const releases = store.releases || [];
+      const id = url.searchParams.get('id');
+      if (p === '/api/release' && !releases.some((r) => r.id === id)) return json(req, res, 404, { error: 'No release with that id.' });
+      return releasesCoverage(releases)
+        .then((all) => json(req, res, 200, p === '/api/release' ? { id, ...(all[id] || { n: 0, outlets: 0, first: null, items: [], series: [] }) } : coverageCounts(all), { 'cache-control': 'public, max-age=300' }))
+        .catch((err) => json(req, res, 503, { error: `Release coverage is unavailable: ${err.message}` }));
+    }
     if (p === '/api/digest' || p === '/digest.xml') {
       if (limited(req, res)) return;
       return weeklyDigest()
@@ -357,6 +368,7 @@ function main() {
     startRetention();
     startEmbedder(); // independent of the first crawl (Reddit alone takes minutes)
     keepVectorsWarm();
+    releasesCoverage(store.releases || []).catch(() => {}); // from the saved list; refreshed when it changes
     crawlAll(store)
       .then(() => {
         store.save();

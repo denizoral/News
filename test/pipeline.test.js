@@ -171,3 +171,13 @@ test('first report credits the earliest original source, never relays', async ()
   const board = scoopBoard([a, b, c]);
   assert.deepEqual(board.map((e) => [e.name, e.firsts, e.medianLeadMin]), [['@scooper', 2, 40], ['Verge', 1, 90]]);
 });
+
+test('releases merge across OpenRouter and Hugging Face lab names', async () => {
+  const { mergeReleases } = await import('../src/sources/releases.js');
+  const or = [{ id: 'or:z-ai/glm-5.3-flash', name: 'GLM 5.3 Flash', org: 'z-ai', date: 2000, api: true, open: true, hf: 'zai-org/GLM-5.3-Flash' }];
+  const hf = [{ id: 'hf:zai-org/GLM-5.3-Flash', name: 'GLM 5.3 Flash', org: 'zai-org', date: 1000, api: false, open: true, hf: 'zai-org/GLM-5.3-Flash', likes: 90 }];
+  const out = mergeReleases(or, hf);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].id, 'or:z-ai/glm-5.3-flash', 'the API listing wins');
+  assert.equal(out[0].date, 1000);
+});

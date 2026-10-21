@@ -89,7 +89,9 @@ const NOTABLE = new Set(RELEASES.notable);
 export function mergeReleases(orList, hfList) {
   const byFamily = new Map();
   const add = (r) => {
-    let key = `${r.org}|${familyOf(r.hf || r.name)}`;
+    // OpenRouter and Hugging Face name labs differently ("z-ai", "zai-org"),
+    // so a release with weights is keyed by its repo's owner.
+    let key = `${(r.hf ? r.hf.split('/')[0] : r.org).toLowerCase()}|${familyOf(r.hf || r.name)}`;
     // Hugging Face-only uploads from one lab line within a few days (checkpoint
     // dumps, size and format variants) fold into the most-liked one.
     if (!r.api && !byFamily.has(key)) {

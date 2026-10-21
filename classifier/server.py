@@ -3,10 +3,14 @@
 A small local HTTP service around a GLiClass model (CPU). The Node crawler
 POSTs batches of headlines to /classify and gets each one's best label back.
 
-  POST /classify  {"texts": [...], "labels": [...]}  ->  {"results": [{"label", "score", "top": [3 best]}], "ms"}
-  GET  /health                                        ->  {"ok", "model", "classified", "avgMs"}
+It also embeds short texts (a headline and the start of its summary) with a
+small sentence-embedding model for semantic search and related coverage.
 
-Run: venv/bin/python classifier/server.py  (CLASSIFIER_PORT, CLASSIFIER_MODEL, CLASSIFIER_THREADS)
+  POST /classify  {"texts": [...], "labels": [...]}  ->  {"results": [{"label", "score", "top": [3 best]}], "ms"}
+  POST /embed     {"texts": [...]}                    ->  {"vectors": [[384 floats, unit length]], "ms"}
+  GET  /health                                        ->  {"ok", "model", "classified", "avgMs", "embedModel", "embedded"}
+
+Run: venv/bin/python classifier/server.py  (CLASSIFIER_PORT, CLASSIFIER_MODEL, CLASSIFIER_THREADS, EMBED_MODEL)
 """
 
 import json
@@ -20,7 +24,7 @@ warnings.filterwarnings("ignore")
 
 import torch  # noqa: E402
 from gliclass import GLiClassModel, ZeroShotClassificationPipeline  # noqa: E402
-from transformers import AutoTokenizer  # noqa: E402
+from transformers import AutoModel, AutoTokenizer  # noqa: E402
 
 MODEL = os.environ.get("CLASSIFIER_MODEL", "knowledgator/gliclass-large-v3.0")
 PORT = int(os.environ.get("CLASSIFIER_PORT", "8765"))
@@ -32,7 +36,31 @@ model = GLiClassModel.from_pretrained(MODEL)
 tokenizer = AutoTokenizer.from_pretrained(MODEL, add_prefix_space=True)
 pipe = ZeroShotClassificationPipeline(model, tokenizer, classification_type="multi-label", device="cpu")
 lock = threading.Lock()  # one batch through the model at a time
-stats = {"classified": 0, "ms": 0.0}
+stats = {"classified": 0, "ms": 0.0, "embedded": 0}
+
+# Embeddings: bge-small (384 dimensions, CLS pooling). Texts are cut at 64
+# tokens: headlines are short, and it is twice as fast as 128.
+EMBED_MODEL = os.environ.get("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
+EMBED_MAX = 128
+embed_tok = AutoTokenizer.from_pretrained(EMBED_MODEL)
+embed_model = AutoModel.from_pretrained(EMBED_MODEL).eval()
+embed_lock = threading.Lock()  # separate from the classifier: they don't block each other
+
+
+def embed(texts):
+    order = sorted(range(len(texts)), key=lambda i: len(texts[i]))  # less padding per batch
+    out = [None] * len(texts)
+    # The lock is taken per batch of 16, so a search query waiting behind the
+    # background backfill gets the model within ~0.2 s instead of ~1 s.
+    for i in range(0, len(order), 16):
+        idx = order[i : i + 16]
+        x = embed_tok([texts[j][:MAX_CHARS] for j in idx], padding=True, truncation=True, max_length=64, return_tensors="pt")
+        with embed_lock, torch.inference_mode():
+            v = torch.nn.functional.normalize(embed_model(**x).last_hidden_state[:, 0], dim=-1)
+        for j, row in zip(idx, v.tolist()):
+            out[j] = [round(f, 5) for f in row]
+    stats["embedded"] += len(texts)
+    return out
 
 
 def classify(texts, labels):
@@ -62,9 +90,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/health":
             return self.reply(404, {"error": "not found"})
         n = stats["classified"]
-        self.reply(200, {"ok": True, "model": MODEL, "classified": n, "avgMs": round(stats["ms"] / n, 1) if n else None})
+        self.reply(200, {"ok": True, "model": MODEL, "classified": n, "avgMs": round(stats["ms"] / n, 1) if n else None, "embedModel": EMBED_MODEL, "embedded": stats["embedded"]})
 
     def do_POST(self):
+        if self.path == "/embed":
+            return self.do_embed()
         if self.path != "/classify":
             return self.reply(404, {"error": "not found"})
         try:
@@ -81,11 +111,24 @@ class Handler(BaseHTTPRequestHandler):
         stats["ms"] += ms
         self.reply(200, {"results": results, "ms": round(ms)})
 
+    def do_embed(self):
+        try:
+            body = json.loads(self.rfile.read(min(int(self.headers.get("content-length", 0)), 1_000_000)))
+            texts = body["texts"]
+            if not (isinstance(texts, list) and 0 < len(texts) <= EMBED_MAX):
+                raise ValueError(f"need 1-{EMBED_MAX} texts")
+        except (ValueError, KeyError, TypeError) as e:
+            return self.reply(400, {"error": str(e)})
+        t0 = time.time()
+        vectors = embed([str(t) for t in texts])
+        self.reply(200, {"vectors": vectors, "ms": round((time.time() - t0) * 1000)})
+
     def log_message(self, *args):
         pass
 
 
 if __name__ == "__main__":
     classify(["warm up"], ["technology", "sports"])
+    embed(["warm up"])
     print(f"[classifier] {MODEL} ready on 127.0.0.1:{PORT}", flush=True)
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()

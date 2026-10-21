@@ -158,6 +158,27 @@ export const TECH_CLASSIFIER = {
   batch: 32,
 };
 
+// Releases tab: models from the last `days`. Hugging Face orgs are polled for
+// open-weight releases (org, display name); API models come from OpenRouter.
+export const RELEASES = {
+  days: 90,
+  minLikes: 30, // older Hugging Face uploads need this many likes...
+  minLikesFresh: 5, // ...and ones from the last 3 days this many
+  // Labs whose releases are "notable" (the tab's default filter), by OpenRouter
+  // or Hugging Face org slug, lowercase.
+  notable: ['anthropic', 'openai', 'google', 'x-ai', 'xai-org', 'meta', 'meta-llama', 'mistralai', 'deepseek', 'deepseek-ai', 'qwen',
+    'moonshotai', 'z-ai', 'zai-org', 'minimax', 'minimaxai', 'nvidia', 'microsoft', 'amazon', 'cohere', 'coherelabs', 'ai21',
+    'perplexity', 'ibm-granite', 'liquid', 'liquidai', 'allenai', 'tencent', 'baidu', 'bytedance', 'bytedance-seed',
+    'black-forest-labs', 'stabilityai', 'apple', 'inception', 'reflection', 'wan-ai'],
+  hfOrgs: [
+    ['Qwen', 'Qwen'], ['deepseek-ai', 'DeepSeek'], ['meta-llama', 'Meta'], ['mistralai', 'Mistral'], ['google', 'Google'],
+    ['microsoft', 'Microsoft'], ['nvidia', 'NVIDIA'], ['openai', 'OpenAI'], ['allenai', 'Ai2'], ['moonshotai', 'Moonshot AI'],
+    ['zai-org', 'Z.ai'], ['MiniMaxAI', 'MiniMax'], ['ibm-granite', 'IBM'], ['apple', 'Apple'], ['black-forest-labs', 'Black Forest Labs'],
+    ['stabilityai', 'Stability AI'], ['tencent', 'Tencent'], ['baidu', 'Baidu'], ['xai-org', 'xAI'], ['LiquidAI', 'Liquid AI'],
+    ['HuggingFaceTB', 'Hugging Face'], ['CohereLabs', 'Cohere'], ['ByteDance-Seed', 'ByteDance'], ['Wan-AI', 'Alibaba Wan'],
+  ],
+};
+
 // Cadence per source, in seconds. Social and markets refresh fastest.
 export const SCHEDULE = {
   x: 120,
@@ -174,6 +195,7 @@ export const SCHEDULE = {
   producthunt: 900,
   showhn: 300,
   tech: 600,
+  releases: 900,
 };
 
 export const RETENTION_HOURS = 72;

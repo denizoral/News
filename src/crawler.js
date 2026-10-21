@@ -4,6 +4,7 @@ import { fetchHackerNews, fetchReddit, fetchBluesky } from './sources/community.
 import { fetchX, xStatus, embedStatus } from './sources/x.js';
 import { fetchPolymarket } from './sources/polymarket.js';
 import { fetchTech, techStatus } from './sources/tech.js';
+import { fetchReleases } from './sources/releases.js';
 import { fetchHuggingFace, fetchGitHub, fetchProductHunt, fetchShowHN, fetchOpenRouter } from './sources/builds.js';
 import { ingestAggregatorItems, ingestMarkets } from './index/documents.js';
 
@@ -28,6 +29,7 @@ export const SOURCES = {
   producthunt: fetchProductHunt,
   showhn: fetchShowHN,
   tech: fetchTech,
+  releases: fetchReleases,
 };
 
 // Bluesky is a backup for X: it only runs while X has been failing, and its
@@ -51,6 +53,7 @@ export async function runSource(store, name) {
   try {
     const out = await SOURCES[name]();
     if (name === 'polymarket') store.setMarkets(out.markets);
+    if (out.releases) store.setReleases(out.releases);
     const added = out.items ? store.ingest(name, out.items) : 0;
     // Everything also goes into the permanent search index.
     try {
@@ -60,7 +63,7 @@ export async function runSource(store, name) {
     } catch (err) {
       console.warn(`[index] ${name}: ${err.message}`);
     }
-    const count = out.markets?.length ?? out.items?.length ?? 0;
+    const count = out.markets?.length ?? out.releases?.length ?? out.items?.length ?? 0;
     const ok = count > 0 || !out.errors?.length;
     store.sourceStatus[name] = {
       ok,

@@ -101,6 +101,10 @@ test('X feed filters by group, handle and text, and pages by time', async () => 
   assert.deepEqual(xFeed(store, { q: 'odds' }).posts.map((p) => p.id), ['x:1']);
   assert.equal(all.groups.find(([k]) => k === 'markets')[2], 1);
   assert.equal(all.status.strategy, 'rsshub');
+  store.items.get('x:1').cats = ['Politics'];
+  store.version++;
+  assert.deepEqual(xFeed(store, { cat: 'Politics' }).posts.map((p) => p.id), ['x:1']);
+  assert.deepEqual(xFeed(store).cats.find(([k]) => k === 'Politics'), ['Politics', 'Politics', 1]);
 });
 
 test('tech classifier keeps only confident technology labels', async () => {
@@ -113,4 +117,31 @@ test('tech classifier keeps only confident technology labels', async () => {
   assert.equal(TECH_TOPIC.cybersecurity, 'Security');
   assert.equal(topicOf({ label: 'technology', score: 0.99, top: [{ label: 'technology', score: 0.99 }, { label: 'software', score: 0.9 }] }), 'Software');
   assert.equal(topicOf({ label: 'technology', score: 0.99, top: [{ label: 'technology', score: 0.99 }, { label: 'business', score: 0.9 }] }), 'General');
+});
+
+test('labeler maps classifier results to chips, with a confident runner-up', async () => {
+  const { catsFrom } = await import('../src/pipeline/labeler.js');
+  const r = { label: 'cryptocurrency', score: 0.97, top: [{ label: 'cryptocurrency', score: 0.97 }, { label: 'stock market and investing', score: 0.85 }, { label: 'politics', score: 0.4 }] };
+  assert.deepEqual(catsFrom(r, 'x'), ['Crypto']);
+  assert.deepEqual(catsFrom({ ...r, top: [r.top[0], { label: 'stock market and investing', score: 0.95 }] }, 'x'), ['Crypto', 'Stocks']);
+  assert.deepEqual(catsFrom({ label: 'new AI model release', score: 0.9, top: [{ label: 'new AI model release', score: 0.9 }, { label: 'AI research', score: 1 }] }, 'ai'), ['Models']);
+  assert.deepEqual(catsFrom(null, 'ai'), []);
+});
+
+test('releases merge API and open-weight listings by model family', async () => {
+  const { familyOf, mergeReleases } = await import('../src/sources/releases.js');
+  assert.equal(familyOf('Qwen/Qwen4-235B-A22B-Instruct-2510'), 'qwen4');
+  assert.equal(familyOf('deepseek-ai/DeepSeek-V4.1-Flash'), 'deepseek-v4.1-flash');
+  const or = [{ id: 'or:qwen/qwen4-235b', name: 'Qwen4 235B', org: 'qwen', date: 2000, api: true, open: true, hf: 'Qwen/Qwen4-235B-A22B', priceIn: 0.2 }];
+  const hf = [
+    { id: 'hf:Qwen/Qwen4-8B', name: 'Qwen4 8B', org: 'qwen', date: 1000, api: false, open: true, hf: 'Qwen/Qwen4-8B', likes: 300 },
+    { id: 'hf:Qwen/Qwen-Image-3', name: 'Qwen Image 3', org: 'qwen', date: 3000, api: false, open: true, hf: 'Qwen/Qwen-Image-3', likes: 50 },
+  ];
+  const out = mergeReleases(or, hf);
+  assert.equal(out.length, 2);
+  const qwen4 = out.find((r) => r.name === 'Qwen4 235B');
+  assert.equal(qwen4.api && qwen4.open, true);
+  assert.equal(qwen4.date, 1000, 'a family dates from its first release');
+  assert.equal(qwen4.sizes.length, 2);
+  assert.equal(out[0].name, 'Qwen Image 3', 'newest first');
 });

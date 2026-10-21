@@ -9,8 +9,9 @@ import { TECH_FEEDS, TECH_CLASSIFIER } from '../config.js';
 import { isAiRelated } from '../pipeline/classify.js';
 import { clip, stripHtml } from '../pipeline/text.js';
 import { parseFeed } from './rss.js';
+import { classifyTexts, itemText } from '../pipeline/classifier.js';
 
-const { url: CLASSIFIER_URL, labels: LABELS, techLabels, minScore, batch: BATCH } = TECH_CLASSIFIER;
+const { labels: LABELS, techLabels, minScore } = TECH_CLASSIFIER;
 const TECH = new Set(techLabels);
 // Short display names for the tab's filter chips.
 export const TECH_TOPIC = {
@@ -24,19 +25,12 @@ export const techStatus = { ok: null, classified: 0, kept: 0, lastMs: null, erro
 
 async function classify(items) {
   const fresh = items.filter((i) => !verdicts.has(i.id));
-  for (let i = 0; i < fresh.length; i += BATCH) {
-    const chunk = fresh.slice(i, i + BATCH);
-    const res = await fetch(`${CLASSIFIER_URL}/classify`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ texts: chunk.map((c) => `${c.title}. ${c.summary || ''}`.trim()), labels: LABELS }),
-      signal: AbortSignal.timeout(60000),
-    });
-    if (!res.ok) throw new Error(`classifier HTTP ${res.status}`);
-    const { results, ms } = await res.json();
-    chunk.forEach((c, j) => verdicts.set(c.id, results[j] || { label: null, score: 0 }));
-    techStatus.classified += chunk.length;
-    techStatus.lastMs = Math.round(ms / chunk.length);
+  if (fresh.length) {
+    const started = Date.now();
+    const results = await classifyTexts(fresh.map(itemText), LABELS);
+    fresh.forEach((c, j) => verdicts.set(c.id, results[j] || { label: null, score: 0 }));
+    techStatus.classified += fresh.length;
+    techStatus.lastMs = Math.round((Date.now() - started) / fresh.length);
   }
   if (verdicts.size > MAX_VERDICTS) for (const k of [...verdicts.keys()].slice(0, verdicts.size - MAX_VERDICTS)) verdicts.delete(k);
 }

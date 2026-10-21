@@ -23,7 +23,8 @@ const state = {
   techTopic: store.get('fw.techtopic', 'All'),
   techSort: store.get('fw.techsort', 'top'),
   techLimit: 40,
-  xGroup: store.get('fw.xgroup', 'all'),
+  relFilter: store.get('fw.relfilter', 'notable'),
+  xCat: store.get('fw.xcat', 'all'),
   xHandle: null,
   xq: '',
   x: null, // { key, version, posts, nextBefore, groups, accounts, status }
@@ -495,7 +496,7 @@ function renderNews({ animate = false } = {}) {
 }
 
 function renderRail() {
-  const { markets, social, models } = state.data;
+  const { markets, social } = state.data;
   const heat = (m) => m.move * Math.log10(10 + m.volume24h);
   const moving = markets.filter((m) => m.volume24h > 1000).slice().sort((a, b) => heat(b) - heat(a)).slice(0, 6);
   setHtml($('#railMarkets'), moving.map((m) => {
@@ -512,8 +513,81 @@ function renderRail() {
       <span><span class="who"><b>${esc(p.author)}</b>${p.platform === 'x' ? `@${esc(p.handle)}` : 'Bluesky'} ${time(p.publishedAt)}</span><p>${highlight(p.title)}</p></span>
     </a></li>`).join('') || '<li class="rail-note">No posts yet. X posts appear once an X source is configured; see the Sources list at the bottom of the page.</li>');
 
-  setHtml($('#railModels'), models.slice(0, 8).map((m) =>
-    `<li><a href="${esc(m.url)}" target="_blank" rel="noopener" title="${esc(m.title)}">${esc(m.title)}</a><span>${compact(m.engagement?.likes ?? m.engagement?.score)} likes</span></li>`).join(''));
+  const releases = (state.data.releases || []).filter((r) => r.notable).slice(0, 6);
+  setHtml($('#railModels'), releases.map((r) => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">
+      <img src="${esc(releaseLogo(r))}" alt="" width="18" height="18" loading="lazy">
+      <span><b>${esc(r.name)}</b><span>${esc(r.provider)} · ${shortDate(r.date)}</span></span></a></li>`).join('') || '<li class="rail-note">Releases are loading.</li>');
+}
+
+// ---------- Releases view ----------
+// Models launched in the last 90 days (server: src/sources/releases.js).
+
+const LAB_SITES = {
+  anthropic: 'anthropic.com', openai: 'openai.com', google: 'gemini.google.com', 'x-ai': 'x.ai', 'xai-org': 'x.ai', meta: 'meta.ai',
+  'meta-llama': 'meta.ai', mistralai: 'mistral.ai', deepseek: 'deepseek.com', 'deepseek-ai': 'deepseek.com', qwen: 'qwen.ai',
+  moonshotai: 'moonshot.ai', 'z-ai': 'z.ai', 'zai-org': 'z.ai', minimax: 'minimax.io', minimaxai: 'minimax.io', nvidia: 'nvidia.com',
+  microsoft: 'microsoft.com', amazon: 'aws.amazon.com', cohere: 'cohere.com', coherelabs: 'cohere.com', ai21: 'ai21.com',
+  perplexity: 'perplexity.ai', 'ibm-granite': 'ibm.com', liquid: 'liquid.ai', liquidai: 'liquid.ai', allenai: 'allenai.org',
+  tencent: 'tencent.com', baidu: 'baidu.com', bytedance: 'bytedance.com', 'bytedance-seed': 'bytedance.com',
+  'black-forest-labs': 'bfl.ai', stabilityai: 'stability.ai', apple: 'apple.com', inception: 'inceptionlabs.ai', 'wan-ai': 'alibabacloud.com',
+};
+const releaseLogo = (r) => fav(LAB_SITES[r.org] || (r.api ? 'openrouter.ai' : 'huggingface.co'));
+const shortDate = (ts) => new Date(ts).toLocaleDateString('en', { month: 'short', day: 'numeric' });
+const REL_FILTERS = [
+  ['notable', 'Major labs', (r) => r.notable],
+  ['open', 'Open weights', (r) => r.open],
+  ['api', 'API', (r) => r.api],
+  ['all', 'Everything', () => true],
+];
+const fmtContext = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1e3)}K`) + ' context';
+const fmtPrice = (r) => {
+  if (r.priceIn == null) return '';
+  if (!r.priceIn && !r.priceOut) return 'Free';
+  const p = (x) => `$${x < 1 ? +x.toFixed(2) : +x.toFixed(1)}`;
+  return `${p(r.priceIn)} in / ${p(r.priceOut)} out per M`;
+};
+
+function releaseBucket(ts) {
+  const days = (Date.now() - ts) / 86400e3;
+  if (days < 7) return 'This week';
+  if (days < 14) return 'Last week';
+  return new Date(ts).toLocaleDateString('en', { month: 'long', year: 'numeric' });
+}
+
+function releaseHtml(r) {
+  const isNew = Date.now() - r.date < 2 * 86400e3;
+  const meta = [
+    r.api ? '<span class="badge badge-api">API</span>' : '',
+    r.open ? `<a class="badge badge-open" href="https://huggingface.co/${esc(r.hf || '')}" target="_blank" rel="noopener">Open weights</a>` : '',
+    r.context ? `<span>${fmtContext(r.context)}</span>` : '',
+    fmtPrice(r) ? `<span>${fmtPrice(r)}</span>` : '',
+    r.sizes?.length > 1 ? `<span>${r.sizes.length} sizes</span>` : '',
+    r.story ? `<a class="rel-story" href="${esc(r.story.url)}" target="_blank" rel="noopener">In the news ↗</a>` : '',
+  ].filter(Boolean).join('');
+  return `<li class="rel" data-id="${esc(r.id)}">
+    <img class="rel-logo" src="${esc(releaseLogo(r))}" alt="" width="32" height="32" loading="lazy">
+    <div class="rel-main">
+      <div class="rel-title"><a href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(r.summary || r.name)}">${highlight(r.name)}</a>${isNew ? '<span class="rel-new">New</span>' : ''}</div>
+      <div class="rel-by">${esc(r.provider)}</div>
+      <div class="rel-meta">${meta}</div>
+    </div>
+    <time class="rel-date" datetime="${new Date(r.date).toISOString()}">${shortDate(r.date)}</time>
+  </li>`;
+}
+
+function renderReleases({ animate = false } = {}) {
+  const all = (state.data.releases || []).filter((r) => matchesQuery(`${r.name} ${r.provider}`));
+  setHtml($('#relChips'), REL_FILTERS.map(([k, l, f]) =>
+    `<button class="chip" type="button" data-rel="${k}" aria-pressed="${state.relFilter === k}">${l}<span class="n">${all.filter(f).length}</span></button>`).join(''));
+  const keep = (REL_FILTERS.find(([k]) => k === state.relFilter) || REL_FILTERS[0])[2];
+  const groups = new Map();
+  for (const r of all.filter(keep)) {
+    const b = releaseBucket(r.date);
+    groups.has(b) ? groups.get(b).push(r) : groups.set(b, [r]);
+  }
+  setHtml($('#relList'), [...groups].map(([b, list]) => `<section class="rel-group" data-id="${esc(b)}"><h2 class="when">${esc(b)}<span>${list.length}</span></h2><ol class="rel-list">${list.map(releaseHtml).join('')}</ol></section>`).join('') ||
+    `<p class="empty">${state.data.releases?.length ? 'No releases match.' : 'Releases are loading.'}</p>`);
+  if (animate && !reducedMotion()) $$('#relList .rel').slice(0, 18).forEach((el, i) => { el.classList.add('enter'); el.style.setProperty('--i', i); });
 }
 
 // ---------- Tech view ----------
@@ -546,9 +620,8 @@ function renderTech({ animate = false } = {}) {
 // Posts come from /api/x (every X post we hold, filterable and paged). On a
 // static build it falls back to the X posts in the snapshot.
 
-const X_GROUP_LABEL = { lab: 'Lab', people: 'Person', scoops: 'Scoop', markets: 'Market' };
 const shownX = new Set();
-const xKey = () => `${state.xGroup}|${state.xHandle || ''}|${state.xq}`;
+const xKey = () => `${state.xCat}|${state.xHandle || ''}|${state.xq}`;
 
 function linkifyPost(text) {
   return highlight(text)
@@ -560,16 +633,16 @@ function staticX() {
   const all = (state.data?.social || []).filter((p) => p.platform === 'x');
   const q = state.xq.toLowerCase();
   const posts = all
-    .filter((p) => (state.xGroup === 'all' || p.group === state.xGroup) && (!state.xHandle || p.handle === state.xHandle) && (!q || `${p.title} ${p.author}`.toLowerCase().includes(q)))
+    .filter((p) => (state.xCat === 'all' || (p.cats || []).includes(state.xCat)) && (!state.xHandle || p.handle === state.xHandle) && (!q || `${p.title} ${p.author}`.toLowerCase().includes(q)))
     .map((p) => ({ ...p, text: p.summary || p.title, likes: p.engagement?.score || 0, replies: p.engagement?.comments || 0 }));
   const accounts = new Map();
   for (const p of all) if (!accounts.has(p.handle)) accounts.set(p.handle, { handle: p.handle, name: p.author, avatar: p.avatar, group: p.group, latest: p.publishedAt, count: 0 });
   for (const p of all) accounts.get(p.handle).count++;
   const counts = {};
-  for (const p of all) counts[p.group] = (counts[p.group] || 0) + 1;
+  for (const p of all) for (const c of p.cats || []) counts[c] = (counts[c] || 0) + 1;
   return {
     posts, nextBefore: null, accounts: [...accounts.values()],
-    groups: [['all', 'All', all.length], ['lab', 'Labs', counts.lab || 0], ['people', 'People', counts.people || 0], ['scoops', 'Scoops', counts.scoops || 0], ['markets', 'Markets', counts.markets || 0]],
+    cats: [['all', 'All', all.length], ...Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([c, n]) => [c, c, n])],
     status: { ok: all.length > 0 },
   };
 }
@@ -579,7 +652,7 @@ async function loadX({ append = false, animate = false } = {}) {
   const version = state.data?.version;
   let next;
   if (state.mode === 'api') {
-    const qs = new URLSearchParams({ group: state.xGroup, limit: '40' });
+    const qs = new URLSearchParams({ cat: state.xCat, limit: '40' });
     if (state.xHandle) qs.set('handle', state.xHandle);
     if (state.xq) qs.set('q', state.xq);
     if (append && state.x?.nextBefore) qs.set('before', state.x.nextBefore);
@@ -617,8 +690,8 @@ function renderX() {
 function drawX({ animate = false } = {}) {
   const x = state.x;
   if (!x) return;
-  setHtml($('#xGroups'), x.groups.filter(([k, , n]) => k === 'all' || n).map(([k, l, n]) =>
-    `<button class="chip" type="button" data-xgroup="${k}" aria-pressed="${state.xGroup === k}">${l}<span class="n">${compact(n)}</span></button>`).join(''));
+  setHtml($('#xGroups'), (x.cats || []).map(([k, l, n]) =>
+    `<button class="chip" type="button" data-xcat="${esc(k)}" aria-pressed="${state.xCat === k}">${esc(l)}<span class="n">${compact(n)}</span></button>`).join(''));
 
   const hour = Date.now() - 3600e3;
   setHtml($('#xAccounts'), x.accounts.filter((a) => a.count).slice(0, 40).map((a) =>
@@ -638,7 +711,7 @@ function drawX({ animate = false } = {}) {
     return `<li class="xpost${isNew ? ' is-new' : ''}" data-id="${esc(p.id)}">
       <img class="av" src="${esc(p.avatar || fav('x.com'))}" alt="" loading="lazy" width="40" height="40">
       <div class="body">
-        <div class="who"><b>${esc(p.author || p.handle)}</b><button type="button" class="handle" data-xhandle="${esc(p.handle)}">@${esc(p.handle)}</button><span class="tag tag-${esc(p.group)}">${X_GROUP_LABEL[p.group] || ''}</span><a class="when" href="${esc(p.url)}" target="_blank" rel="noopener">${time(p.publishedAt)}</a></div>
+        <div class="who"><b>${esc(p.author || p.handle)}</b><button type="button" class="handle" data-xhandle="${esc(p.handle)}">@${esc(p.handle)}</button>${p.cats?.[0] ? `<span class="tag tag-${esc(p.cats[0].toLowerCase())}">${esc(p.cats[0])}</span>` : ''}<a class="when" href="${esc(p.url)}" target="_blank" rel="noopener">${time(p.publishedAt)}</a></div>
         <p>${linkifyPost(p.text || '')}</p>
         ${p.image ? `<a class="x-img" href="${esc(p.url)}" target="_blank" rel="noopener"><img src="${esc(p.image)}" alt="" loading="lazy"></a>` : ''}
         <div class="x-foot">${link}${p.likes ? `<span class="num">♥ ${compact(p.likes)}</span>` : ''}${p.replies ? `<span class="num">${compact(p.replies)} replies</span>` : ''}<a class="open" href="${esc(p.url)}" target="_blank" rel="noopener">Open on X ↗</a></div>
@@ -801,6 +874,7 @@ function render() {
   if (state.view === 'news') renderNews();
   if (state.view === 'x') renderX();
   if (state.view === 'tech') renderTech();
+  if (state.view === 'releases') renderReleases();
   if (state.view === 'builds') renderBuilds();
   if (state.view === 'markets') renderMarkets();
   renderFoot();
@@ -817,9 +891,9 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  state.view = ['news', 'x', 'tech', 'builds', 'markets'].includes(v) ? v : 'news';
+  state.view = ['news', 'x', 'tech', 'releases', 'builds', 'markets'].includes(v) ? v : 'news';
   const name = state.data?.site?.name || 'Frontier Wire';
-  document.title = { news: name, x: `On X · ${name}`, tech: `Tech · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}` }[state.view];
+  document.title = { news: name, x: `On X · ${name}`, tech: `Tech · ${name}`, releases: `AI releases · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}` }[state.view];
   const changed = $(`.view[data-view="${state.view}"]`)?.hidden;
   const go = () => {
     render();
@@ -845,9 +919,10 @@ document.addEventListener('click', (e) => {
   else if (d.kind) { state.kind = d.kind; store.set('fw.kind', d.kind); state.limit = 60; renderNews(); }
   else if (d.sort) { state.sort = d.sort; store.set('fw.sort', d.sort); renderNews(); }
   else if (d.build) { state.buildFilter = d.build; store.set('fw.build', d.build); renderBuilds(); }
+  else if (d.rel) { state.relFilter = d.rel; store.set('fw.relfilter', d.rel); transition(() => renderReleases({ animate: true })); }
   else if (d.techtopic) { state.techTopic = d.techtopic; state.techLimit = 40; store.set('fw.techtopic', d.techtopic); transition(() => renderTech({ animate: true })); }
   else if (d.techsort) { state.techSort = d.techsort; store.set('fw.techsort', d.techsort); transition(() => renderTech({ animate: true })); }
-  else if (d.xgroup) { state.xGroup = d.xgroup; state.xHandle = null; store.set('fw.xgroup', d.xgroup); loadX({ animate: true }); }
+  else if (d.xcat) { state.xCat = d.xcat; state.xHandle = null; store.set('fw.xcat', d.xcat); loadX({ animate: true }); }
   else if (d.xhandle) { state.xHandle = state.xHandle === d.xhandle ? null : d.xhandle; loadX({ animate: true }); }
   else if (d.msort) { state.marketSort = d.msort; store.set('fw.msort', d.msort); renderMarkets(); }
   else if (d.toggle) {

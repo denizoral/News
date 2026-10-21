@@ -27,6 +27,7 @@ import { RateLimiter } from './security/ratelimit.js';
 import { clientIp, securityHeaders } from './security/httpkit.js';
 import { startFileLog } from './logfile.js';
 import { xFeed } from './xfeed.js';
+import { startLabeler } from './pipeline/labeler.js';
 
 const PROD = process.env.NODE_ENV === 'production';
 const PUBLIC = path.resolve('public');
@@ -310,6 +311,7 @@ function main() {
       .then(() => {
         store.save();
         startScheduler(store);
+        startLabeler(store);
       })
       .catch((e) => console.error('initial crawl failed', e));
   } else {

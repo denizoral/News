@@ -26,6 +26,7 @@
         <a href="#news" data-view="news">News</a>
         <a href="#x" data-view="x" class="tab-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.8 3h3.1l-6.8 7.8L22 21h-6.2l-4.9-6.4L5.3 21H2.2l7.3-8.3L1.9 3h6.4l4.4 5.8L17.8 3Zm-1.1 16.2h1.7L7.4 4.7H5.6l11.1 14.5Z" fill="currentColor"/></svg><span>X</span></a>
         <a href="#tech" data-view="tech">Tech</a>
+        <a href="#releases" data-view="releases">Releases</a>
         <a href="#builds" data-view="builds">Built with AI</a>
         <a href="#markets" data-view="markets">Markets</a>
       </nav>
@@ -82,8 +83,9 @@
             <ol class="posts" id="railPosts"></ol>
           </section>
           <section class="rail-block">
-            <h2>Trending open models</h2>
-            <ol class="models" id="railModels"></ol>
+            <h2>Latest releases</h2>
+            <ol class="rail-releases" id="railModels"></ol>
+            <a class="rail-link" href="#releases">All releases</a>
           </section>
         </aside>
       </div>
@@ -94,12 +96,12 @@
       <div class="view-head x-head">
         <div>
           <h1>On X</h1>
-          <p>Labs, researchers, leakers and prediction markets, as they post. Newest first, updating live.</p>
+          <p>Labs, researchers, leakers and prediction markets, as they post. Sorted by subject, newest first, updating live.</p>
         </div>
         <span class="x-status" id="xStatus" role="status" aria-live="polite"></span>
       </div>
       <div class="x-bar">
-        <div class="chips" id="xGroups" role="group" aria-label="Filter accounts"></div>
+        <div class="chips" id="xGroups" role="group" aria-label="Filter by subject"></div>
         <label class="x-find">
           <span class="visually-hidden">Filter posts</span>
           <input id="xq" type="search" placeholder="Filter posts" autocomplete="off" />
@@ -124,6 +126,18 @@
       </div>
       <div id="techRiver" class="river"></div>
       <button class="more" id="moreTech" type="button" hidden>Show more</button>
+    </section>
+
+    <!-- Releases -->
+    <section class="view" data-view="releases" aria-label="Recent AI releases" hidden>
+      <div class="view-head">
+        <h1>Recent AI releases</h1>
+        <p>Models launched in the last 90 days. API models as they appear on OpenRouter, open weights as they land on Hugging Face.</p>
+      </div>
+      <div class="filters" role="group" aria-label="Filter releases">
+        <div class="chips" id="relChips"></div>
+      </div>
+      <div id="relList" class="rel-groups"></div>
     </section>
 
     <!-- Builds -->

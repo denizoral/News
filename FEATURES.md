@@ -2,6 +2,41 @@
 
 One full-stack feature per scheduled maintenance run, newest first.
 
+## 2026-10-21 · Search by meaning and related coverage
+
+**Backend.**
+- **Embeddings:** the classifier service (`classifier/server.py`) has a second
+  model, `BAAI/bge-small-en-v1.5`, behind `POST /embed`. It takes its model
+  lock per 16 texts, so interactive queries never wait long behind the
+  backfill.
+- **Embedder:** `src/index/vectors.js` embeds every article and post (its
+  title and the first 200 characters of its summary) into a new `doc_vecs`
+  table, as int8 plus a scale. New documents go first; the other ~198k are
+  backfilled newest first. `/api/status` reports `embeddings` (done, backlog,
+  errors).
+- **Search:** vectors are searched by brute force in a dedicated worker lane
+  (`offload.js` now runs a `vectors` worker beside the `history` one). That
+  worker keeps every vector in memory and picks up new rows every 5 minutes.
+- **`GET /api/search?mode=meaning&q=…`:** the closest documents in meaning,
+  in the keyword search's response shape. It honours the News/Posts tabs and
+  the time filters, keeps one copy per headline and returns up to 50.
+- **`GET /api/related?id=<story>`:** up to 6 stored articles closest to a live
+  story. It leaves out the story's own sources and near-copies of its
+  headline, and requires similarity ≥ 0.72.
+
+**UI.**
+- **Search:** results get a Words / Meaning switch, kept in the URL
+  (`&mode=meaning`). Meaning mode shows only the tabs it supports. A keyword
+  search with no results offers "search by meaning".
+- **Stories:** cards on News and Tech get a quiet "Related" link next to the
+  source count. It opens a panel under the story listing the related articles
+  with logo, outlet and date. Earlier reporting shows up there too, so the
+  background to a developing story is one click away.
+
+**Motion.** The panel opens through a View Transition, its rows rise in with a
+short stagger, and a skeleton holds the space while it loads. All of it is off
+under `prefers-reduced-motion`.
+
 ## 2026-10-21 · This week (weekly digest + RSS)
 
 **Backend.** `src/index/digest.js` builds the week from the permanent index,

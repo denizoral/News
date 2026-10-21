@@ -39,6 +39,8 @@ const state = {
   topicKey: null,
   topicCache: new Map(), // topic key -> { at, data, error } from /api/topic
   week: null, // { at, data, error, pending } from /api/digest
+  related: new Map(), // story id -> { data, error, pending } from /api/related
+  relOpen: new Set(), // story ids showing related coverage
   read: new Set(store.get('fw.read', [])),
   live: 'connecting',
   mode: 'api',
@@ -413,6 +415,35 @@ function coverageList(sources) {
   }).join('')}</ul>`;
 }
 
+// Related coverage: the closest stored articles by meaning (embeddings),
+// earlier reporting included, that aren't copies of this story.
+const relatedBtn = (s) => state.mode === 'api' ? `<button class="coverage related-btn" type="button" data-related="${esc(s.id)}" aria-expanded="${state.relOpen.has(s.id)}">Related</button>` : '';
+
+async function loadRelated(id) {
+  if (state.related.get(id)) return;
+  state.related.set(id, { pending: true });
+  let entry;
+  try {
+    const res = await fetch(`api/related?id=${encodeURIComponent(id)}`);
+    const body = await res.json();
+    entry = res.ok ? { data: body } : { error: body.error };
+  } catch (e) {
+    entry = { error: e.message };
+  }
+  state.related.set(id, entry);
+  if (state.relOpen.has(id)) transition(render);
+}
+
+function relatedHtml(s) {
+  if (!state.relOpen.has(s.id)) return '';
+  const e = state.related.get(s.id);
+  if (!e || e.pending) return '<div class="related" aria-busy="true"><h4>Related coverage</h4><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i></div>';
+  if (e.error) return `<div class="related"><h4>Related coverage</h4><p class="rail-note">${esc(e.error)}</p></div>`;
+  const rows = e.data.results;
+  return `<div class="related"><h4>Related coverage</h4>${rows.length ? `<ul>${rows.map((r, i) => `<li style="--i:${i}"><img src="${esc(fav(r.site))}" alt="" width="16" height="16" loading="lazy">
+    <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a><span>${esc(r.source || r.site)}${r.publishedAt ? ` · ${shortDate(r.publishedAt)}` : ''}</span></li>`).join('')}</ul>` : '<p class="rail-note">Nothing close enough in the index yet.</p>'}</div>`;
+}
+
 function engagementHtml(story) {
   let pts = 0, cm = 0;
   for (const s of story.sources) { pts += s.engagement?.score || 0; cm += s.engagement?.comments || 0; }
@@ -438,8 +469,9 @@ function storyHtml(s, { showThumb = true, dek = true } = {}) {
     <h3><a href="${esc(s.url)}" target="_blank" rel="noopener" data-read="${esc(s.id)}">${highlight(s.title)}</a></h3>
     ${dek && s.summary && s.summary !== s.title && !isUrlOnly(s.summary) ? `<p class="dek">${highlight(s.summary)}</p>` : ''}
     ${thumb}
-    <div class="meta">${hot}${sourceBadge(s)}${time(s.publishedAt)}${firstHtml(s)}${coverageHtml(s)}${engagementHtml(s)}${s.topics.slice(0, 2).map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+    <div class="meta">${hot}${sourceBadge(s)}${time(s.publishedAt)}${firstHtml(s)}${coverageHtml(s)}${relatedBtn(s)}${engagementHtml(s)}${s.topics.slice(0, 2).map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div>
     ${sourcesListHtml(s)}
+    ${relatedHtml(s)}
     ${oddsHtml(s)}
   </article>`;
 }
@@ -1303,6 +1335,12 @@ document.addEventListener('click', (e) => {
   else if (d.xcat) { state.xCat = d.xcat; state.xHandle = null; store.set('fw.xcat', d.xcat); loadX({ animate: true }); }
   else if (d.xhandle) { state.xHandle = state.xHandle === d.xhandle ? null : d.xhandle; loadX({ animate: true }); }
   else if (d.chartToggle) toggleChart(d.chartToggle);
+  else if (d.related) {
+    state.relOpen.has(d.related) ? state.relOpen.delete(d.related) : state.relOpen.add(d.related);
+    loadRelated(d.related);
+    transition(render);
+    $(`[data-related="${CSS.escape(d.related)}"]`)?.focus();
+  }
   else if (d.msort) { state.marketSort = d.msort; store.set('fw.msort', d.msort); renderMarkets(); }
   else if (d.toggle) {
     state.open.has(d.toggle) ? state.open.delete(d.toggle) : state.open.add(d.toggle);

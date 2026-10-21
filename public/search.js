@@ -14,10 +14,11 @@ const TABS = [
   ['markets', 'Markets', 'market'],
 ];
 const TIMES = [['any', 'Any time'], ['day', 'Past day'], ['week', 'Past week'], ['month', 'Past month'], ['year', 'Past year']];
+const MEANING_TABS = new Set(['all', 'news', 'posts']);
 const TYPE_LABEL = { post: 'Post', build: 'Project', model: 'Model', market: 'Market' };
 
 export function createSearch({ esc, ago, time, fav, pct, compact }) {
-  const s = { q: '', type: 'all', time: 'any', sort: 'relevance', page: 1, results: [], data: null, loading: false, ctrl: null };
+  const s = { q: '', type: 'all', time: 'any', sort: 'relevance', mode: 'words', page: 1, results: [], data: null, loading: false, ctrl: null };
   const input = $('#q');
   const list = $('#suggest');
   let sugg = [];
@@ -33,15 +34,19 @@ export function createSearch({ esc, ago, time, fav, pct, compact }) {
     s.type = TABS.some(([k]) => k === params.get('type')) ? params.get('type') : 'all';
     s.time = TIMES.some(([k]) => k === params.get('time')) ? params.get('time') : 'any';
     s.sort = params.get('sort') === 'date' ? 'date' : 'relevance';
+    s.mode = params.get('mode') === 'meaning' ? 'meaning' : 'words';
+    // Meaning search covers news and posts only.
+    if (s.mode === 'meaning' && !MEANING_TABS.has(s.type)) s.type = 'all';
     input.value = s.q;
   }
 
   function hashFor(patch = {}) {
-    const n = { q: s.q, type: s.type, time: s.time, sort: s.sort, ...patch };
+    const n = { q: s.q, type: s.type, time: s.time, sort: s.sort, mode: s.mode, ...patch };
     const p = new URLSearchParams({ q: n.q });
     if (n.type !== 'all') p.set('type', n.type);
     if (n.time !== 'any') p.set('time', n.time);
     if (n.sort !== 'relevance') p.set('sort', n.sort);
+    if (n.mode === 'meaning') p.set('mode', 'meaning');
     return `#search?${p.toString().replace(/\+/g, '%20')}`;
   }
 
@@ -127,8 +132,11 @@ export function createSearch({ esc, ago, time, fav, pct, compact }) {
     }
     const params = new URLSearchParams({ q: s.q, page: String(s.page), time: s.time, sort: s.sort });
     if (s.type !== 'all') params.set('type', s.type);
+    if (s.mode === 'meaning') params.set('mode', 'meaning');
     try {
-      const data = await (await fetch(`api/search?${params}`, { signal: s.ctrl.signal })).json();
+      const res = await fetch(`api/search?${params}`, { signal: s.ctrl.signal });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       s.data = append ? { ...data, boxes: s.data?.boxes, facets: s.data?.facets } : data;
       s.results = append ? [...s.results, ...data.results] : data.results;
       paint();
@@ -141,7 +149,9 @@ export function createSearch({ esc, ago, time, fav, pct, compact }) {
 
   function paintHead() {
     const d = s.data;
-    const count = d.total ? `About ${d.total.toLocaleString()} ${d.total === 1 ? 'result' : 'results'}` : 'No results';
+    const count = s.mode === 'meaning'
+      ? (d.total ? `The ${d.total === 1 ? 'closest match' : `${d.total} closest matches`} in meaning` : 'Nothing close in meaning')
+      : d.total ? `About ${d.total.toLocaleString()} ${d.total === 1 ? 'result' : 'results'}` : 'No results';
     const notes = [];
     if (d.loosened) notes.push('No page has every word, so these match some of them.');
     if (d.parsed?.site) notes.push(`Only results from ${esc(d.parsed.site)}.`);
@@ -149,12 +159,13 @@ export function createSearch({ esc, ago, time, fav, pct, compact }) {
     $('#searchHead').innerHTML = `<h1>${s.q ? esc(s.q) : 'Everything in the index'}</h1><p>${count} <span class="took">(${d.tookMs} ms)</span>${notes.length ? ` ${notes.join(' ')}` : ''}</p>`;
     const facets = s.data.facets || {};
     const all = Object.values(facets).reduce((a, b) => a + b, 0);
-    $('#searchTabs').innerHTML = TABS.map(([k, label, t]) => {
-      const n = k === 'all' ? all : t ? facets[t] || 0 : null;
+    $('#searchTabs').innerHTML = TABS.filter(([k]) => s.mode !== 'meaning' || MEANING_TABS.has(k)).map(([k, label, t]) => {
+      const n = s.mode === 'meaning' ? null : k === 'all' ? all : t ? facets[t] || 0 : null;
       return `<a class="chip" href="${hashFor({ type: k })}" aria-pressed="${s.type === k}">${label}${n != null && s.type !== 'images' ? `<span class="n">${compact(n)}</span>` : ''}</a>`;
     }).join('');
-    $('#searchFilters').innerHTML = TIMES.map(([k, l]) => `<a class="chip" href="${hashFor({ time: k })}" aria-pressed="${s.time === k}">${l}</a>`).join('') +
-      (s.type === 'images' ? '' : `<span class="sep"></span>${[['relevance', 'Best match'], ['date', 'Newest']].map(([k, l]) => `<a class="chip" href="${hashFor({ sort: k })}" aria-pressed="${s.sort === k}">${l}</a>`).join('')}`);
+    const modes = s.type === 'images' ? '' : `<span class="seg seg-mode" role="group" aria-label="Match">${[['words', 'Words'], ['meaning', 'Meaning']].map(([k, l]) => `<a href="${hashFor({ mode: k })}" aria-pressed="${s.mode === k}" title="${k === 'meaning' ? 'Find stories about the same thing, even in different words' : 'Match the words you typed'}">${l}</a>`).join('')}</span><span class="sep"></span>`;
+    $('#searchFilters').innerHTML = modes + TIMES.map(([k, l]) => `<a class="chip" href="${hashFor({ time: k })}" aria-pressed="${s.time === k}">${l}</a>`).join('') +
+      (s.type === 'images' || s.mode === 'meaning' ? '' : `<span class="sep"></span>${[['relevance', 'Best match'], ['date', 'Newest']].map(([k, l]) => `<a class="chip" href="${hashFor({ sort: k })}" aria-pressed="${s.sort === k}">${l}</a>`).join('')}`);
   }
 
   function crumb(url) {
@@ -219,7 +230,7 @@ export function createSearch({ esc, ago, time, fav, pct, compact }) {
     const ol = $('#searchResults');
     ol.className = s.type === 'images' ? 'img-results' : 'results';
     if (!s.results.length) {
-      ol.innerHTML = `<li class="empty">${s.q ? `Nothing in the index matches <b>${esc(s.q)}</b>. Try fewer or different words, or remove filters like <code>site:</code>.` : 'The index is empty. The spider is still crawling; check back in a minute.'}</li>`;
+      ol.innerHTML = `<li class="empty">${s.mode === 'meaning' ? `Nothing in the index is close in meaning to <b>${esc(s.q)}</b>. Try describing it differently or widen the time filter.` : s.q ? `Nothing in the index matches <b>${esc(s.q)}</b>. Try fewer or different words, remove filters like <code>site:</code>, or <a href="${hashFor({ mode: 'meaning' })}">search by meaning</a>.` : 'The index is empty. The spider is still crawling; check back in a minute.'}</li>`;
     } else {
       ol.innerHTML = s.results.map(s.type === 'images' ? imageResultHtml : resultHtml).join('');
     }

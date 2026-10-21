@@ -180,6 +180,9 @@ main { max-width: var(--max); margin: 0 auto; padding: 28px 24px 40px; }
 }
 .seg button:hover { color: var(--ink); }
 .seg button[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
+.seg-mode a { padding: 2px 12px; line-height: 1.5; border-radius: 999px; color: var(--muted); font-size: var(--s-1); font-weight: 600; transition: background-color 0.2s, color 0.2s; }
+.seg-mode a:hover { color: var(--ink); }
+.seg-mode a[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
 .chip {
   border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 12px;
   font-size: var(--s-1); font-weight: 600; cursor: pointer; color: var(--ink-2);
@@ -806,6 +809,23 @@ a.badge-open:hover { filter: brightness(1.1); }
   .wk-head { align-items: flex-start; flex-direction: column; gap: 10px; }
   .wk-lead .wk-title { font-size: var(--s1); }
   .wk-cover .wk-bar { width: 72px; }
+}
+/* ---------- Related coverage ---------- */
+.related-btn[aria-expanded='true'] { color: var(--signal); text-decoration-color: currentColor; }
+.related { margin: 10px 0 0; padding: 12px 14px; background: var(--surface); border-radius: var(--r-sm); border-left: 3px solid var(--signal); font-size: var(--s-1); }
+.related h4 { margin: 0 0 8px; font-size: var(--s-1); color: var(--muted); font-weight: 600; letter-spacing: 0.02em; }
+.related ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.related li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; animation: rise 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 35ms); }
+.related li img { border-radius: 3px; align-self: center; }
+.related li a { font-weight: 600; line-height: 1.35; }
+.related li a:hover { color: var(--signal); }
+.related li span { color: var(--muted); white-space: nowrap; }
+.related .skeleton { display: block; height: 14px; margin: 8px 0; border-radius: 4px; }
+.related .skeleton:nth-of-type(2) { width: 82%; }
+.related .skeleton:nth-of-type(3) { width: 64%; }
+@media (max-width: 560px) {
+  .related li { grid-template-columns: 16px minmax(0, 1fr); }
+  .related li span { grid-column: 2; white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

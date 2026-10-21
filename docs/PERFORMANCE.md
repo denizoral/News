@@ -5,6 +5,42 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-21 (16:37 run)
+
+**Vector search (semantic search, related coverage).** Every article and post
+gets a 384-dimension bge-small embedding, stored as int8 with one float scale
+(388 bytes per document, ~77 MB for 200k). Search is a brute-force dot product
+in a worker thread. Measured on 200k random vectors on this box, with the
+embedding backfill running alongside:
+
+| Inner loop | Time per query (200k) |
+| --- | ---: |
+| Float query × int8 rows | 148 ms |
+| Int8 query × int8 rows, 4 accumulators (shipped) | 114 ms |
+
+Same top 10 results for both. A WASM SIMD kernel (`i32x4.dot_i16x8_s`) should
+be several times faster still, but there's no WASM toolchain on the box yet;
+it's the next step if the index grows.
+
+**Query latency** (`/api/search?mode=meaning`, end to end, uncached, ~11k
+vectors loaded so far):
+
+| | Before | After |
+| --- | ---: | ---: |
+| Vector search on the shared history worker | 450–2,400 ms (queued behind topic warm-up and digest jobs) | — |
+| Own worker lane, queries waiting on 64-doc embed batches | 97–834 ms | — |
+| Own lane, model lock taken per 16 docs | — | 59–107 ms |
+
+Embedding throughput: bge-small at 64 tokens embeds ~100 docs/s alone on 6
+threads (128 tokens: ~59/s). It's ~35/s in production while the classifier
+shares the CPU, so the ~198k-document backfill takes about 1.5 hours, newest
+first. New documents are always embedded before the backfill continues.
+
+**Polymarket outage.** When every Polymarket request failed (six crawls,
+15:29–15:37 UTC, HTTP 404), the crawler set the market list to empty. That
+blanked the Markets tab and the odds on stories until the next good crawl. It
+now keeps the last good list and marks the source `stale`.
+
 ## 2026-10-21 (12:37 run)
 
 **Weekly digest kept off the main thread.** The digest clusters every AI item

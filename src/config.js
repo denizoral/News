@@ -9,7 +9,7 @@ export const X_ACCOUNTS = [
   { handle: 'GoogleDeepMind', group: 'lab' },
   { handle: 'GoogleAI', group: 'lab' },
   { handle: 'AIatMeta', group: 'lab' },
-  { handle: 'xai', group: 'lab' },
+  { handle: 'grok', group: 'lab' }, // xAI posts its launches here; @xai has gone quiet
   { handle: 'MistralAI', group: 'lab' },
   { handle: 'deepseek_ai', group: 'lab' },
   { handle: 'Alibaba_Qwen', group: 'lab' },
@@ -42,7 +42,7 @@ export const X_ACCOUNTS = [
   { handle: 'omarsar0', group: 'people' },
   { handle: '_akhaliq', group: 'people' },
   { handle: 'ArtificialAnlys', group: 'people' },
-  { handle: 'lmarena_ai', group: 'people' },
+  { handle: 'arena', group: 'people' }, // LMArena, renamed Arena.ai
   { handle: 'EpochAIResearch', group: 'people' },
 
   // Fast news and leak trackers: usually first to a story

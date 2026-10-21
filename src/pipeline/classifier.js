@@ -13,7 +13,8 @@ export async function classifyTexts(texts, labels) {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ texts: texts.slice(i, i + BATCH), labels }),
-      signal: AbortSignal.timeout(90000),
+      // Generous: a batch may queue behind another (the model runs one at a time).
+      signal: AbortSignal.timeout(180000),
     });
     if (!res.ok) throw new Error(`classifier HTTP ${res.status}`);
     out.push(...(await res.json()).results);

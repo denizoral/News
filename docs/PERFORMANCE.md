@@ -5,6 +5,40 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-21
+
+Environment: production server (12 cores, 14 GB), Node 24.22, live `data/wire.db`
+with 165,874 indexed documents. Before and after run in one process against the
+same database: `universal(q)`, median of 5, uncached.
+
+### Search: snippets only for the returned page
+
+Relevance search ranks up to 400 candidates and returns 20, but it built two
+FTS5 `snippet()`s for all 400 (~300 ms on a common term). Snippets are now
+built only for the page returned, in a second query by rowid. Results and
+snippets are byte-identical.
+
+| Query | Before | After | Speed-up |
+| --- | ---: | ---: | ---: |
+| claude | 539 ms | **200 ms** | 2.7× |
+| openai | 718 ms | **404 ms** | 1.8× |
+| gpt 6 | 511 ms | **77 ms** | 6.6× |
+| nvidia | 603 ms | **272 ms** | 2.2× |
+| rubin | 191 ms | **18 ms** | 10.9× |
+| model release | 677 ms | **313 ms** | 2.2× |
+
+What's left on common terms is mostly joining 400 candidates to `docs` and
+`inlinks` (~80–130 ms) and the per-type facet count (~40–55 ms).
+
+### Reddit: no more self-inflicted 429s
+
+Anonymous Reddit requests went two at a time and ignored the quota Reddit
+reports on each response (`x-ratelimit-remaining`, `-reset`); the JSON
+endpoint, refused with 403 on this network, was retried every 30 minutes. In
+the 4 hours before the change, 14 runs failed with "cooling down". Requests now
+go one at a time and wait out the reset when the quota reads 0, and a JSON
+refusal is remembered for 6 hours.
+
 ## 2026-10-20
 
 Environment: cloud container, Node 22.22.0, Bun 1.4.2, 565 news items / 852 total.

@@ -116,6 +116,11 @@ function shape(r, now) {
   };
 }
 
+// Snippets are the costly part of a query (~300 ms for 400 candidates), so in
+// relevance mode they're built only for the page actually returned.
+const SNIPPETS = `snippet(docs_fts, 2, char(2), char(3), '…', 28) AS snip_body,
+        snippet(docs_fts, 1, char(2), char(3), '…', 28) AS snip_desc`;
+
 const SELECT = `SELECT d.id, d.url, d.type, d.title, d.site, d.source, d.author, d.published_at, d.first_seen, d.image_hash, d.image_url,
   d.engagement, d.meta, d.word_count, d.fetched_at, d.noarchive, COALESCE(i.n, 0) AS inlinks`;
 
@@ -144,8 +149,7 @@ export function search(input, opts = {}) {
     const limit = sort === 'date' ? perPage : 400;
     const offset = sort === 'date' ? (page - 1) * perPage : 0;
     const rows = q(`${SELECT}, bm25(docs_fts, 10.0, 4.0, 1.0, 2.0, 2.0) AS rank,
-        snippet(docs_fts, 2, char(2), char(3), '…', 28) AS snip_body,
-        snippet(docs_fts, 1, char(2), char(3), '…', 28) AS snip_desc
+        ${sort === 'date' ? SNIPPETS : 'NULL AS snip_body, NULL AS snip_desc'}
       FROM docs_fts JOIN docs d ON d.id = docs_fts.rowid LEFT JOIN inlinks i ON i.url = d.url
       WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`).all(...args, limit, offset);
     return { rows, total, facets };
@@ -184,6 +188,13 @@ export function search(input, opts = {}) {
       return true;
     });
     results = results.slice((page - 1) * perPage, page * perPage);
+    if (results.length) {
+      const ids = results.map((r) => r.id);
+      const snips = new Map(q(`SELECT rowid AS id, ${SNIPPETS} FROM docs_fts WHERE docs_fts MATCH ? AND rowid IN (${ids.map(() => '?').join(',')})`)
+        .all(match, ...ids).map((x) => [x.id, x]));
+      const raw = new Map(res.rows.map((r) => [r.id, r]));
+      results = results.map((r) => ({ ...r, snippet: shape({ ...raw.get(r.id), ...snips.get(r.id) }, now).snippet }));
+    }
   }
 
   return {

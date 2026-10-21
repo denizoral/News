@@ -53,7 +53,12 @@ export async function runSource(store, name) {
   }
   try {
     const out = await SOURCES[name]();
-    if (name === 'polymarket') {
+    // A Polymarket outage (every request failing) must not blank the
+    // markets: keep the last good list until a crawl returns some.
+    if (name === 'polymarket' && !out.markets.length && out.errors?.length) {
+      out.markets = store.markets || [];
+      out.stale = true;
+    } else if (name === 'polymarket') {
       try {
         recordOdds(out.markets);
         attachSparks(out.markets);
@@ -68,19 +73,20 @@ export async function runSource(store, name) {
     // Everything also goes into the permanent search index.
     try {
       if (out.items?.length) ingestAggregatorItems(out.items);
-      if (out.markets?.length) ingestMarkets(out.markets);
+      if (out.markets?.length && !out.stale) ingestMarkets(out.markets);
       if (spider && out.items?.length) spider.enqueueFromItems(out.items.filter((i) => (i.section || 'news') === 'news'));
     } catch (err) {
       console.warn(`[index] ${name}: ${err.message}`);
     }
     const count = out.markets?.length ?? out.releases?.length ?? out.items?.length ?? 0;
-    const ok = count > 0 || !out.errors?.length;
+    const ok = !out.stale && (count > 0 || !out.errors?.length);
     store.sourceStatus[name] = {
       ok,
       count,
       added,
       errors: out.errors?.length || 0,
       error: ok ? null : out.errors?.[0]?.error,
+      ...(out.stale ? { stale: true } : {}),
       lastRun: Date.now(),
       ms: Date.now() - started,
       ...(name === 'tech' ? { classifier: { ...techStatus } } : {}),

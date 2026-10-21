@@ -492,3 +492,22 @@ test('dead ends under a locale prefix cover one section, not the whole locale', 
   spider.forgetDeadEnd('loc.example/en-us/geforce');
   assert.equal(frontier('https://loc.example/en-us/geforce/compare-queued').status, 'queued', 'forgetting brings dropped URLs back');
 });
+
+test('a Polymarket outage keeps the last good markets', async () => {
+  const { runSource, SOURCES } = await import('../src/crawler.js');
+  const { Store } = await import('../src/store.js');
+  const store = new Store();
+  const kept = [{ id: 'pm:1', title: 'Will AI?', outcomes: [{ label: 'Yes', yes: 0.4 }], volume24h: 1 }];
+  store.setMarkets(kept);
+  const real = SOURCES.polymarket;
+  SOURCES.polymarket = async () => ({ markets: [], errors: [{ error: 'HTTP 404' }] });
+  try {
+    await runSource(store, 'polymarket');
+  } finally {
+    SOURCES.polymarket = real;
+  }
+  assert.equal(store.markets, kept);
+  assert.equal(store.sourceStatus.polymarket.ok, false);
+  assert.equal(store.sourceStatus.polymarket.stale, true);
+  assert.equal(store.sourceStatus.polymarket.count, 1);
+});

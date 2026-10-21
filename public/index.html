@@ -108,8 +108,19 @@
         </label>
       </div>
       <ol class="x-accounts" id="xAccounts" aria-label="Accounts"></ol>
-      <ol class="x-feed" id="xFeed"></ol>
-      <button class="more" id="moreX" type="button" hidden>Older posts</button>
+      <div class="x-layout">
+        <div class="x-col">
+          <ol class="x-feed" id="xFeed"></ol>
+          <button class="more" id="moreX" type="button" hidden>Older posts</button>
+        </div>
+        <aside class="x-side" aria-labelledby="scoopTitle">
+          <section class="scoop-card">
+            <h2 id="scoopTitle">Who breaks news first</h2>
+            <p class="rail-note">Stories in the last 3 days where a source published at least 5 minutes before everyone else. Hacker News and Reddit relay links, so they don't count.</p>
+            <ol class="scoops" id="scoopList"></ol>
+          </section>
+        </aside>
+      </div>
     </section>
 
     <!-- Tech -->

@@ -154,3 +154,20 @@ test('Reddit pacing waits out the reported quota reset', async () => {
   const later = noteRedditQuota(h({ 'x-ratelimit-remaining': '42', 'x-ratelimit-reset': '300' }), now + 30_000);
   assert.equal(later, now + 20_500, 'quota left: no new wait');
 });
+
+test('first report credits the earliest original source, never relays', async () => {
+  const { firstReport, scoopBoard } = await import('../src/pipeline/scoops.js');
+  const t0 = Date.parse('2026-10-20T12:00:00Z');
+  const src = (name, platform, min) => ({ name, platform, publishedAt: t0 + min * 60e3 });
+  const story = (id, sources) => ({ id, title: id, sources });
+  const a = story('a', [src('Hacker News', 'hn', -60), src('@scooper', 'x', 0), src('Reuters', 'web', 40), src('@scooper', 'x', 50)]);
+  assert.deepEqual([firstReport(a).name, firstReport(a).leadMin], ['@scooper', 40]);
+  assert.equal(firstReport(story('tie', [src('A', 'web', 0), src('B', 'web', 3)])), null, 'under 5 minutes is a tie');
+  assert.equal(firstReport(story('stale', [src('A', 'web', 0), src('B', 'web', 60 * 13)])), null, 'past 12 hours is background, not a race');
+  assert.equal(firstReport(story('one', [src('Hacker News', 'hn', 0), src('A', 'web', 30)])), null, 'one original is not a race');
+  const b = story('b', [src('@scooper', 'x', 0), src('Verge', 'web', 10)]);
+  const c = story('c', [src('Verge', 'web', 0), src('@scooper', 'x', 90)]);
+  for (const s of [a, b, c]) s.first = firstReport(s);
+  const board = scoopBoard([a, b, c]);
+  assert.deepEqual(board.map((e) => [e.name, e.firsts, e.medianLeadMin]), [['@scooper', 2, 40], ['Verge', 1, 90]]);
+});

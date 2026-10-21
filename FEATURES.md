@@ -2,6 +2,35 @@
 
 One full-stack feature per scheduled maintenance run, newest first.
 
+## 2026-10-21 · Who breaks news first
+
+**Backend.** `src/pipeline/scoops.js` looks at every story with two or more
+original sources and credits the earliest one, with its lead over the next
+different source. Hacker News and Reddit relay other people's links, so they're
+neither credited nor used as the baseline. Leads under 5 minutes are a tie;
+leads over 12 hours are old background pieces that got clustered into a new
+story, not races. Each story carries `first` ({ name, platform, leadMin, next });
+the snapshot carries `scoops`, a leaderboard over the live window (3 days):
+first reports per source, median lead, and their biggest scoops. About 1 in 8
+stories has a clear first reporter.
+
+**UI.**
+- Story cards show a small amber badge, "First: @ai_for_success · 49m ahead",
+  when the lead is 10 minutes or more; hovering names the runner-up.
+- The X tab gets a "Who breaks news first" board in its right-hand column:
+  rank, logo, first reports, a bar scaled to the leader, the usual lead and the
+  biggest scoop. X accounts on the board filter the feed when clicked. On
+  narrow screens the board follows the feed, and on phones the subject chips
+  scroll in one row so posts start above the fold.
+
+**Motion.** Board rows rise in with a stagger and their bars sweep out from
+the left the first time the board appears; bars glide to new lengths after
+that. Off under `prefers-reduced-motion`.
+
+**Known limit.** Finance syndicators (TradingView, Yahoo Finance) often
+republish wire copy with early timestamps and top the board; crediting the
+original wire when the copy names it would be a good refinement.
+
 ## 2026-10-20 · Trending now
 
 **Backend.** `src/pipeline/trending.js` counts, for every company, person and

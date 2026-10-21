@@ -1,4 +1,5 @@
 import { labelerStatus } from './pipeline/labeler.js';
+import { firstReport, scoopBoard } from './pipeline/scoops.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
@@ -145,7 +146,10 @@ export class Store extends EventEmitter {
       for (const it of s._group) if (it.platform !== 'x') for (const c of it.cats || []) votes[c] = (votes[c] || 0) + 1;
       const cats = Object.keys(votes).sort((a, b) => votes[b] - votes[a]);
       if (cats.length) s.topics = cats.slice(0, 1);
+      const first = firstReport(s);
+      if (first) s.first = first;
     }
+    const scoops = scoopBoard(stories);
     // Pinned stories lead, then everything by score.
     stories.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.score - a.score);
     const topStories = stories.slice(0, 400).map(({ _group, weakEntities, ...s }) => s);
@@ -191,7 +195,7 @@ export class Store extends EventEmitter {
     this._trending = new Map();
     this.version++;
     const releases = linkReleases(this.releases || [], topStories);
-    this.snapshot = { version: this.version, generatedAt: now, site: settings.publicSite(), stories: topStories, tech: techStories, releases, builds, markets, social, models, trending: computeTrending(newsItems, { now }), status: this.status() };
+    this.snapshot = { version: this.version, generatedAt: now, site: settings.publicSite(), stories: topStories, tech: techStories, releases, scoops, builds, markets, social, models, trending: computeTrending(newsItems, { now }), status: this.status() };
     this.emit('update', this.snapshot);
   }
 

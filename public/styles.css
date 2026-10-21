@@ -455,6 +455,45 @@ main { max-width: var(--max); margin: 0 auto; padding: 28px 24px 40px; }
 
 mark { background: var(--signal-soft); color: inherit; border-radius: 2px; }
 
+/* ---------- Who breaks news first ---------- */
+.first-badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px 1px 6px; border-radius: 999px; background: color-mix(in srgb, #c98a12 14%, transparent); color: #a8730c; font-weight: 600; }
+.first-badge b { font-weight: 800; }
+.first-badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+:root[data-theme='dark'] .first-badge { color: #f0b84a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .first-badge { color: #f0b84a; } }
+
+.x-layout { display: grid; grid-template-columns: minmax(0, 720px) minmax(260px, 320px); gap: 40px; align-items: start; }
+.x-side { position: sticky; top: 120px; }
+.scoop-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 16px 16px 8px; }
+.scoop-card h2 { margin: 0 0 4px; font-size: var(--s0); font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; }
+.scoops { list-style: none; margin: 12px 0 0; padding: 0; }
+.scoops li { display: grid; grid-template-columns: 16px 28px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); }
+.scoops li:first-child { border-top: 0; }
+.scoop-rank { font-size: var(--s-1); font-weight: 800; color: var(--muted); padding-top: 5px; font-variant-numeric: tabular-nums; }
+.scoops img { width: 28px; height: 28px; border-radius: 50%; background: var(--track); object-fit: cover; }
+.scoop-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.scoop-name { font: inherit; font-weight: 700; color: var(--ink); border: 0; background: none; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+button.scoop-name { cursor: pointer; }
+button.scoop-name:hover { color: var(--signal); }
+.scoop-n { font-size: var(--s-1); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.scoop-bar { display: block; height: 4px; margin: 6px 0 5px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.scoop-bar i { display: block; height: 100%; background: linear-gradient(90deg, #c98a12, #f0b84a); transform-origin: left; transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+.scoops.animate .scoop-bar i { animation: sweep 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 50ms + 100ms); }
+.scoops.animate li { animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 50ms); }
+.scoop-meta { font-size: var(--s-1); color: var(--muted); line-height: 1.35; }
+
+@media (max-width: 1080px) {
+  /* Posts come first on narrow screens; the board follows the feed. */
+  .x-layout { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .x-side { position: static; }
+  .scoops li:nth-child(n + 6) { display: none; }
+}
+@media (max-width: 560px) {
+  #xGroups { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-right: -16px; padding-right: 16px; }
+  #xGroups .chip { flex: none; }
+  .x-bar { gap: 8px; }
+}
+
 /* ---------- Releases view ---------- */
 .rel-groups { max-width: 820px; }
 .rel-group + .rel-group { margin-top: 10px; }

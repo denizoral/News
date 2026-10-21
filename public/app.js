@@ -309,6 +309,14 @@ function engagementHtml(story) {
   return parts.join('');
 }
 
+// "First: @handle · 25m ahead": who published before every other source.
+const leadText = (m) => (m < 60 ? `${m}m` : `${Math.round(m / 60)}h`);
+function firstHtml(s) {
+  const f = s.first;
+  if (!f || f.leadMin < 10) return '';
+  return `<span class="first-badge" title="${esc(`${f.name} published ${leadText(f.leadMin)} before ${f.next}, the next source`)}"><i aria-hidden="true"></i>First: <b>${esc(f.name)}</b> · ${leadText(f.leadMin)} ahead</span>`;
+}
+
 function storyHtml(s, { showThumb = true, dek = true } = {}) {
   const read = state.read.has(s.id) ? ' read' : '';
   const thumb = showThumb && s.image ? `<img class="thumb" src="${esc(s.image)}" alt="" loading="lazy" data-fallback="remove">` : '';
@@ -317,7 +325,7 @@ function storyHtml(s, { showThumb = true, dek = true } = {}) {
     <h3><a href="${esc(s.url)}" target="_blank" rel="noopener" data-read="${esc(s.id)}">${highlight(s.title)}</a></h3>
     ${dek && s.summary && s.summary !== s.title && !isUrlOnly(s.summary) ? `<p class="dek">${highlight(s.summary)}</p>` : ''}
     ${thumb}
-    <div class="meta">${hot}${sourceBadge(s)}${time(s.publishedAt)}${coverageHtml(s)}${engagementHtml(s)}${s.topics.slice(0, 2).map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+    <div class="meta">${hot}${sourceBadge(s)}${time(s.publishedAt)}${firstHtml(s)}${coverageHtml(s)}${engagementHtml(s)}${s.topics.slice(0, 2).map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div>
     ${sourcesListHtml(s)}
     ${oddsHtml(s)}
   </article>`;
@@ -682,6 +690,36 @@ function skeletonX() {
   return Array.from({ length: 6 }, () => `<li class="xpost skeleton-post" aria-hidden="true"><span class="av skeleton"></span><span><span class="skeleton w40"></span><span class="skeleton"></span><span class="skeleton w80"></span></span></li>`).join('');
 }
 
+// Leaderboard of first reporters (server: src/pipeline/scoops.js). X accounts
+// filter the feed when clicked; outlets open their latest scoop.
+let scoopsShown = '';
+function renderScoops() {
+  const board = state.data?.scoops || [];
+  const max = Math.max(1, ...board.map((e) => e.firsts));
+  setHtml($('#scoopList'), board.map((e, i) => {
+    const isX = e.platform === 'x';
+    const handle = isX ? e.name.replace(/^@/, '') : null;
+    const logo = e.avatar || fav(isX ? 'x.com' : e.host);
+    const best = e.stories[0];
+    const name = isX
+      ? `<button type="button" class="scoop-name" data-xhandle="${esc(handle)}">${esc(e.name)}</button>`
+      : `<span class="scoop-name">${esc(e.name)}</span>`;
+    return `<li data-id="${esc(e.name)}" style="--i:${i}">
+      <span class="scoop-rank">${i + 1}</span>
+      <img src="${esc(logo)}" alt="" width="28" height="28" loading="lazy">
+      <div class="scoop-body">
+        <div class="scoop-top">${name}<span class="scoop-n">${e.firsts} first${e.firsts === 1 ? '' : 's'}</span></div>
+        <span class="scoop-bar" aria-hidden="true"><i style="transform:scaleX(${(e.firsts / max).toFixed(3)})"></i></span>
+        <div class="scoop-meta">Usually ${leadText(e.medianLeadMin)} ahead${best ? ` · <span title="${esc(best.title)}">${esc(best.title.length > 48 ? `${best.title.slice(0, 46)}…` : best.title)}</span>` : ''}</div>
+      </div>
+    </li>`;
+  }).join('') || '<li class="rail-note">No clear first reports yet.</li>');
+  // Bars grow in the first time the board appears.
+  const sig = board.map((e) => e.name).join('|');
+  if (sig && sig !== scoopsShown && !reducedMotion()) $('#scoopList').classList.add('animate');
+  scoopsShown = sig;
+}
+
 function renderX() {
   if (!state.x || state.x.version !== state.data?.version || state.x.key !== xKey()) loadX();
   else drawX();
@@ -729,6 +767,7 @@ function drawX({ animate = false } = {}) {
     }
   }
   for (const p of x.posts) shownX.add(p.id);
+  renderScoops();
   $('#moreX').hidden = !x.nextBefore;
 }
 

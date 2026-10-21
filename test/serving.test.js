@@ -27,7 +27,7 @@ test('Packed compresses once and round-trips', () => {
 test('publicSnapshot drops server-only market fields and rounds volumes', () => {
   const snap = { version: 1, stories: [], markets: [{ id: 'pm:1', title: 'T', volume: 10.6, volume24h: 3.2, liquidity: 9, entities: ['openai'], outcomes: [{ label: 'Yes', yes: 0.4, change24h: 0.01, question: 'Q?', slug: 's', volume24h: 1, endDate: 'x' }] }] };
   const out = publicSnapshot(snap);
-  assert.deepEqual(out.markets[0], { id: 'pm:1', title: 'T', volume: 11, volume24h: 3, outcomes: [{ label: 'Yes', yes: 0.4, change24h: 0.01 }] });
+  assert.deepEqual(out.markets[0], { id: 'pm:1', title: 'T', entities: ['openai'], volume: 11, volume24h: 3, outcomes: [{ label: 'Yes', yes: 0.4, change24h: 0.01 }] });
   assert.equal(snap.markets[0].liquidity, 9, 'store copy untouched');
 });
 

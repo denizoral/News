@@ -247,7 +247,7 @@ function dedupeBuilds(items, now) {
 // for matching and indexing (each outcome's question and slug, liquidity,
 // entities) that the page never reads; they were over half the markets' bytes.
 export function publicSnapshot(snap) {
-  const markets = snap.markets.map(({ liquidity, entities, outcomes, volume, volume24h, ...m }) => ({
+  const markets = snap.markets.map(({ liquidity, outcomes, volume, volume24h, ...m }) => ({
     ...m,
     volume: Math.round(volume || 0),
     volume24h: Math.round(volume24h || 0),

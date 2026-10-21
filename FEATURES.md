@@ -2,6 +2,37 @@
 
 One full-stack feature per scheduled maintenance run, newest first.
 
+## 2026-10-21 · Topic pages
+
+**Backend.** `src/index/topics.js` answers "how big has this been, and what
+happened when?" for every company and theme the classifier knows (OpenAI,
+Nvidia, Regulation, IPOs, …) from all ~195k stored documents. For each of the
+last 30 days it counts the articles and posts mentioning the topic (FTS over
+title and description) and divides by that day's total, so crawl-volume swings
+don't look like news. The timeline covers 14 days of English headlines that
+name the topic. Within a day, a headline more outlets ran ranks first, and
+syndicated copies collapse into one entry credited to the earliest. The
+queries run in a worker thread with its own read-only connection
+(`topics-worker.js`), since node:sqlite is synchronous. Results are cached for
+15 minutes, and trending topics are pre-warmed after start.
+`GET /api/topic?key=openai` returns the whole page. The day-totals query was
+rewritten from a 13 s table scan to 0.6 s using the `published_at` index.
+Market `entities` are now public in the snapshot so pages can list related
+markets.
+
+**UI.** `#topic/<key>`: the topic name and a summary line (mentions, busiest
+day, current trend lift). A 30-day bar chart of coverage share follows, where
+hovering a bar shows the day's mentions and share and today's bar is marked
+as partial. Below it is a dated timeline with source logos and outlet counts.
+A side column shows the topic's stories in the live feed and its Polymarket
+markets with 7-day sparklines. Reach it from a trending card: filtering by a
+topic shows a "30-day history →" chip.
+
+**Motion.** Bars grow from the baseline in a left-to-right stagger and the
+timeline days rise in, only when a page's data first arrives. The route
+change cross-fades with a View Transition. All of it is off under
+`prefers-reduced-motion`.
+
 ## 2026-10-21 · Polymarket odds history
 
 **Backend.** `src/pipeline/odds.js` keeps the site's own record of every AI

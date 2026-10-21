@@ -36,6 +36,8 @@ const state = {
   open: new Set(),
   chartOpen: null, // market id whose odds chart is expanded
   charts: new Map(), // market id -> { at, outcomes } from /api/odds
+  topicKey: null,
+  topicCache: new Map(), // topic key -> { at, data, error } from /api/topic
   read: new Set(store.get('fw.read', [])),
   live: 'connecting',
   mode: 'api',
@@ -602,7 +604,7 @@ function renderNews({ animate = false } = {}) {
   }
   if (state.entity) {
     const label = trendData()?.topics.find((x) => x.key === state.entity)?.label || state.entity;
-    html = `<p class="entity-bar">Stories about <b>${esc(label)}</b> <button class="chip" type="button" data-entity="${esc(state.entity)}">Show all stories</button></p>` + html;
+    html = `<p class="entity-bar">Stories about <b>${esc(label)}</b> <a class="chip chip-go" href="#topic/${esc(state.entity)}">30-day history →</a> <button class="chip" type="button" data-entity="${esc(state.entity)}">Show all stories</button></p>` + html;
   }
   setHtml($('#river'), html);
   revealStories($('#river'), { all: animate });
@@ -966,6 +968,125 @@ function renderMarkets() {
     </article>`).join('') || `<p class="empty">No markets match. Clear the search to see all AI markets.</p>`);
 }
 
+// ---------- Topic pages ----------
+// #topic/<key>: a company or theme's share of all coverage over 30 days, a
+// dated timeline of its biggest headlines (from the stored index), and what's
+// live about it now (from the snapshot).
+
+const dayLabel = (day, opts = { weekday: 'short', month: 'short', day: 'numeric' }) => new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, opts);
+const topicName = (key) => state.topicCache.get(key)?.data?.label || trendData()?.topics.find((x) => x.key === key)?.label || key;
+
+async function loadTopic(key) {
+  const hit = state.topicCache.get(key);
+  if (state.mode !== 'api' || (hit && (hit.pending || Date.now() - hit.at < 5 * 60e3))) return;
+  state.topicCache.set(key, { ...hit, pending: true });
+  let data = hit?.data || null;
+  let error = null;
+  try {
+    const res = await fetch(`api/topic?key=${encodeURIComponent(key)}`);
+    const body = await res.json();
+    if (res.ok) data = body;
+    else error = body.error;
+  } catch (e) {
+    error = e.message;
+  }
+  state.topicCache.set(key, { at: Date.now(), data, error, fresh: true });
+  if (state.view === 'topic' && state.topicKey === key) renderTopic();
+}
+
+const TCHART = { w: 720, h: 150, l: 40, r: 8, t: 10, b: 22 };
+function topicChartHtml(series, animate) {
+  const w = TCHART.w = Math.max(280, Math.round(($('#topicView')?.clientWidth || 720) - (innerWidth <= 560 ? 34 : 42)));
+  const { h, l, r, t, b } = TCHART;
+  const max = Math.max(0.01, ...series.map((d) => d.share));
+  const top = Math.ceil(max * 100 / 5) * 5 / 100 || 0.05;
+  const slot = (w - l - r) / series.length;
+  const bw = Math.max(2, slot - 2);
+  const y = (v) => t + (1 - v / top) * (h - t - b);
+  const grid = [0, top / 2, top].map((v) => `<line class="grid" x1="${l}" x2="${w - r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="axis" x="${l - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${+(v * 100).toFixed(1)}%</text>`).join('');
+  const today = series.length - 1;
+  const bars = series.map((d, i) => {
+    const x = l + i * slot + 1;
+    const hgt = Math.max(d.n ? 2 : 0, y(0) - y(d.share));
+    return `<rect class="bar${i === today ? ' partial' : ''}" x="${x.toFixed(1)}" y="${(y(0) - hgt).toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${Math.min(3, bw / 2)}" style="--i:${i}"/>`;
+  }).join('');
+  const ticks = series.map((d, i) => ({ d, i })).filter(({ i }) => i % 7 === (today % 7)).map(({ d, i }) => `<text class="axis" x="${(l + i * slot + slot / 2).toFixed(1)}" y="${h - 6}" text-anchor="middle">${dayLabel(d.day, { month: 'short', day: 'numeric' })}</text>`).join('');
+  return `<div class="topic-chart${animate ? ' animate' : ''}">
+    <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Share of all coverage per day, last ${series.length} days">${grid}<g class="bars">${bars}</g>${ticks}</svg>
+    <div class="odds-tip" hidden></div>
+  </div>`;
+}
+
+function topicHover(e) {
+  const box = e.target.closest('.topic-chart');
+  const data = state.topicCache.get(state.topicKey)?.data;
+  if (!box || !data) return;
+  const tip = box.querySelector('.odds-tip');
+  const rect = box.querySelector('svg').getBoundingClientRect();
+  const { w, l, r } = TCHART;
+  const px = ((e.clientX - rect.left) / rect.width) * w;
+  const i = Math.floor(((px - l) / (w - l - r)) * data.series.length);
+  const d = data.series[i];
+  for (const el of box.querySelectorAll('.bar.on')) el.classList.remove('on');
+  if (e.type === 'pointerleave' || !d) { tip.hidden = true; return; }
+  box.querySelectorAll('.bar')[i]?.classList.add('on');
+  tip.innerHTML = `<time>${dayLabel(d.day)}${i === data.series.length - 1 ? ' (so far)' : ''}</time><ul><li><b>${d.n.toLocaleString()}</b> mentions</li><li><b>${+(d.share * 100).toFixed(1)}%</b> of ${d.total.toLocaleString()} stored stories</li></ul>`;
+  tip.hidden = false;
+  const left = (px / w) * rect.width;
+  tip.style.transform = `translateX(${left > rect.width / 2 ? `calc(${left - 12}px - 100%)` : `${left + 12}px`})`;
+}
+
+let topicShown = '';
+function renderTopic() {
+  const key = state.topicKey;
+  const entry = state.topicCache.get(key);
+  const data = entry?.data;
+  const label = topicName(key);
+  document.title = `${label} · ${state.data?.site?.name || 'Frontier Wire'}`;
+  // Animate when a page first gets its data, not on every live update.
+  const animate = !!data && topicShown !== `${key}:${data.generatedAt}` && !reducedMotion();
+  if (data) topicShown = `${key}:${data.generatedAt}`;
+
+  const live = (state.data?.stories || []).filter((s) => s.entities.includes(key)).slice(0, 6);
+  const markets = (state.data?.markets || []).filter((m) => m.entities?.includes(key)).sort((a, b) => b.volume24h - a.volume24h).slice(0, 4);
+  const trend = trendData()?.topics.find((x) => x.key === key);
+
+  const summary = data
+    ? `${data.total.toLocaleString()} mentions in ${data.days} days${data.peak ? ` · busiest ${dayLabel(data.peak, { month: 'short', day: 'numeric' })}` : ''}${trend?.lift >= 1.2 ? ` · trending, ${trend.lift}× its usual pace` : ''}`
+    : entry?.error ? `History is unavailable: ${esc(entry.error)}` : state.mode === 'api' ? 'Counting coverage…' : 'History needs the live server.';
+
+  const chart = data ? topicChartHtml(data.series, animate) : state.mode === 'api' && !entry?.error ? '<div class="topic-chart loading" aria-busy="true"><i class="skeleton"></i></div>' : '';
+  const timeline = data?.timeline.length ? data.timeline.map((d, k) => `
+    <li class="tl-day" style="--i:${Math.min(k, 10)}">
+      <h3><time datetime="${d.day}">${dayLabel(d.day)}</time><span>${d.count.toLocaleString()} mentions</span></h3>
+      <ul>${d.items.map((it) => `<li><a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title)}</a>
+        <span class="tl-meta"><img src="${esc(fav(it.site))}" alt="" loading="lazy" width="14" height="14">${esc(it.source)}${it.outlets > 1 ? ` · ${it.outlets} outlets` : ''}</span></li>`).join('')}</ul>
+    </li>`).join('') : '';
+
+  setHtml($('#topicView'), `
+    <header class="topic-head">
+      <a class="back" href="#news">← News</a>
+      <p class="kicker">Topic</p>
+      <h1>${esc(label)}</h1>
+      <p class="topic-sum">${summary}</p>
+    </header>
+    ${chart ? `<section class="topic-card"><h2>Share of all coverage <small>last 30 days, every stored story</small></h2>${chart}</section>` : ''}
+    <div class="topic-grid">
+      <section class="topic-timeline">
+        <h2>Timeline</h2>
+        ${timeline ? `<ol class="tl${animate ? ' animate' : ''}">${timeline}</ol>` : `<p class="rail-note">${data ? 'No headlines about this topic in the last two weeks.' : ''}</p>`}
+      </section>
+      <aside class="topic-side">
+        <section><h2>In the news now</h2>
+          ${live.length ? `<ul class="topic-live">${live.map((s) => `<li data-id="${esc(s.id)}"><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a><span class="tl-meta">${esc(s.lead.source)} · ${time(s.publishedAt)}${s.sources.length > 1 ? ` · ${s.sources.length} sources` : ''}</span></li>`).join('')}</ul>` : '<p class="rail-note">Nothing in the live feed right now.</p>'}
+        </section>
+        ${markets.length ? `<section><h2>Markets</h2><ul class="topic-markets">${markets.map((m) => `<li><a href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.title)}</a>
+          <span class="tm-row">${oddsSpark(m.spark, 'mini')}<b>${pct(m.outcomes[0].yes)}</b>${m.binary ? '' : ` ${esc(m.outcomes[0].label)}`}${changeHtml(m.outcomes[0].change24h)}</span></li>`).join('')}</ul></section>` : ''}
+      </aside>
+    </div>`);
+  loadTopic(key);
+}
+
 // ---------- Footer ----------
 
 const SOURCE_LABELS = { x: 'X', polymarket: 'Polymarket', hackernews: 'Hacker News', reddit: 'Reddit', bluesky: 'Bluesky', googlenews: 'Google News', rss: 'Lab blogs, press and newsletters', scraped: 'Lab news pages', openrouter: 'OpenRouter models', huggingface: 'Hugging Face', github: 'GitHub', producthunt: 'Product Hunt', showhn: 'Show HN', tech: 'Tech (classified)' };
@@ -1029,6 +1150,7 @@ function render() {
   if (state.view === 'releases') renderReleases();
   if (state.view === 'builds') renderBuilds();
   if (state.view === 'markets') renderMarkets();
+  if (state.view === 'topic') renderTopic();
   renderFoot();
   updateLive();
   animateOdds();
@@ -1043,6 +1165,13 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
+  const topic = /^topic\/([a-z0-9]+)$/.exec(v);
+  if (topic) {
+    state.topicKey = topic[1];
+    state.view = 'topic';
+    const go = () => { render(); window.scrollTo({ top: 0 }); };
+    return state.data ? transition(go) : go();
+  }
   state.view = ['news', 'x', 'tech', 'releases', 'builds', 'markets'].includes(v) ? v : 'news';
   const name = state.data?.site?.name || 'Frontier Wire';
   document.title = { news: name, x: `On X · ${name}`, tech: `Tech · ${name}`, releases: `AI releases · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}` }[state.view];
@@ -1090,6 +1219,8 @@ document.addEventListener('click', (e) => {
 });
 
 $('#marketList').addEventListener('pointermove', chartHover);
+$('#topicView').addEventListener('pointermove', topicHover);
+$('#topicView').addEventListener('pointerleave', topicHover, true);
 $('#marketList').addEventListener('pointerleave', chartHover, true);
 $('#moreStories').addEventListener('click', () => { state.limit += 60; renderNews(); });
 $('#moreX').addEventListener('click', () => loadX({ append: true }));

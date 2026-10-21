@@ -706,6 +706,51 @@ a.badge-open:hover { filter: brightness(1.1); }
   .trend-list { grid-auto-columns: 46%; margin-right: -16px; padding-right: 16px; }
   .trend-head .chips { margin-left: 0; }
 }
+/* ---------- Topic pages ---------- */
+.topic-head { margin-bottom: 18px; }
+.topic-head .back { display: inline-block; color: var(--muted); font-size: var(--s-1); font-weight: 600; margin-bottom: 14px; }
+.topic-head .back:hover { color: var(--signal); }
+.topic-head .kicker { margin: 0; color: var(--signal); font-size: var(--s-1); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.topic-head h1 { font-size: clamp(1.9rem, 3.6vw, var(--s4)); letter-spacing: -0.03em; line-height: 1.08; margin: 4px 0 8px; }
+.topic-sum { margin: 0; color: var(--muted); font-size: var(--s1); font-variant-numeric: tabular-nums; }
+.topic-card, .topic-timeline, .topic-side > section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px; }
+.topic-card { margin-bottom: 20px; }
+.topic-card h2, .topic-timeline h2, .topic-side h2 { margin: 0 0 12px; font-size: var(--s1); letter-spacing: -0.01em; }
+.topic-card h2 small { color: var(--muted); font-weight: 400; font-size: var(--s-1); margin-left: 6px; }
+.topic-chart { position: relative; }
+.topic-chart.loading .skeleton { display: block; height: 150px; border-radius: var(--r-sm); }
+.topic-chart svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; }
+.topic-chart .grid { stroke: var(--line); stroke-width: 1; }
+.topic-chart .axis { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.topic-chart .bar { fill: var(--signal); transform-box: fill-box; transform-origin: bottom; transition: opacity 0.15s; }
+.topic-chart .bar.partial { opacity: 0.45; }
+.topic-chart .bars:has(.bar.on) .bar:not(.on) { opacity: 0.35; }
+.topic-chart.animate .bar { animation: grow 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 18ms); }
+@keyframes grow { from { transform: scaleY(0); } }
+.topic-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+.topic-side { display: grid; gap: 20px; position: sticky; top: 84px; }
+.tl { list-style: none; margin: 0; padding: 0 0 0 18px; border-left: 2px solid var(--line); display: grid; gap: 22px; }
+.tl-day { position: relative; }
+.tl-day::before { content: ''; position: absolute; left: -25px; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--signal); }
+.tl-day h3 { margin: 0 0 8px; font-size: var(--s0); display: flex; gap: 10px; align-items: baseline; }
+.tl-day h3 span { color: var(--muted); font-weight: 400; font-size: var(--s-1); font-variant-numeric: tabular-nums; }
+.tl-day ul, .topic-live, .topic-markets { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.tl-day li, .topic-live li, .topic-markets li { display: grid; gap: 3px; line-height: 1.35; }
+.tl-day a, .topic-live a, .topic-markets a { font-weight: 600; }
+.tl-day a:hover, .topic-live a:hover, .topic-markets a:hover { color: var(--signal); }
+.tl-meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--s-1); }
+.tl-meta img { border-radius: 3px; }
+.tl.animate .tl-day { animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 45ms + 100ms); }
+.tm-row { display: flex; align-items: center; gap: 4px; font-size: var(--s-1); color: var(--muted); }
+.tm-row b { color: var(--yes); font-size: var(--s0); font-variant-numeric: tabular-nums; }
+.chip-go { color: var(--signal); border-color: currentColor; }
+@media (max-width: 960px) {
+  .topic-grid { grid-template-columns: minmax(0, 1fr); }
+  .topic-side { position: static; }
+}
+@media (max-width: 560px) {
+  .topic-card, .topic-timeline, .topic-side > section { padding: 16px; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }

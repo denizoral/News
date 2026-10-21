@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Store, publicSnapshot } from './store.js';
 import { marketHistory, backfillMarket } from './pipeline/odds.js';
+import { topicHistory, topicKeys, warmTopics } from './index/topics.js';
 import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
 import { openDb, checkpoint, closeDb } from './db.js';
 import { settings } from './settings.js';
@@ -220,6 +221,14 @@ export function createApp({ store, spider }) {
         .catch(() => {})
         .then(() => json(req, res, 200, { id: market.id, outcomes: marketHistory(market) }, { 'cache-control': 'public, max-age=60' }));
     }
+    if (p === '/api/topic') {
+      if (limited(req, res)) return;
+      const key = url.searchParams.get('key') || '';
+      if (!topicKeys().includes(key)) return json(req, res, 404, { error: 'No topic with that name.' });
+      return topicHistory(key)
+        .then((data) => json(req, res, 200, data, { 'cache-control': 'public, max-age=300' }))
+        .catch((err) => json(req, res, 503, { error: `Topic history is unavailable: ${err.message}` }));
+    }
     if (p === '/api/spider') return json(req, res, 200, spider.status(), { 'cache-control': 'public, max-age=10' });
     if (p === '/api/status') return json(req, res, 200, { ...store.status(), version: store.snapshot.version, generatedAt: store.snapshot.generatedAt });
 
@@ -321,6 +330,7 @@ function main() {
         store.save();
         startScheduler(store);
         startLabeler(store);
+        warmTopics((store.snapshot.trending?.topics || []).slice(0, 6).map((t) => t.key));
       })
       .catch((e) => console.error('initial crawl failed', e));
   } else {

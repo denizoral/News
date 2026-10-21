@@ -28,7 +28,7 @@ import { extractPage, looksLikeArticleUrl } from './extract.js';
 import { parseSitemap } from './sitemaps.js';
 import { parseFeed } from '../sources/rss.js';
 import { readText, readBody } from './body.js';
-import { LAST_UPDATE_URL, latestGkgUrl, unzipFirst, parseGkg } from './gdelt.js';
+import { LAST_UPDATE_URL, latestGkgUrl, batchesSince, unzipFirst, parseGkg } from './gdelt.js';
 import { downloadImage, enforceBudget } from './media.js';
 import { upsertDoc, findByContentHash, addInlinks } from '../index/documents.js';
 import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, sectionPath, localeOf, isNonNewsPath, isAiHeadline } from './policy.js';
@@ -526,12 +526,13 @@ export class Spider extends EventEmitter {
     const now = Date.now();
     this.idleReason = !this.cfg.enabled ? 'paused' : inQuietHours(this.cfg.quietHours, now) ? 'quiet hours' : null;
     if (this.idleReason) return;
-    if (this.cfg.gdelt && now - this.gdeltAt > this.cfg.gdeltEveryMin * 60e3) {
+    if (this.cfg.gdelt && !this.gdeltRunning && now - this.gdeltAt > this.cfg.gdeltEveryMin * 60e3) {
       this.gdeltAt = now;
+      this.gdeltRunning = true; // a catch-up of several batches takes minutes
       this.runGdelt().catch((e) => {
         this.saveKv('spider.gdelt', { ...this.gdeltState(), at: Date.now(), error: e.message });
         console.warn('[spider] GDELT check failed:', e.message);
-      });
+      }).finally(() => { this.gdeltRunning = false; });
     }
     if (now - this.autoHubsAt > AUTO_HUB_EVERY_MS) {
       this.autoHubsAt = now;
@@ -597,39 +598,53 @@ export class Spider extends EventEmitter {
     }
   }
 
-  // Reads GDELT's latest batch (see gdelt.js) and queues articles whose
-  // headline is about AI. A batch already read is skipped. Returns new URLs.
+  // Reads the GDELT batches published since the last one read (see
+  // gdelt.js), up to the catch-up limit, and queues articles whose headline
+  // is about AI. Returns how many new URLs were queued.
   async runGdelt() {
-    const started = Date.now();
     const opts = { headers: { 'user-agent': this.userAgent() }, retries: 1, publicOnly: true, maxRedirects: this.cfg.maxRedirects, cooldown: false };
     const list = await get(LAST_UPDATE_URL, { ...opts, timeout: 20000 });
-    const fileUrl = latestGkgUrl((await readText(list, 64 * 1024)).text);
-    if (!fileUrl) throw new Error('lastupdate.txt lists no GKG file');
-    const prev = this.gdeltState();
-    if (fileUrl === prev.file) return 0;
-    const res = await get(fileUrl, { ...opts, timeout: 90000 });
-    const { buf, truncated } = await readBody(res, 40 * 1024 * 1024);
-    if (truncated) throw new Error('GKG file is over 40 MB');
-    const entries = parseGkg(unzipFirst(buf).toString('utf8'));
+    const latest = latestGkgUrl((await readText(list, 64 * 1024)).text);
+    if (!latest) throw new Error('lastupdate.txt lists no GKG file');
+    const state = this.gdeltState();
+    const batches = batchesSince(state.file, latest, this.cfg.gdeltCatchUp);
     // The same wire story runs on dozens of local sites: one URL per headline.
     const seen = new Set();
-    let relevant = 0;
-    let queued = 0;
-    tx(() => {
-      for (const e of entries) {
-        const key = e.title.toLowerCase();
-        if (!e.title || seen.has(key)) continue;
-        seen.add(key);
-        if (this.cfg.relevance !== 'all' && !isAiHeadline(e.title, this.cfg.includeKeywords)) continue;
-        relevant++;
-        // Depth at the limit: the article is fetched, its links aren't followed.
-        if (this.enqueue(e.url, { kind: 'article', priority: 6.5, depth: this.cfg.maxDepth, via: 'gdelt' })) queued++;
+    let total = 0;
+    for (const [i, fileUrl] of batches.entries()) {
+      if (i) await new Promise((r) => setTimeout(r, 5000)); // GDELT asks for one request every 5 s
+      if (!this.running || !this.cfg.gdelt) break;
+      const started = Date.now();
+      let res;
+      try {
+        res = await get(fileUrl, { ...opts, timeout: 90000 });
+      } catch (err) {
+        if (err.status === 404) continue; // GDELT occasionally skips a batch
+        throw err;
       }
-    });
-    const state = { file: fileUrl, at: Date.now(), entries: entries.length, relevant, queued, error: null, total: (prev.total || 0) + queued };
-    this.saveKv('spider.gdelt', state);
-    this.log({ url: fileUrl, host: 'data.gdeltproject.org', kind: 'feed', depth: 0, via: 'gdelt', _started: started }, { outcome: 'feed', http: res.status, bytes: buf.length, reason: `GDELT: ${relevant} AI headlines of ${entries.length} articles, ${queued} new URLs` });
-    return queued;
+      const { buf, truncated } = await readBody(res, 40 * 1024 * 1024);
+      if (truncated) throw new Error('GKG file is over 40 MB');
+      const entries = parseGkg(unzipFirst(buf).toString('utf8'));
+      let relevant = 0;
+      let queued = 0;
+      tx(() => {
+        for (const e of entries) {
+          const key = e.title.toLowerCase();
+          if (!e.title || seen.has(key)) continue;
+          seen.add(key);
+          if (this.cfg.relevance !== 'all' && !isAiHeadline(e.title, this.cfg.includeKeywords)) continue;
+          relevant++;
+          // Depth at the limit: the article is fetched, its links aren't followed.
+          // Older batches rank a little lower.
+          if (this.enqueue(e.url, { kind: 'article', priority: 6.5 - (batches.length - 1 - i) * 0.1, depth: this.cfg.maxDepth, via: 'gdelt' })) queued++;
+        }
+      });
+      total += queued;
+      Object.assign(state, { file: fileUrl, at: Date.now(), entries: entries.length, relevant, queued, error: null, total: (state.total || 0) + queued, batches: i + 1, ofBatches: batches.length });
+      this.saveKv('spider.gdelt', state);
+      this.log({ url: fileUrl, host: 'data.gdeltproject.org', kind: 'feed', depth: 0, via: 'gdelt', _started: started }, { outcome: 'feed', http: res.status, bytes: buf.length, reason: `GDELT: ${relevant} AI headlines of ${entries.length} articles, ${queued} new URLs` });
+    }
+    return total;
   }
 
   // Keeps the queue bounded: articles nobody got to in time are stale news,

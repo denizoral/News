@@ -16,6 +16,24 @@ export function latestGkgUrl(text) {
   return url ? url.replace(/^http:/, 'https:') : null;
 }
 
+// The batches published after `lastUrl` up to `latestUrl`, oldest first and
+// at most `max` (the newest ones). Batches are 15 minutes apart and named by
+// their UTC time (…/20261021050000.gkg.csv.zip). Without a last batch, or
+// when it's older than the window, the newest `max` are returned.
+export function batchesSince(lastUrl, latestUrl, max = 1) {
+  const stamp = (u) => u?.match(/\/(\d{14})\.gkg\.csv\.zip$/)?.[1];
+  const toTime = (st) => Date.UTC(+st.slice(0, 4), +st.slice(4, 6) - 1, +st.slice(6, 8), +st.slice(8, 10), +st.slice(10, 12));
+  const latest = stamp(latestUrl);
+  if (!latest) return [];
+  const base = latestUrl.slice(0, latestUrl.lastIndexOf('/') + 1);
+  const last = stamp(lastUrl);
+  const end = toTime(latest);
+  const start = last ? Math.max(toTime(last) + 15 * 60e3, end - (max - 1) * 15 * 60e3) : end - (Math.max(1, max) - 1) * 15 * 60e3;
+  const out = [];
+  for (let t = start; t <= end; t += 15 * 60e3) out.push(`${base}${new Date(t).toISOString().replace(/[-:T]/g, '').slice(0, 14)}.gkg.csv.zip`);
+  return out.slice(-Math.max(1, max));
+}
+
 // The first file in a zip archive, read through the central directory (local
 // headers may leave sizes blank). Inflated under a size cap.
 export function unzipFirst(buf, maxBytes = MAX_UNZIPPED) {

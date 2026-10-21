@@ -611,3 +611,14 @@ test('"agents" alone does not make a page about AI', () => {
   assert.match(spider.decide({ ...base, title: 'ICE agents pose as customers before arrest', text }).reason, /Not about AI/);
   assert.equal(spider.decide({ ...base, title: 'Companies deploy AI agents for support', text }).ok, true);
 });
+
+test('GDELT catch-up lists the missed 15-minute batches, newest capped', async () => {
+  const { batchesSince } = await import('../src/spider/gdelt.js');
+  const b = 'https://data.gdeltproject.org/gdeltv2/';
+  assert.deepEqual(batchesSince(`${b}20261021050000.gkg.csv.zip`, `${b}20261021060000.gkg.csv.zip`, 12).map((u) => u.slice(-26, -12)),
+    ['20261021051500', '20261021053000', '20261021054500', '20261021060000']);
+  assert.equal(batchesSince(`${b}20261020050000.gkg.csv.zip`, `${b}20261021060000.gkg.csv.zip`, 12).length, 12, 'a long gap reads only the newest 12');
+  assert.deepEqual(batchesSince(null, `${b}20261021060000.gkg.csv.zip`, 1), [`${b}20261021060000.gkg.csv.zip`]);
+  assert.deepEqual(batchesSince(`${b}20261021060000.gkg.csv.zip`, `${b}20261021060000.gkg.csv.zip`, 12), [], 'nothing new');
+  assert.deepEqual(batchesSince(`${b}20261021235000.gkg.csv.zip`.replace('235000', '234500'), `${b}20261022000000.gkg.csv.zip`, 12).map((u) => u.slice(-26, -12)), ['20261022000000'], 'across midnight');
+});

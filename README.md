@@ -97,7 +97,9 @@ the oldest images first.
     minutes it downloads the latest batch (about 3 MB) and queues the articles
     whose headline is about AI, one URL per headline (wire stories run on
     dozens of local sites). It reads GDELT's raw files rather than its search
-    API, which rate-limits shared IPs. Turn it off under Settings → Discovery.
+    API, which rate-limits shared IPs. After the crawler was stopped or asleep,
+    it catches up on the batches it missed (up to 12, the last 3 hours), 5
+    seconds apart. Turn it off under Settings → Discovery.
   - When a starting site advertises no sitemap or feed, it tries the usual
     addresses once (`/sitemap.xml`, `/news-sitemap.xml`, `/feed`, `/rss.xml`, …)
     and drops the ones that don't exist.

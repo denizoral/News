@@ -145,3 +145,12 @@ test('releases merge API and open-weight listings by model family', async () => 
   assert.equal(qwen4.sizes.length, 2);
   assert.equal(out[0].name, 'Qwen Image 3', 'newest first');
 });
+
+test('Reddit pacing waits out the reported quota reset', async () => {
+  const { noteRedditQuota } = await import('../src/sources/community.js');
+  const h = (o) => new Headers(o);
+  const now = 1_000_000;
+  assert.equal(noteRedditQuota(h({ 'x-ratelimit-remaining': '0.0', 'x-ratelimit-reset': '20' }), now), now + 20_500);
+  const later = noteRedditQuota(h({ 'x-ratelimit-remaining': '42', 'x-ratelimit-reset': '300' }), now + 30_000);
+  assert.equal(later, now + 20_500, 'quota left: no new wait');
+});

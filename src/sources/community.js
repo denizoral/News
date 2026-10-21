@@ -86,6 +86,24 @@ async function redditAuth() {
 // for a while instead of spending a request on it every time.
 let redditJsonBlockedUntil = 0;
 
+// Reddit reports its quota on every response (x-ratelimit-remaining, -reset in
+// seconds). Firing the next request while it reads 0 is what earned the 429s,
+// so anonymous requests go one at a time and wait out the reset when spent.
+let redditNextAt = 0;
+export async function redditGet(url, opts = {}) {
+  const wait = redditNextAt - Date.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 65e3)));
+  const res = await get(url, opts);
+  noteRedditQuota(res.headers);
+  return res;
+}
+export function noteRedditQuota(headers, now = Date.now()) {
+  const remaining = Number(headers.get('x-ratelimit-remaining'));
+  const reset = Number(headers.get('x-ratelimit-reset'));
+  if (headers.get('x-ratelimit-remaining') != null && remaining < 1 && reset > 0) redditNextAt = now + reset * 1000 + 500;
+  return redditNextAt;
+}
+
 async function subreddit(subs, listing, limit) {
   const name = subs.join('+');
   const token = await redditAuth().catch(() => null);
@@ -96,17 +114,18 @@ async function subreddit(subs, listing, limit) {
   let jsonErr = new Error('reddit JSON skipped');
   if (redditJsonBlockedUntil < Date.now()) {
     try {
-      const res = await get(`https://www.reddit.com/r/${name}/${listing}.json?limit=${limit}&raw_json=1`, { headers: { accept: 'application/json' }, retries: 0, cooldown: false });
+      const res = await redditGet(`https://www.reddit.com/r/${name}/${listing}.json?limit=${limit}&raw_json=1`, { headers: { accept: 'application/json' }, retries: 0, cooldown: false });
       if (/\/login/.test(res.url)) throw new Error('reddit requires login from this network');
       const json = await res.json();
       return json.data.children.filter((c) => !c.data.stickied && !c.data.over_18);
     } catch (err) {
       jsonErr = err;
-      if (err.status === 403 || /login/.test(err.message)) redditJsonBlockedUntil = Date.now() + 30 * 60e3;
+      // A refusal is a property of this network, not a blip: check again in hours.
+      if (err.status === 403 || /login/.test(err.message)) redditJsonBlockedUntil = Date.now() + 6 * 3600e3;
     }
   }
   // RSS has no scores, so treat every entry as passing the score bar.
-  const entries = parseFeed(await getText(`https://www.reddit.com/r/${name}/${listing === 'new' ? 'new' : 'top'}/.rss?t=day&limit=${limit}`));
+  const entries = parseFeed(await (await redditGet(`https://www.reddit.com/r/${name}/${listing === 'new' ? 'new' : 'top'}/.rss?t=day&limit=${limit}`)).text());
   if (!entries.length) throw jsonErr;
   return entries.map((e) => {
     const id = e.url.match(/comments\/(\w+)/)?.[1] || e.url;
@@ -145,7 +164,7 @@ export function redditJobs({ oauth = false } = {}) {
 export async function fetchReddit() {
   const oauth = Boolean(await redditAuth().catch(() => null));
   const jobs = redditJobs({ oauth });
-  const { results, errors } = await pool(jobs, oauth ? 4 : 2, async ({ subs, listing, section }) => {
+  const { results, errors } = await pool(jobs, oauth ? 4 : 1, async ({ subs, listing, section }) => {
     const posts = await subreddit(subs, listing, oauth ? 40 : 100);
     return posts.map((p) => redditItem(p, section)).filter((i) => keepRedditItem(i, listing, section));
   });

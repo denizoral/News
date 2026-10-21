@@ -250,6 +250,10 @@ function migrate(d) {
   add('edited_at', 'edited_at INTEGER');
   add('edited_by', 'edited_by TEXT');
   d.exec('CREATE INDEX IF NOT EXISTS docs_moderation ON docs(hidden, pinned, locked)');
+  // The few moderated docs, read on every feed rebuild (an OR can't use the index above: 345 ms scan).
+  d.exec('CREATE INDEX IF NOT EXISTS docs_moderated ON docs(url) WHERE hidden = 1 OR pinned = 1 OR locked = 1');
+  // Recently crawled articles per site, for the spider's hub discovery (4.7 s through the hidden index).
+  d.exec('CREATE INDEX IF NOT EXISTS docs_fetched ON docs(fetched_at, type, hidden, site)');
   d.exec('PRAGMA foreign_keys = ON');
 }
 

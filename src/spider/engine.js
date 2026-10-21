@@ -325,7 +325,8 @@ export class Spider extends EventEmitter {
     current.push(...kept);
     const have = new Set(current.map((a) => a.host));
     // At least 5 crawled, indexed articles in the last week.
-    const candidates = q(`SELECT site, COUNT(*) AS n FROM docs WHERE fetched_at > ? AND type = 'article' AND hidden = 0 GROUP BY site HAVING n >= 5 ORDER BY n DESC LIMIT 200`).all(now - 7 * 86400e3);
+    // INDEXED BY: the planner otherwise walks the hidden index and reads whole rows (4.7 s vs 0.15 s).
+    const candidates = q(`SELECT site, COUNT(*) AS n FROM docs INDEXED BY docs_fetched WHERE fetched_at > ? AND type = 'article' AND hidden = 0 GROUP BY site HAVING n >= 5 ORDER BY n DESC LIMIT 200`).all(now - 7 * 86400e3);
     const added = [];
     for (const c of candidates) {
       if (current.length + added.length >= limit) break;

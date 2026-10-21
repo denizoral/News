@@ -133,6 +133,13 @@ the oldest images first.
     indexed (25 fetched in a week, none indexed), with everything they queued.
   - The queue stays bounded: articles not fetched within 72 hours are dropped as
     stale news, and each site keeps at most 3,000 queued articles (best first).
+- **When a page refuses it:** feeds are published to be read elsewhere, so the
+  crawler keeps what each feed says about a story (two weeks). If the article
+  page answers 401/403/451 or keeps failing, the story is indexed from its
+  feed instead (at least 30 words, same relevance and language rules), and
+  stories from sites known to refuse the crawler are indexed straight from the
+  feed. A thin page (a paywall, a script-rendered app) uses the feed's text
+  when that's longer. Pages robots.txt disallows are never indexed this way.
 - **What it extracts:**
   - The article text, using Mozilla Readability, or the JSON-LD article body when
     the HTML is hard to parse.

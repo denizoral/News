@@ -21,7 +21,7 @@ import { get } from '../http.js';
 import { BlockedUrlError } from '../security/ssrf.js';
 import { q, tx } from '../db.js';
 import { settings } from '../settings.js';
-import { canonicalUrl, hostOf } from '../pipeline/text.js';
+import { canonicalUrl, hostOf, stripHtml, clip } from '../pipeline/text.js';
 import { isAiRelated } from '../pipeline/classify.js';
 import { parseRobots, isAllowed, crawlDelay } from './robots.js';
 import { extractPage, looksLikeArticleUrl } from './extract.js';
@@ -31,7 +31,7 @@ import { readText, readBody } from './body.js';
 import { LAST_UPDATE_URL, latestGkgUrl, batchesSince, unzipFirst, parseGkg } from './gdelt.js';
 import { downloadImage, enforceBudget } from './media.js';
 import { upsertDoc, findByContentHash, addInlinks } from '../index/documents.js';
-import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, sectionPath, localeOf, isNonNewsPath, isAiHeadline } from './policy.js';
+import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, sectionPath, localeOf, isNonNewsPath, isAiHeadline, looksEnglish } from './policy.js';
 
 export { inQuietHours };
 
@@ -42,6 +42,7 @@ const RECURRING = new Set(['hub', 'sitemap', 'feed']);
 // addresses are tried once and dropped if nothing is there.
 const GUESS = 'guess';
 const REFUSAL_LIMIT = 10;
+const FEED_MIN_WORDS = 30; // for stories indexed from a feed's summary
 const DEAD_END_REASONS = { language: 'another language', empty: 'pages come back empty', refuses: 'the site refuses the crawler' };
 const SITEMAP_GUESSES = ['/sitemap.xml', '/sitemap_index.xml', '/news-sitemap.xml'];
 const FEED_GUESSES = ['/feed', '/feed.xml', '/rss.xml', '/atom.xml', '/index.xml'];
@@ -109,8 +110,8 @@ export class Spider extends EventEmitter {
   urlAllowedByPatterns(u) { return allowedByPatterns(u, this.cfg); }
   isAiHost(h) { return isAiHost(h); }
   isRelevantText(t) { return isRelevantText(t, this.cfg.includeKeywords); }
-  decide(page) {
-    const d = decide(page, this.cfg, { findDuplicate: findByContentHash, undatedInSection, sameTitleOnSite, trusted: this.trusted });
+  decide(page, overrides = null) {
+    const d = decide(page, overrides ? { ...this.cfg, ...overrides } : this.cfg, { findDuplicate: findByContentHash, undatedInSection, sameTitleOnSite, trusted: this.trusted });
     if (d.capped) this.noteCapped(page.url);
     return d;
   }
@@ -501,6 +502,15 @@ export class Spider extends EventEmitter {
       h.robots_fetched_at = Date.now();
     }
     h.parsed = parseRobots(h.robots);
+    // Queued pages the (new) rules disallow would only be logged as blocked.
+    if (this.obeysRobots(h.host)) {
+      const drop = q("UPDATE frontier SET status = 'blocked', error = 'Disallowed by robots.txt' WHERE url = ?");
+      tx(() => {
+        for (const r of q("SELECT url FROM frontier WHERE host = ? AND status = 'queued' AND kind IN ('article', 'page')").all(h.host)) {
+          if (!isAllowed(h.parsed, r.url, this.botName)) drop.run(r.url);
+        }
+      });
+    }
     const d = crawlDelay(h.parsed, this.botName);
     h.crawl_delay_ms = d != null ? Math.min(d * 1000, 60000) : null;
     // Sitemaps of trusted hosts are the fastest way to learn about new articles.
@@ -694,6 +704,7 @@ export class Spider extends EventEmitter {
       n += q(`UPDATE frontier SET status = 'skipped', error = 'Over the per-site queue limit' WHERE url IN (
           SELECT url FROM frontier WHERE host = ? AND ${kinds} ORDER BY priority DESC, discovered_at DESC LIMIT -1 OFFSET ?)`).run(r.host, cap).changes;
     }
+    q('DELETE FROM feed_items WHERE seen_at < ?').run(now - 14 * 86400e3);
     if (n) console.log(`[spider] dropped ${n} stale or excess URLs from the queue`);
     return n;
   }
@@ -774,6 +785,9 @@ export class Spider extends EventEmitter {
     q('UPDATE frontier SET status = ?, attempts = ?, next_at = ?, error = ?, fetched_at = ? WHERE url = ?').run(
       recurring || retry ? 'queued' : 'error', attempts, Math.max(nextAt, h.pausedUntil || 0), err.message.slice(0, 300), now, row.url);
     this.saveHost(h);
+    if (row.kind === 'article' && ([401, 403, 451].includes(err.status) || (!retry && !permanent))) {
+      this.indexFromFeed(row, [401, 403, 451].includes(err.status) ? `the page answered HTTP ${err.status}` : 'the page kept failing');
+    }
   }
 
   // Some pages are full of links that don't resolve (Hugging Face paper pages
@@ -961,14 +975,23 @@ export class Spider extends EventEmitter {
     }
     const cutoff = Date.now() - this.cfg.sitemapMaxAgeDays * 86400e3;
     let n = 0;
+    const keep = q(`INSERT INTO feed_items (url, feed, title, body, published_at, author, image, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(url) DO UPDATE SET title = excluded.title, body = CASE WHEN length(excluded.body) >= length(body) THEN excluded.body ELSE body END, seen_at = excluded.seen_at`);
+    const fromFeed = []; // stories from sites known to refuse the crawler
     tx(() => {
       for (const e of entries.slice(0, this.cfg.sitemapMaxUrls)) {
         if (!e.url || (e.publishedAt && e.publishedAt < cutoff)) continue;
         if (this.cfg.relevance !== 'all' && !this.isRelevantText(`${e.title} ${e.summary}`) && !isAiHost(hostOf(e.url))) continue;
+        // What the feed says about the story, in case the page refuses us.
+        let url;
+        try { url = this.cleanUrl(canonicalUrl(e.url)); } catch { continue; }
+        keep.run(url, row.url, e.title, stripHtml(e.summaryHtml || '').slice(0, 100000), e.publishedAt, e.author || null, e.image || null, Date.now());
         const ageH = e.publishedAt ? (Date.now() - e.publishedAt) / 3600e3 : 48;
         if (this.enqueue(e.url, { kind: 'article', priority: 7 + Math.max(0, 3 - ageH / 12), depth: 1, via: row.url })) n++;
+        else if (this.refuses(url) && !q('SELECT 1 FROM docs WHERE url = ?').get(url)) fromFeed.push(url);
       }
     });
+    for (const url of fromFeed) this.indexFromFeed({ url, host: new URL(url).hostname, kind: 'article', depth: 1, via: row.url }, 'the site refuses the crawler');
     this.stats.feeds++;
     return n;
   }
@@ -1040,8 +1063,14 @@ export class Spider extends EventEmitter {
     return queued;
   }
 
-  indexPage(row, page) {
-    const d = this.decide(page);
+  indexPage(row, page, overrides = null) {
+    // A thin page (paywall, script-rendered) whose feed carried more text.
+    const words = (page.text || '').split(/\s+/).filter(Boolean).length;
+    if (!overrides && words < this.cfg.minWords) {
+      const f = q('SELECT body FROM feed_items WHERE url IN (?, ?)').get(page.url, row.url);
+      if (f && f.body.split(/\s+/).length > words) page = { ...page, text: f.body, fromFeed: true };
+    }
+    const d = this.decide(page, overrides);
     if (!d.ok) {
       if (d.outcome === 'duplicate') this.stats.duplicates++;
       this.learnFromPage(page, d);
@@ -1067,7 +1096,34 @@ export class Spider extends EventEmitter {
     });
     this.stats.indexed++;
     this.emit('indexed', { id, url: page.url, title: page.title });
-    return { ok: true, indexedOk: true, outcome: existed ? 'updated' : 'indexed', reason: `${d.words} words` };
+    return { ok: true, indexedOk: true, outcome: existed ? 'updated' : 'indexed', reason: `${d.words} words${page.fromFeed ? ', text from its feed' : ''}` };
+  }
+
+  // A site that is resting after refusals, or learned as refusing.
+  refuses(url) {
+    const u = new URL(url);
+    const h = this.hostCache.get(u.hostname);
+    if (h && h.refuseStreak >= REFUSAL_LIMIT && h.pausedUntil > Date.now()) return true;
+    const d = this.deadEnds().get(`${bare(u.hostname)}/*`);
+    return d?.reason === 'refuses' && !(d.until < Date.now());
+  }
+
+  // When an article refuses the crawler (401/403/451) or keeps failing, its
+  // feed's own copy of the story is indexed instead: feeds are published to
+  // be read elsewhere. Feeds often carry a summary only, hence the lower word
+  // minimum. Returns the indexing result, or null without a feed copy.
+  indexFromFeed(row, why) {
+    const f = q('SELECT * FROM feed_items WHERE url = ?').get(row.url);
+    if (!f?.title || !f.body) return null;
+    const page = {
+      url: row.url, title: f.title, description: clip(f.body, 300), text: f.body, published_at: f.published_at,
+      lang: looksEnglish(f.body) ? 'en' : null, isArticle: true, site: bare(hostOf(row.url)), siteName: null, author: f.author || '',
+      images: f.image ? [{ url: f.image, alt: '', caption: '' }] : [], contentHash: null, noarchive: false, fromFeed: true,
+    };
+    const r = this.indexPage(row, page, { minWords: Math.min(this.cfg.minWords, FEED_MIN_WORDS) });
+    this.log(row, { outcome: r.ok ? r.outcome : 'skipped', reason: r.ok ? `Indexed from its feed (${why})` : `Feed copy not indexed: ${r.reason}` });
+    if (r.ok) q("UPDATE frontier SET status = 'done', error = ? WHERE url = ?").run(`Indexed from its feed (${why})`, row.url);
+    return r;
   }
 
   // ---------- "Test a URL": fetch and evaluate without saving anything ----------

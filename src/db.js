@@ -237,6 +237,11 @@ function migrate(d) {
   if (!hostCols.has('paused_until')) d.exec('ALTER TABLE hosts ADD COLUMN paused_until INTEGER NOT NULL DEFAULT 0');
   // Which page queued a URL, for dropping a page's remaining links at once.
   d.exec('CREATE INDEX IF NOT EXISTS frontier_via ON frontier(via, status)');
+  // What feeds said about each article, kept two weeks: the crawler indexes a
+  // story from its feed when the page itself refuses it or comes back thin.
+  d.exec(`CREATE TABLE IF NOT EXISTS feed_items (
+    url TEXT PRIMARY KEY, feed TEXT, title TEXT, body TEXT, published_at INTEGER, author TEXT, image TEXT, seen_at INTEGER NOT NULL)`);
+  d.exec('CREATE INDEX IF NOT EXISTS feed_items_seen ON feed_items(seen_at)');
   d.exec('PRAGMA foreign_keys = ON');
 }
 

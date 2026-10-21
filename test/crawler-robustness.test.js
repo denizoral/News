@@ -665,3 +665,32 @@ test('a site with indexed English pages is never a whole-site language dead end'
   spider.healDeadEnds();
   assert.equal(spider.live().deadEnds.some((d) => d.key === 'multi.example/*'), false);
 });
+
+test('a story is indexed from its feed when the page refuses the crawler', () => {
+  const now = new Date().toUTCString();
+  const body = 'Anthropic released a new Claude model today with better coding and longer context. The model is available to developers through the API and in the Claude apps starting this week. '.repeat(2);
+  const xml = `<rss><channel>
+    <item><title>Anthropic releases a new Claude model</title><link>https://walled.example/2026/claude-new-model</link><pubDate>${now}</pubDate><description><![CDATA[<p>${body}</p>]]></description></item>
+  </channel></rss>`;
+  spider.handleFeed(row('https://walled.example/feed', 'feed'), xml);
+  const u = 'https://walled.example/2026/claude-new-model';
+  spider.fail(row(u, 'article', { via: 'https://walled.example/feed' }), spider.host('walled.example'), new HttpError(403, u));
+  const doc = q('SELECT title, body FROM docs WHERE url = ?').get(u);
+  assert.equal(doc?.title, 'Anthropic releases a new Claude model');
+  assert.equal(frontier(u).status, 'done');
+  // From a site already known to refuse, feed stories are indexed without a fetch.
+  spider.learnDeadEnd('refusing.example/*', 'refuses', { days: 14 });
+  spider.handleFeed(row('https://refusing.example/feed', 'feed'), xml.replaceAll('walled.example', 'refusing.example').replace('Anthropic releases', 'Anthropic ships'));
+  assert.ok(q("SELECT 1 FROM docs WHERE url = 'https://refusing.example/2026/claude-new-model'").get());
+  spider.forgetDeadEnd('refusing.example/*');
+});
+
+test('a thin page uses its feed text', () => {
+  const now = new Date().toUTCString();
+  const long = 'OpenAI announced a new reasoning model that improves results on math and coding benchmarks while costing less per token than earlier versions. '.repeat(8);
+  spider.handleFeed(row('https://thin.example/feed', 'feed'), `<rss><channel><item><title>OpenAI's new reasoning model</title><link>https://thin.example/2026/new-reasoning-model</link><pubDate>${now}</pubDate><description><![CDATA[${long}]]></description></item></channel></rss>`);
+  const page = { url: 'https://thin.example/2026/new-reasoning-model', title: "OpenAI's new reasoning model", description: '', lang: 'en', isArticle: true, site: 'thin.example', text: 'Subscribe to read.', images: [], published_at: Date.now() };
+  const r = spider.indexPage(row(page.url), page);
+  assert.equal(r.ok, true);
+  assert.match(r.reason, /from its feed/);
+});

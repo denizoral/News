@@ -143,16 +143,20 @@ the oldest images first.
   - Character encodings are detected the way browsers do it (byte-order mark,
     header, `<meta charset>`), including correct Windows-1252.
 - **What it skips:** `noindex` pages, exact duplicates, pages in languages other
-  than English (configurable), help/docs/forum/jobs pages, and pages that aren't
-  about AI. A page counts as about AI if its headline or summary says so, or the
+  than English (configurable; a page labelled with the wrong language but
+  plainly written in English is kept), help/docs/forum/jobs pages, undated
+  landing and listing pages that share one title across a site, and pages that
+  aren't about AI. A page counts as about AI if its headline or summary says so, or the
   body keeps coming back to it. Generated pages (comparisons, directories) are
   capped: a site section indexes at most 20 undated pages a day, except on
   starting sites and in blog, news and research sections. A section under a
   locale is two levels deep (`/en-us/geforce`). Once a mostly-undated section
   hits its limit, its queued pages wait for the next day instead of being
   fetched just to be skipped.
-- **Dead ends it learns:** translated sections (`/cs/…`) and whole sites in
-  another language (5 pages in a row), and sections whose pages come back empty
+- **Dead ends it learns:** translated sections (`/cs/…`, or 3 pages in a row in
+  another language under any name, like `/cn/`) and whole sites in another
+  language (5 in a row, and only if nothing from the site was ever indexed in
+  a wanted language; wrongly learned ones are forgotten at startup), and sections whose pages come back empty
   (10 in a row, usually JavaScript apps), stop being queued and their queued
   pages are dropped. So do sites that are still refusing every page after a
   rest, for two weeks. Under a locale prefix the section is two levels deep

@@ -96,6 +96,16 @@ export function isArchiveSitemap(url, now = Date.now()) {
 // carries no date; generated pages live elsewhere (/compare, /models, /skills).
 export const isEditorialSection = (url) => /^\/(blogs?|news|newsroom|press|articles?|stories|posts?|abs|pdf|papers?|pubs|publications|research|\d{4})(\/|$)/i.test(new URL(url).pathname);
 
+// Sites sometimes declare the wrong language (bcg.com labels English pages
+// "bs"). English text is about a quarter common function words; other
+// languages that share a few ("a", "in") come nowhere near.
+const EN_WORDS = new Set('the of and to in is that for it with as was on be by are this at from or an have not but which their has its were they been will can more one would also we our you'.split(' '));
+export function looksEnglish(text) {
+  const words = String(text || '').slice(0, 4000).toLowerCase().match(/[a-z']+/g) || [];
+  if (words.length < 50) return false;
+  return words.filter((w) => EN_WORDS.has(w)).length / words.length >= 0.15;
+}
+
 // The section a page belongs to, for per-section limits: host plus first path segment.
 // The first path segment, or the first two when the first is a locale, so
 // nvidia.com/en-us/geforce and nvidia.com/en-us/blog are separate sections.
@@ -180,9 +190,10 @@ export function isAboutAi(page, keywords = []) {
 
 // Whether a page should be indexed, and why not. `findDuplicate(hash)` returns
 // an existing document with the same text, if any; `undatedInSection(page)`
-// how many undated pages its site section indexed in the last day; `trusted`
+// how many undated pages its site section indexed in the last day;
+// `sameTitleOnSite(page)` how many other indexed pages there share its title; `trusted`
 // holds the starting sites, whose pages skip the help-site check.
-export function decide(page, cfg, { findDuplicate = () => null, undatedInSection = () => 0, now = Date.now(), trusted = new Set() } = {}) {
+export function decide(page, cfg, { findDuplicate = () => null, undatedInSection = () => 0, sameTitleOnSite = () => 0, now = Date.now(), trusted = new Set() } = {}) {
   const text = page.text || '';
   if (page.noindex) return { ok: false, outcome: 'skipped', reason: 'Page asks not to be indexed (noindex)' };
   const host = bare(hostOf(page.url || ''));
@@ -192,7 +203,9 @@ export function decide(page, cfg, { findDuplicate = () => null, undatedInSection
   const head = `${page.title} ${page.description}`.toLowerCase();
   const bad = cfg.excludeKeywords.find((k) => head.includes(k));
   if (bad) return { ok: false, outcome: 'skipped', reason: `Mentions excluded keyword "${bad}"` };
-  if (cfg.languages.length && page.lang && !cfg.languages.includes(page.lang)) return { ok: false, outcome: 'skipped', reason: `Language ${page.lang} isn't in the allowed list` };
+  if (cfg.languages.length && page.lang && !cfg.languages.includes(page.lang) && !(cfg.languages.includes('en') && looksEnglish(text))) {
+    return { ok: false, outcome: 'skipped', reason: `Language ${page.lang} isn't in the allowed list` };
+  }
   const words = text ? text.split(/\s+/).length : 0;
   if (words < cfg.minWords) return { ok: false, outcome: 'skipped', reason: `Too short (${words} words, minimum ${cfg.minWords})` };
   if (!page.isArticle && text.length < 600) return { ok: false, outcome: 'skipped', reason: "Doesn't look like an article" };
@@ -210,6 +223,12 @@ export function decide(page, cfg, { findDuplicate = () => null, undatedInSection
   // chose, AI publishers and editorial sections are exempt.
   if (!page.published_at && cfg.undatedPerSection && !isAiHost(host) && !(cfg.hubHosts || []).includes(host) && !isEditorialSection(page.url) && undatedInSection(page) >= cfg.undatedPerSection) {
     return { ok: false, outcome: 'skipped', capped: true, reason: `Undated, and this section already had ${cfg.undatedPerSection} undated pages today (looks generated)` };
+  }
+  // Landing and listing pages often share the site's generic title ("Vector
+  // Wire — AI intelligence terminal"). Dated posts that share one (a daily
+  // newsletter's "Not much happened today") are kept.
+  if (!page.published_at && sameTitleOnSite(page) >= 2) {
+    return { ok: false, outcome: 'skipped', reason: 'Undated, with the same title as other pages on this site (a landing or listing page)' };
   }
   const dup = page.contentHash ? findDuplicate(page.contentHash) : null;
   if (dup && dup.url !== page.url) return { ok: false, outcome: 'duplicate', reason: `Same text as ${dup.url}` };

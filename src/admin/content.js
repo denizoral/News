@@ -8,7 +8,7 @@ import { q, tx } from '../db.js';
 import { parseQuery, toMatch } from '../index/search.js';
 import { mediaPath } from '../spider/media.js';
 import { HttpError } from '../security/httpkit.js';
-import { isNonNewsPath, isNonNewsHost, isAiHost, isEditorialSection, isListingUrl, sectionOf } from '../spider/policy.js';
+import { isNonNewsPath, isNonNewsHost, isAiHost, isEditorialSection, isListingUrl, sectionOf, looksEnglish } from '../spider/policy.js';
 
 export const contentEvents = new EventEmitter();
 
@@ -141,7 +141,7 @@ function topSections(list, n = 8) {
 // and removed documents are left alone, as are starting sites for the
 // host and undated rules.
 export function reviewIndex({ apply = false, actor = null, languages = [], undatedPerSection = 0, hubHosts = [] } = {}) {
-  const rows = q('SELECT id, url, site, lang, published_at, first_seen, hidden, locked, pinned FROM docs WHERE fetched_at IS NOT NULL ORDER BY first_seen').all();
+  const rows = q('SELECT id, url, site, title, lang, published_at, first_seen, hidden, locked, pinned FROM docs WHERE fetched_at IS NOT NULL ORDER BY first_seen').all();
   const hubs = new Set(hubHosts);
   // Share of undated pages per section, over everything crawled there.
   const sections = new Map();
@@ -152,7 +152,13 @@ export function reviewIndex({ apply = false, actor = null, languages = [], undat
     if (!r.published_at) v.undated++;
     sections.set(k, v);
   }
-  const reasons = { 'Docs, help, forum or jobs page': [], 'Other-language page': [], 'Tag or author listing': [], 'Generated section (undated pages past the daily limit)': [] };
+  // Titles shared by 3 or more pages on one site.
+  const titleCounts = new Map();
+  for (const r of rows) {
+    const k = `${r.site}|${(r.title || '').trim().toLowerCase()}`;
+    titleCounts.set(k, (titleCounts.get(k) || 0) + 1);
+  }
+  const reasons = { 'Landing or listing page (undated, shares a title)': [], 'Docs, help, forum or jobs page': [], 'Other-language page': [], 'Tag or author listing': [], 'Generated section (undated pages past the daily limit)': [] };
   const perDay = new Map(); // "section|day" -> undated pages kept so far
   for (const r of rows) {
     if (r.hidden || r.locked || r.pinned) continue;
@@ -160,7 +166,8 @@ export function reviewIndex({ apply = false, actor = null, languages = [], undat
     const section = sectionOf(r.url).prefix;
     let reason = null;
     if (isNonNewsPath(r.url) || (isNonNewsHost(host) && !hubs.has(host))) reason = 'Docs, help, forum or jobs page';
-    else if (languages.length && r.lang && !languages.includes(r.lang)) reason = 'Other-language page';
+    else if (!r.published_at && r.title && titleCounts.get(`${r.site}|${r.title.trim().toLowerCase()}`) >= 3) reason = 'Landing or listing page (undated, shares a title)';
+    else if (languages.length && r.lang && !languages.includes(r.lang) && !(languages.includes('en') && looksEnglish(q('SELECT body FROM docs WHERE id = ?').get(r.id)?.body))) reason = 'Other-language page';
     else if (isListingUrl(r.url)) reason = 'Tag or author listing';
     else if (undatedPerSection && !r.published_at && !hubs.has(host) && !isAiHost(host) && !isEditorialSection(r.url)) {
       const s = sections.get(section);

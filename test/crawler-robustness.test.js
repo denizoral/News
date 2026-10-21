@@ -346,7 +346,7 @@ test('forums and translations are skipped', () => {
   assert.match(spider.decide({ ...page, url: 'https://arstechnica.com/civis/threads/is-gpt-6-any-good.1/' }).reason, /not news/);
   // Language comes from the page, not the URL: theverge.com/cs/ is English.
   assert.equal(spider.decide({ ...page, url: 'https://theverge.com/cs/features/1/a-data-center-story' }).ok, true);
-  const czech = { ...page, lang: 'cs', url: 'https://unite.ai/cs/novy-ai-model/' };
+  const czech = { ...page, lang: 'cs', url: 'https://unite.ai/cs/novy-ai-model/', text: 'Nový model umělé inteligence od společnosti OpenAI je rychlejší a levnější než ty předchozí. '.repeat(30) };
   assert.match(spider.indexPage(row(czech.url), czech).reason, /Language cs/);
   assert.equal(spider.enqueue('https://unite.ai/cs/dalsi-ai-model-od-openai/'), false, 'the rest of a learned translation section is not queued');
   assert.equal(spider.enqueue('https://theverge.com/cs/features/2/another-story-about-ai'), true);
@@ -371,9 +371,9 @@ test('the queue drops stale and excess articles, but not recrawls', () => {
 test('index review hides pages today\'s rules reject, and only those', async () => {
   const { reviewIndex } = await import('../src/admin/content.js');
   const now = Date.now();
-  const add = (url, extra = {}) => upsertDoc({ url, type: 'article', title: 'AI story', site: new URL(url).hostname, fetched_at: now, body: 'Claude and GPT. '.repeat(50), ...extra });
+  const add = (url, extra = {}) => upsertDoc({ url, type: 'article', title: `AI story ${url}`, site: new URL(url).hostname, fetched_at: now, body: 'Claude and GPT. '.repeat(50), ...extra });
   add('https://rev.example/docs/setup-guide');
-  add('https://rev.example/cs/novy-model', { lang: 'cs' });
+  add('https://rev.example/cs/novy-model', { lang: 'cs', body: 'Nový model umělé inteligence je rychlejší a levnější než ty předchozí. '.repeat(30) });
   add('https://rev.example/2026/10/20/a-real-ai-story', { published_at: now });
   for (let i = 0; i < 4; i++) add(`https://rev.example/compare/m${i}-vs-x`);
   const { id: pinned } = add('https://rev.example/docs/pinned-guide');
@@ -621,4 +621,47 @@ test('GDELT catch-up lists the missed 15-minute batches, newest capped', async (
   assert.deepEqual(batchesSince(null, `${b}20261021060000.gkg.csv.zip`, 1), [`${b}20261021060000.gkg.csv.zip`]);
   assert.deepEqual(batchesSince(`${b}20261021060000.gkg.csv.zip`, `${b}20261021060000.gkg.csv.zip`, 12), [], 'nothing new');
   assert.deepEqual(batchesSince(`${b}20261021235000.gkg.csv.zip`.replace('235000', '234500'), `${b}20261022000000.gkg.csv.zip`, 12).map((u) => u.slice(-26, -12)), ['20261022000000'], 'across midnight');
+});
+
+test('undated pages sharing a site-wide title are landing pages; dated ones are posts', () => {
+  for (let i = 0; i < 2; i++) upsertDoc({ url: `https://landing.example/p/${i}`, type: 'article', title: 'Landing — AI terminal', site: 'landing.example', fetched_at: Date.now(), body: 'AI models. '.repeat(50) });
+  const page = { title: 'Landing — AI terminal', description: '', lang: 'en', isArticle: true, site: 'landing.example', url: 'https://landing.example/p/9', text: 'OpenAI and Anthropic model tracker. '.repeat(40) };
+  assert.match(spider.decide(page).reason, /landing or listing/);
+  assert.equal(spider.decide({ ...page, published_at: Date.now() }).ok, true, 'a dated post with a repeated title is fine');
+  assert.equal(spider.decide({ ...page, title: 'A specific AI story' }).ok, true);
+});
+
+test('a wrong language label on an English page is overridden by the text', async () => {
+  const { looksEnglish } = await import('../src/spider/policy.js');
+  const en = 'As AI investments surge, the chief executives of the largest companies are taking the lead on decisions and on upskilling themselves, according to a survey that was published this week. '.repeat(4);
+  const de = 'Die künstliche Intelligenz verändert die Arbeit in den Unternehmen, und viele Firmen investieren in neue Modelle, die sie in ihren Abteilungen einsetzen wollen. '.repeat(4);
+  assert.equal(looksEnglish(en), true);
+  assert.equal(looksEnglish(de), false);
+  const base = { title: 'As AI investments surge, CEOs take the lead', description: '', isArticle: true, site: 'bcg.example', url: 'https://bcg.example/press/ai-ceos', published_at: Date.now() };
+  assert.equal(spider.decide({ ...base, lang: 'bs', text: en }).ok, true, 'English text labelled Bosnian');
+  assert.match(spider.decide({ ...base, lang: 'de', text: de }).reason, /Language de/);
+});
+
+test('a section in another language is learned under any name; mislabelled English pages are not evidence', () => {
+  const zh = (i) => ({ title: `QuickSight 图库 ${i}`, description: '', lang: 'zh', isArticle: true, site: 'cloud.example', url: `https://cloud.example/cn/gallery-${i}`, text: '这是一个关于人工智能的页面。'.repeat(80), published_at: Date.now() });
+  for (let i = 0; i < 3; i++) spider.indexPage(row(zh(i).url), zh(i));
+  assert.equal(spider.enqueue('https://cloud.example/cn/gallery-9'), false, '/cn/ learned after 3');
+  assert.equal(spider.enqueue('https://cloud.example/blogs/ai/new-model-launch'), true);
+  // English text labelled "bs", skipped for being short: never a language dead end.
+  for (let i = 0; i < 6; i++) {
+    const p = { title: `Press ${i}`, description: '', lang: 'bs', isArticle: true, site: 'label.example', url: `https://label.example/note-${i}`, text: 'The AI report was released by the company today and it is short. '.repeat(5), published_at: Date.now() };
+    spider.indexPage(row(p.url), p);
+  }
+  assert.equal(spider.enqueue('https://label.example/a-longer-ai-report'), true);
+});
+
+test('a site with indexed English pages is never a whole-site language dead end', () => {
+  for (let i = 0; i < 3; i++) upsertDoc({ url: `https://multi.example/blog/en-post-${i}`, type: 'article', title: `Post ${i}`, site: 'multi.example', lang: 'en', fetched_at: Date.now(), body: 'AI. '.repeat(50) });
+  const ja = (i) => ({ title: `記事 ${i}`, description: '', lang: 'ja', isArticle: true, site: 'multi.example', url: `https://multi.example/blog/ja-post-${i}`, text: '人工知能の記事です。'.repeat(80), published_at: Date.now() });
+  for (let i = 0; i < 6; i++) spider.indexPage(row(ja(i).url), ja(i));
+  assert.equal(spider.live().deadEnds.some((d) => d.key.startsWith('multi.example/')), false, 'neither the site nor its /blog section');
+  // One learned wrongly before is healed at startup.
+  spider.learnDeadEnd('multi.example/*', 'language');
+  spider.healDeadEnds();
+  assert.equal(spider.live().deadEnds.some((d) => d.key === 'multi.example/*'), false);
 });

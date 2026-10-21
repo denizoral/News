@@ -110,7 +110,7 @@ export class Spider extends EventEmitter {
   isAiHost(h) { return isAiHost(h); }
   isRelevantText(t) { return isRelevantText(t, this.cfg.includeKeywords); }
   decide(page) {
-    const d = decide(page, this.cfg, { findDuplicate: findByContentHash, undatedInSection, trusted: this.trusted });
+    const d = decide(page, this.cfg, { findDuplicate: findByContentHash, undatedInSection, sameTitleOnSite, trusted: this.trusted });
     if (d.capped) this.noteCapped(page.url);
     return d;
   }
@@ -168,6 +168,7 @@ export class Spider extends EventEmitter {
   }
 
   seed() {
+    this.healDeadEnds();
     const hubs = [...this.cfg.hubs, ...this.autoHubs().map((a) => a.url)];
     tx(() => {
       // Feeds queued under older rules that the current rules wouldn't follow.
@@ -277,6 +278,29 @@ export class Spider extends EventEmitter {
     console.log(`[spider] learned dead end ${key} (${reason}); ${n} queued URLs dropped`);
   }
 
+  // Indexed pages in a wanted language on a site, or in one of its sections.
+  wantedLanguageDocs(host, section = null) {
+    const langs = this.cfg.languages;
+    if (!langs.length) return 0;
+    const inSection = section ? ' AND (url LIKE ? OR url LIKE ?)' : '';
+    const args = section ? [`https://${host}/${section}/%`, `http://${host}/${section}/%`] : [];
+    return q(`SELECT COUNT(*) AS n FROM docs WHERE site = ? AND fetched_at IS NOT NULL AND lang IN (${langs.map(() => '?').join(', ')})${inSection}`).get(host, ...langs, ...args).n;
+  }
+
+  // Language dead ends learned wrongly (a site or section with plenty of
+  // indexed pages in a wanted language) are forgotten, which requeues what
+  // they dropped. Run at startup.
+  healDeadEnds() {
+    for (const [key, v] of [...this.deadEnds()]) {
+      if (v.reason !== 'language') continue;
+      const [host, seg] = [key.slice(0, key.indexOf('/')), key.slice(key.indexOf('/') + 1)];
+      if (this.wantedLanguageDocs(host, seg === '*' ? null : seg) >= 3) {
+        this.forgetDeadEnd(key);
+        console.log(`[spider] forgot dead end ${key}: it has pages in a wanted language`);
+      }
+    }
+  }
+
   forgetDeadEnd(key) {
     // Pages it dropped from the queue come back.
     const [host, seg] = [key.slice(0, key.indexOf('/')), key.slice(key.indexOf('/') + 1)];
@@ -310,6 +334,7 @@ export class Spider extends EventEmitter {
     const seg = sectionPath(new URL(page.url));
     if (d.ok) {
       this.misses.delete(`lang:${host}`);
+      this.misses.delete(`lang:${host}/${(new URL(page.url).pathname.split('/')[1] || '').toLowerCase()}`);
       this.misses.delete(`empty:${host}`);
       this.misses.delete(`empty:${host}/${seg}`);
       return;
@@ -317,11 +342,19 @@ export class Spider extends EventEmitter {
     const bump = (k) => { const n = (this.misses.get(k) || 0) + 1; this.misses.set(k, n); return n; };
     const hub = this.cfg.hubHosts.includes(host);
     const langs = this.cfg.languages;
-    if (langs.length && page.lang && !langs.includes(page.lang)) {
+    // Only pages skipped for their language count (a mislabelled English page
+    // that was skipped for something else is no evidence).
+    if (langs.length && /^Language /.test(d.reason || '')) {
       const code = localeOf(page.url);
+      const first = (new URL(page.url).pathname.split('/')[1] || '').toLowerCase();
       // Keyed by the actual segment (/zh-cn/, not /zh/), which is what URLs are matched on.
-      if (code === page.lang) this.learnDeadEnd(`${host}/${new URL(page.url).pathname.split('/')[1].toLowerCase()}`, 'language');
-      else if (!code && bump(`lang:${host}`) >= 5 && !hub) this.learnDeadEnd(`${host}/*`, 'language');
+      if (code === page.lang) this.learnDeadEnd(`${host}/${first}`, 'language');
+      // A section in another language under any name (/cn/ for Chinese): 3 in a row.
+      else if (first && bump(`lang:${host}/${first}`) >= 3 && this.wantedLanguageDocs(host, first) === 0) this.learnDeadEnd(`${host}/${first}`, 'language');
+      // A whole site only if nothing from it was ever indexed in a wanted
+      // language (multilingual sites like cloud.google.com have runs of
+      // translated pages).
+      else if (bump(`lang:${host}`) >= 5 && !hub && this.wantedLanguageDocs(host) === 0) this.learnDeadEnd(`${host}/*`, 'language');
     } else if (/^Too short \(0 words/.test(d.reason || '')) {
       if (seg && bump(`empty:${host}/${seg}`) >= 10) this.learnDeadEnd(`${host}/${seg}`, 'empty');
       else if (bump(`empty:${host}`) >= 25 && !hub) this.learnDeadEnd(`${host}/*`, 'empty');
@@ -1250,6 +1283,12 @@ export class Spider extends EventEmitter {
     this._st = { at: now, v };
     return v;
   }
+}
+
+// Other indexed pages on the same site with the same title (see decide()).
+function sameTitleOnSite(page) {
+  if (!page.title || !page.site) return 0;
+  return q('SELECT COUNT(*) AS n FROM docs WHERE site = ? AND title = ? COLLATE NOCASE AND url != ? AND hidden = 0').get(bare(page.site), page.title.trim(), page.url || '').n;
 }
 
 // Undated pages its site section indexed in the last day (see decide()).

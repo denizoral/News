@@ -97,9 +97,17 @@ export function isArchiveSitemap(url, now = Date.now()) {
 export const isEditorialSection = (url) => /^\/(blogs?|news|newsroom|press|articles?|stories|posts?|abs|pdf|papers?|pubs|publications|research|\d{4})(\/|$)/i.test(new URL(url).pathname);
 
 // The section a page belongs to, for per-section limits: host plus first path segment.
+// The first path segment, or the first two when the first is a locale, so
+// nvidia.com/en-us/geforce and nvidia.com/en-us/blog are separate sections.
+export function sectionPath(url) {
+  const segs = (url instanceof URL ? url : new URL(url)).pathname.toLowerCase().split('/').filter(Boolean);
+  if (/^[a-z]{2}([-_][a-z]{2})?$/.test(segs[0] || '') && segs[1]) return `${segs[0]}/${segs[1]}`;
+  return segs[0] || '';
+}
+
 export function sectionOf(url) {
   const u = new URL(url);
-  return { site: bare(u.hostname), prefix: `${u.origin}/${u.pathname.split('/')[1] || ''}` };
+  return { site: bare(u.hostname), prefix: `${u.origin}/${sectionPath(u)}` };
 }
 
 // Listing pages (a tag, topic or author's page) that sitemaps often include
@@ -192,7 +200,7 @@ export function decide(page, cfg, { findDuplicate = () => null, undatedInSection
   // Generated sites flood one section with undated pages. Sites the admin
   // chose, AI publishers and editorial sections are exempt.
   if (!page.published_at && cfg.undatedPerSection && !isAiHost(host) && !(cfg.hubHosts || []).includes(host) && !isEditorialSection(page.url) && undatedInSection(page) >= cfg.undatedPerSection) {
-    return { ok: false, outcome: 'skipped', reason: `Undated, and this section already had ${cfg.undatedPerSection} undated pages today (looks generated)` };
+    return { ok: false, outcome: 'skipped', capped: true, reason: `Undated, and this section already had ${cfg.undatedPerSection} undated pages today (looks generated)` };
   }
   const dup = page.contentHash ? findDuplicate(page.contentHash) : null;
   if (dup && dup.url !== page.url) return { ok: false, outcome: 'duplicate', reason: `Same text as ${dup.url}` };

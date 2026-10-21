@@ -492,3 +492,59 @@ test('dead ends under a locale prefix cover one section, not the whole locale', 
   spider.forgetDeadEnd('loc.example/en-us/geforce');
   assert.equal(frontier('https://loc.example/en-us/geforce/compare-queued').status, 'queued', 'forgetting brings dropped URLs back');
 });
+
+test('undated limit: sections under a locale are separate; a capped section waits for tomorrow', async () => {
+  const { sectionOf } = await import('../src/spider/policy.js');
+  assert.notEqual(sectionOf('https://nv.example/en-us/geforce/news/x').prefix, sectionOf('https://nv.example/en-us/blog/y').prefix);
+  settings.update({ 'crawler.undatedPerSection': 2 }, { role: 'owner', actor: 't' });
+  const text = 'GPU drivers and DLSS updates for AI upscaling. '.repeat(40);
+  for (let i = 0; i < 2; i++) upsertDoc({ url: `https://nv.example/en-us/geforce/news/driver-${i}`, type: 'article', title: `Driver ${i}`, site: 'nv.example', fetched_at: Date.now(), body: text });
+  const page = { title: 'Driver 3', description: '', lang: 'en', isArticle: true, site: 'nv.example', text, url: 'https://nv.example/en-us/geforce/news/driver-3' };
+  assert.equal(spider.decide(page).capped, true);
+  assert.equal(spider.isCappedToday('https://nv.example/en-us/geforce/news/driver-4'), true);
+  assert.equal(spider.isCappedToday('https://nv.example/en-us/blog/driver-4'), false);
+  const u = 'https://nv.example/en-us/geforce/news/driver-5';
+  spider.enqueue(u);
+  await spider.process(row(u), spider.host('nv.example'));
+  assert.ok(frontier(u).next_at > Date.now() + 60e3, 'deferred, not fetched');
+  settings.update({ 'crawler.undatedPerSection': 20 }, { role: 'owner', actor: 't' });
+});
+
+test('discovered feeds that never worked are dropped at once; ones that worked get three strikes', () => {
+  const h = spider.host('disc.example');
+  const a = 'https://disc.example/feed-a';
+  spider.enqueue(a, { kind: 'feed', via: 'https://disc.example/some-page' });
+  spider.fail(row(a, 'feed', { via: 'https://disc.example/some-page' }), h, new HttpError(404, a));
+  assert.equal(frontier(a).status, 'skipped');
+  const b = 'https://disc.example/feed-b';
+  spider.enqueue(b, { kind: 'feed', via: 'https://disc.example/some-page' });
+  q('UPDATE frontier SET http_status = 200 WHERE url = ?').run(b);
+  spider.fail(row(b, 'feed', { via: 'https://disc.example/some-page' }), h, new HttpError(404, b));
+  assert.equal(frontier(b).status, 'queued');
+});
+
+test('sites that keep refusing after a rest become dead ends for two weeks', () => {
+  const h = spider.host('wall.example');
+  for (let i = 0; i < 20; i++) spider.fail(row(`https://wall.example/story-${i}-a-b-c`), h, new HttpError(403, 'x'));
+  const d = spider.live().deadEnds.find((x) => x.key === 'wall.example/*');
+  assert.equal(d?.reason, 'refuses');
+  assert.ok(d.until > Date.now() + 13 * 86400e3);
+  assert.equal(spider.enqueue('https://wall.example/another-story-about-ai'), false);
+  spider.forgetDeadEnd('wall.example/*');
+});
+
+test('URLs a known robots.txt disallows are not queued', async () => {
+  const { parseRobots } = await import('../src/spider/robots.js');
+  const h = spider.host('robo.example');
+  h.parsed = parseRobots('User-agent: *\nDisallow: /private/');
+  assert.equal(spider.enqueue('https://robo.example/private/ai-story'), false);
+  assert.equal(spider.enqueue('https://robo.example/news/ai-story'), true);
+});
+
+test('language dead ends match region-coded paths (/zh-CN/)', () => {
+  const page = { title: '新的人工智能模型', description: '', lang: 'zh', isArticle: true, site: 'region.example', url: 'https://region.example/zh-CN/ai-model-1', text: '人工智能 '.repeat(200), published_at: Date.now() };
+  spider.enqueue('https://region.example/zh-CN/ai-model-2');
+  spider.indexPage(row(page.url), page);
+  assert.equal(frontier('https://region.example/zh-CN/ai-model-2').status, 'skipped');
+  assert.equal(spider.enqueue('https://region.example/zh-CN/ai-model-3'), false);
+});

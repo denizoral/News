@@ -119,7 +119,9 @@ the oldest images first.
     (403/404, usually blocking crawlers) rests for 6 hours, doubling up to 2 days.
   - Feeds and sitemaps that answer 404 (or another permanent error), or turn
     out to be ordinary web pages, three times in a row are retired instead of
-    being rechecked forever. So are feeds and sitemaps whose pages never get
+    being rechecked forever. Ones it discovered itself (in a page or a sitemap
+    index) and that never worked are dropped on the first failure. Links that a
+    site's robots.txt disallows aren't queued at all. So are feeds and sitemaps whose pages never get
     indexed (25 fetched in a week, none indexed), with everything they queued.
   - The queue stays bounded: articles not fetched within 72 hours are dropped as
     stale news, and each site keeps at most 3,000 queued articles (best first).
@@ -137,11 +139,15 @@ the oldest images first.
   about AI. A page counts as about AI if its headline or summary says so, or the
   body keeps coming back to it. Generated pages (comparisons, directories) are
   capped: a site section indexes at most 20 undated pages a day, except on
-  starting sites and in blog, news and research sections.
+  starting sites and in blog, news and research sections. A section under a
+  locale is two levels deep (`/en-us/geforce`). Once a mostly-undated section
+  hits its limit, its queued pages wait for the next day instead of being
+  fetched just to be skipped.
 - **Dead ends it learns:** translated sections (`/cs/…`) and whole sites in
   another language (5 pages in a row), and sections whose pages come back empty
   (10 in a row, usually JavaScript apps), stop being queued and their queued
-  pages are dropped. Under a locale prefix the section is two levels deep
+  pages are dropped. So do sites that are still refusing every page after a
+  rest, for two weeks. Under a locale prefix the section is two levels deep
   (`/en-us/geforce`). The Sites tab lists them, and *Forget* brings one back.
 - **Cleaning up later:** Content → *Clean up the index* in the dashboard rechecks
   everything already indexed against today's rules, shows what matches, and

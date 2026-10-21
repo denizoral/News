@@ -30,7 +30,7 @@ import { parseFeed } from '../sources/rss.js';
 import { readText } from './body.js';
 import { downloadImage, enforceBudget } from './media.js';
 import { upsertDoc, findByContentHash, addInlinks } from '../index/documents.js';
-import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, localeOf, isNonNewsPath } from './policy.js';
+import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, sectionPath, localeOf, isNonNewsPath } from './policy.js';
 
 export { inQuietHours };
 
@@ -41,6 +41,7 @@ const RECURRING = new Set(['hub', 'sitemap', 'feed']);
 // addresses are tried once and dropped if nothing is there.
 const GUESS = 'guess';
 const REFUSAL_LIMIT = 10;
+const DEAD_END_REASONS = { language: 'another language', empty: 'pages come back empty', refuses: 'the site refuses the crawler' };
 const SITEMAP_GUESSES = ['/sitemap.xml', '/sitemap_index.xml', '/news-sitemap.xml'];
 const FEED_GUESSES = ['/feed', '/feed.xml', '/rss.xml', '/atom.xml', '/index.xml'];
 const MAX_BACKOFF = 8; // recurring URLs are checked at most 8x less often
@@ -58,6 +59,7 @@ export class Spider extends EventEmitter {
     this.running = false;
     this.stats = { fetched: 0, indexed: 0, duplicates: 0, blocked: 0, errors: 0, deferred: 0, images: 0, feeds: 0, startedAt: Date.now(), recent: [] };
     this.inflightUrls = new Map(); // url -> { host, kind, started }
+    this.capped = new Map(); // section prefix -> UTC day it hit its undated limit
     this.misses = new Map(); // "lang:host", "empty:host/section" -> unindexed pages in a row
     this.ring = []; // newest crawl-log entries, for the live view
     this.minutes = new Map(); // minute -> fetches, last hour
@@ -104,7 +106,27 @@ export class Spider extends EventEmitter {
   urlAllowedByPatterns(u) { return allowedByPatterns(u, this.cfg); }
   isAiHost(h) { return isAiHost(h); }
   isRelevantText(t) { return isRelevantText(t, this.cfg.includeKeywords); }
-  decide(page) { return decide(page, this.cfg, { findDuplicate: findByContentHash, undatedInSection, trusted: this.trusted }); }
+  decide(page) {
+    const d = decide(page, this.cfg, { findDuplicate: findByContentHash, undatedInSection, trusted: this.trusted });
+    if (d.capped) this.noteCapped(page.url);
+    return d;
+  }
+
+  // Sections at their undated-page limit for today (see decide()). When most
+  // of what the section indexed today is undated, its queued pages wait for
+  // tomorrow instead of being fetched just to be skipped.
+  noteCapped(url) {
+    const { site, prefix } = sectionOf(url);
+    const day = Math.floor(Date.now() / 86400e3);
+    if (this.capped.get(prefix) === day) return;
+    const r = q('SELECT COUNT(*) AS n, SUM(published_at IS NULL) AS undated FROM docs WHERE site = ? AND fetched_at > ? AND url LIKE ?').get(site, Date.now() - 86400e3, `${prefix}/%`);
+    if (r.n && r.undated >= 0.8 * r.n) this.capped.set(prefix, day);
+  }
+
+  isCappedToday(url) {
+    if (!this.capped.size) return false;
+    return this.capped.get(sectionOf(url).prefix) === Math.floor(Date.now() / 86400e3);
+  }
 
   // ---------- frontier ----------
 
@@ -124,6 +146,9 @@ export class Spider extends EventEmitter {
       // sections, job boards, stock photos, login-walled social sites.
       const host = bare(new URL(u).hostname);
       if (isNonNewsPath(u) || (isNonNewsHost(host) && !this.trusted.has(host))) return false;
+      // Disallowed by a robots.txt already fetched: it would only be logged as blocked.
+      const known = this.hostCache.get(new URL(u).hostname);
+      if (known?.parsed && !this.robotsAllows(known, u)) return false;
     }
     if (priority < 4 && this.queuedCount() > this.cfg.maxQueue) return false;
     const inserted = q(`INSERT INTO frontier (url, host, kind, priority, depth, status, next_at, discovered_at, via) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)
@@ -235,17 +260,17 @@ export class Spider extends EventEmitter {
     return this._deadEnds;
   }
 
-  learnDeadEnd(key, reason) {
+  learnDeadEnd(key, reason, { days = null } = {}) {
     const known = this.deadEnds();
-    if (known.has(key)) return;
-    known.set(key, { reason, at: Date.now() });
+    if (known.has(key) && !(known.get(key).until < Date.now())) return;
+    known.set(key, { reason, at: Date.now(), ...(days ? { until: Date.now() + days * 86400e3 } : {}) });
     this.saveKv('spider.deadEnds', Object.fromEntries([...known].slice(-5000)));
     // What's already queued there goes too.
     const [host, seg] = [key.slice(0, key.indexOf('/')), key.slice(key.indexOf('/') + 1)];
     const where = seg === '*' ? '' : ' AND (url LIKE ? OR url LIKE ?)';
     const args = seg === '*' ? [] : [`https://${host}/${seg}/%`, `https://www.${host}/${seg}/%`];
     const n = q(`UPDATE frontier SET status = 'skipped', error = ? WHERE host IN (?, ?) AND status = 'queued' AND fetched_at IS NULL AND kind IN ('article', 'page')${where}`)
-      .run(`Learned dead end: ${reason === 'language' ? 'another language' : 'pages come back empty'}`, host, `www.${host}`, ...args).changes;
+      .run(`Learned dead end: ${DEAD_END_REASONS[reason] || reason}`, host, `www.${host}`, ...args).changes;
     console.log(`[spider] learned dead end ${key} (${reason}); ${n} queued URLs dropped`);
   }
 
@@ -267,10 +292,11 @@ export class Spider extends EventEmitter {
     if (!known.size) return false;
     const url = new URL(u);
     const host = bare(url.hostname);
-    const seg = deadEndSection(url);
+    const seg = sectionPath(url);
     const hit = known.get(`${host}/*`) || (seg && (known.get(`${host}/${seg}`) || known.get(`${host}/${seg.split('/')[0]}`)));
+    if (!hit || hit.until < Date.now()) return false;
     // Language dead ends only apply while languages are restricted.
-    return !!hit && (hit.reason !== 'language' || this.cfg.languages.length > 0);
+    return hit.reason !== 'language' || this.cfg.languages.length > 0;
   }
 
   // Called with every page that wasn't indexed, and with every one that was
@@ -278,7 +304,7 @@ export class Spider extends EventEmitter {
   learnFromPage(page, d) {
     if (!page.url) return;
     const host = bare(new URL(page.url).hostname);
-    const seg = deadEndSection(new URL(page.url));
+    const seg = sectionPath(new URL(page.url));
     if (d.ok) {
       this.misses.delete(`lang:${host}`);
       this.misses.delete(`empty:${host}`);
@@ -290,7 +316,8 @@ export class Spider extends EventEmitter {
     const langs = this.cfg.languages;
     if (langs.length && page.lang && !langs.includes(page.lang)) {
       const code = localeOf(page.url);
-      if (code === page.lang) this.learnDeadEnd(`${host}/${code}`, 'language');
+      // Keyed by the actual segment (/zh-cn/, not /zh/), which is what URLs are matched on.
+      if (code === page.lang) this.learnDeadEnd(`${host}/${new URL(page.url).pathname.split('/')[1].toLowerCase()}`, 'language');
       else if (!code && bump(`lang:${host}`) >= 5 && !hub) this.learnDeadEnd(`${host}/*`, 'language');
     } else if (/^Too short \(0 words/.test(d.reason || '')) {
       if (seg && bump(`empty:${host}/${seg}`) >= 10) this.learnDeadEnd(`${host}/${seg}`, 'empty');
@@ -397,6 +424,10 @@ export class Spider extends EventEmitter {
   hostRefused(h) {
     h.refuseStreak = (h.refuseStreak || 0) + 1;
     if (h.refuseStreak < REFUSAL_LIMIT) return 0;
+    // Still refusing after a rest: stop queuing its links for two weeks
+    // (starting sites excepted; they keep their rests).
+    const host = bare(h.host);
+    if (h.refuseStreak >= 2 * REFUSAL_LIMIT && !this.trusted.has(host)) this.learnDeadEnd(`${host}/*`, 'refuses', { days: 14 });
     const minutes = Math.min(2880, 360 * 2 ** (h.refuseStreak - REFUSAL_LIMIT));
     h.pausedUntil = Date.now() + minutes * 60e3;
     h.next_allowed_at = Math.max(h.next_allowed_at, h.pausedUntil);
@@ -610,10 +641,14 @@ export class Spider extends EventEmitter {
       return;
     }
     const permanent = err.permanent || (err.status >= 400 && err.status < 500);
-    // A guessed feed or sitemap address that doesn't exist is simply dropped.
-    if (row.via === GUESS && permanent) {
+    // A guessed or discovered feed or sitemap (found in a page or a sitemap
+    // index, not configured or listed in robots.txt) that doesn't work is
+    // simply dropped...
+    const discovered = row.via === GUESS || ((row.kind === 'feed' || row.kind === 'sitemap') && /^https?:/.test(row.via || ''));
+    // ...unless it has worked before: then it gets three strikes like any other.
+    if (discovered && permanent && q('SELECT http_status FROM frontier WHERE url = ?').get(row.url)?.http_status !== 200) {
       q("UPDATE frontier SET status = 'skipped', http_status = ?, error = ?, fetched_at = ? WHERE url = ?").run(err.status ?? null, 'Nothing at this address', now, row.url);
-      this.log(row, { outcome: 'skipped', http: err.status, reason: `No ${row.kind} at this guessed address${err.permanent ? ` (${err.message})` : ''}` });
+      this.log(row, { outcome: 'skipped', http: err.status, reason: `No ${row.kind} at this ${row.via === GUESS ? 'guessed' : 'discovered'} address${err.permanent ? ` (${err.message})` : ''}` });
       return;
     }
     this.stats.errors++;
@@ -670,6 +705,13 @@ export class Spider extends EventEmitter {
   }
 
   async process(row, h) {
+    if ((row.kind === 'article' || row.kind === 'page') && this.isCappedToday(row.url)) {
+      const tomorrow = (Math.floor(Date.now() / 86400e3) + 1) * 86400e3 + Math.random() * 3600e3;
+      q("UPDATE frontier SET status = 'queued', next_at = ? WHERE url = ?").run(tomorrow, row.url);
+      this.stats.deferred++;
+      this.log(row, { outcome: 'deferred', reason: 'This section reached its undated-page limit today; tried again tomorrow' });
+      return;
+    }
     const rule = this.rule(h.host);
     await this.ensureRobots(h, new URL(row.url).protocol);
     const robotsOk = this.robotsAllows(h, row.url);
@@ -1116,14 +1158,6 @@ export class Spider extends EventEmitter {
     this._st = { at: now, v };
     return v;
   }
-}
-
-// The section a dead end covers: the first path segment, or the first two
-// when the first is a locale (nvidia.com/en-us/geforce, not all of /en-us).
-function deadEndSection(url) {
-  const segs = url.pathname.toLowerCase().split('/').filter(Boolean);
-  if (/^[a-z]{2}([-_][a-z]{2})?$/.test(segs[0] || '') && segs[1]) return `${segs[0]}/${segs[1]}`;
-  return segs[0] || '';
 }
 
 // Undated pages its site section indexed in the last day (see decide()).

@@ -179,13 +179,26 @@ function connect() {
     return;
   }
   const es = new EventSource('api/stream');
-  es.addEventListener('update', () => refresh());
+  es.addEventListener('update', (e) => {
+    try { state.latest = JSON.parse(e.data).version; } catch { state.latest = Infinity; }
+    scheduleRefresh();
+  });
   es.addEventListener('hello', () => setLive('on'));
   es.onerror = () => {
     setLive('off');
     if (es.readyState === EventSource.CLOSED) setTimeout(connect, 5000);
   };
 }
+
+// Updates arrive a few times a minute. A hidden tab fetches nothing and
+// catches up once when shown; bursts of updates coalesce into one fetch.
+let refreshTimer = null;
+function scheduleRefresh() {
+  if (document.hidden || state.latest === state.data?.version) return;
+  if (refreshTimer) return;
+  refreshTimer = setTimeout(() => { refreshTimer = null; refresh(); }, 2000);
+}
+document.addEventListener('visibilitychange', scheduleRefresh);
 
 function setLive(s) {
   state.live = s;
@@ -443,9 +456,9 @@ function renderTrending({ animate = false } = {}) {
   box.hidden = !topics.length;
   if (!topics.length) return;
   $('#trendNote').textContent = `Most coverage versus the usual pace, last ${t.hours} hours`;
-  $('#trendWindow').innerHTML = state.mode === 'api'
+  setHtml($('#trendWindow'), state.mode === 'api'
     ? TREND_WINDOWS.map(([h, l]) => `<button class="chip" type="button" data-trend-hours="${h}" aria-pressed="${state.trendHours === h}">${l}</button>`).join('')
-    : '';
+    : '');
   const keys = topics.map((x) => x.key).join();
   const list = $('#trendList');
   list.classList.toggle('animate', (animate || keys !== trendKeys) && !reducedMotion());
@@ -1056,7 +1069,7 @@ async function updateSpiderLine() {
   if (state.mode !== 'api') return;
   $('#footSpider').textContent = await spiderLine(compact);
 }
-setInterval(updateSpiderLine, 30e3);
+setInterval(() => !document.hidden && updateSpiderLine(), 30e3);
 setHtml($('#river'), Array.from({ length: 6 }, () => '<div class="skeleton-card" aria-hidden="true"><i class="skeleton"></i><i class="skeleton w80"></i><i class="skeleton w40"></i></div>').join(''));
 route();
 await refresh();

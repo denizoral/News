@@ -5,6 +5,25 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-21 (04:37 run)
+
+### Live updates: hidden tabs stop downloading the snapshot
+
+The server publishes a new snapshot about 2.5 times a minute (5 versions in a
+measured 2-minute window, each one real: new stories, re-scored items). The
+snapshot is 1.2 MB of JSON, 299 KB with Brotli, and every open tab fetched each
+version even when it was in the background. Now a hidden tab fetches nothing
+and catches up with one request when shown, updates that arrive within 2 s
+share one fetch, and the footer's spider line stops polling while hidden.
+
+| Open tab, per hour | Before | After |
+| --- | ---: | ---: |
+| Visible | ~150 fetches, ~45 MB | same (each version is real) |
+| Hidden | ~150 fetches, ~45 MB | **0** (1 fetch on return) |
+
+The next step for visible tabs would be sending deltas instead of the whole
+snapshot.
+
 ## 2026-10-21
 
 Environment: production server (12 cores, 14 GB), Node 24.22, live `data/wire.db`

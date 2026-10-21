@@ -16,6 +16,8 @@ import { Store, publicSnapshot } from './store.js';
 import { marketHistory, backfillMarket, movers } from './pipeline/odds.js';
 import { topicHistory, topicKeys, warmTopics } from './index/topics.js';
 import { weeklyDigest, digestRss } from './index/digest.js';
+import { semanticSearch, relatedTo, keepVectorsWarm } from './index/semantic.js';
+import { startEmbedder } from './index/vectors.js';
 import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
 import { openDb, checkpoint, closeDb } from './db.js';
 import { settings } from './settings.js';
@@ -199,6 +201,23 @@ export function createApp({ store, spider }) {
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', etag: s.etag, 'cache-control': 'public, max-age=5', vary: 'Accept-Encoding', ...(enc ? { 'content-encoding': enc } : {}) });
       return res.end(req.method === 'HEAD' ? undefined : s.body.get(enc));
     }
+    if (p === '/api/search' && url.searchParams.get('mode') === 'meaning') {
+      if (limited(req, res)) return;
+      const o = Object.fromEntries(url.searchParams);
+      if ((o.q || '').length > MAX_QUERY) return json(req, res, 400, { error: `Searches can be at most ${MAX_QUERY} characters.` });
+      return semanticSearch(o.q, o)
+        .then((data) => json(req, res, 200, data, { 'cache-control': 'public, max-age=60' }))
+        .catch((err) => json(req, res, 503, { error: `Search by meaning is unavailable: ${err.message}` }));
+    }
+    if (p === '/api/related') {
+      if (limited(req, res)) return;
+      const id = url.searchParams.get('id');
+      const story = [...(store.snapshot.stories || []), ...(store.snapshot.tech || [])].find((s) => s.id === id);
+      if (!story) return json(req, res, 404, { error: 'No story with that id.' });
+      return relatedTo(story)
+        .then((data) => json(req, res, 200, data, { 'cache-control': 'public, max-age=300' }))
+        .catch((err) => json(req, res, 503, { error: `Related coverage is unavailable: ${err.message}` }));
+    }
     if (p === '/api/search') return cachedApi(req, res, url, (o) => (o.type === 'images' ? searchImages(o.q || '', o) : universal(o.q || '', o)));
     if (p === '/api/x') return cachedApi(req, res, url, (o) => xFeed(store, o));
     if (p === '/api/suggest') return cachedApi(req, res, url, (o) => suggest(o.q || ''));
@@ -336,6 +355,8 @@ function main() {
   setInterval(checkpoint, 5 * 60e3).unref();
   if (background) {
     startRetention();
+    startEmbedder(); // independent of the first crawl (Reddit alone takes minutes)
+    keepVectorsWarm();
     crawlAll(store)
       .then(() => {
         store.save();

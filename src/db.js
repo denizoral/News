@@ -135,6 +135,14 @@ END;
 
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 
+-- Sentence embeddings of articles and posts (title + start of summary), for
+-- semantic search and related coverage. v = float32 scale + 384 int8.
+CREATE TABLE IF NOT EXISTS doc_vecs (
+  seq INTEGER PRIMARY KEY,       -- load order, so readers can pick up only new rows
+  doc_id INTEGER NOT NULL UNIQUE,
+  v BLOB NOT NULL
+);
+
 -- Polymarket odds over time: one row per outcome whenever its price moves
 -- (and at least every 30 minutes), plus hourly history backfilled from
 -- Polymarket's public price history.

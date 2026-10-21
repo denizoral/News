@@ -1,5 +1,6 @@
 import { labelerStatus } from './pipeline/labeler.js';
 import { oddsStatus } from './pipeline/odds.js';
+import { embedStatus } from './index/vectors.js';
 import { firstReport, scoopBoard } from './pipeline/scoops.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -210,7 +211,7 @@ export class Store extends EventEmitter {
   }
 
   status() {
-    return { sources: this.sourceStatus, items: this.items.size, markets: this.markets.length, labeler: { ...labelerStatus }, odds: { ...oddsStatus } };
+    return { sources: this.sourceStatus, items: this.items.size, markets: this.markets.length, labeler: { ...labelerStatus }, odds: { ...oddsStatus }, embeddings: { ...embedStatus } };
   }
 }
 

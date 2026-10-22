@@ -2,6 +2,73 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-22 · Compare models (#models)
+
+**Backend.**
+- **`src/index/models.js`:** every release on the Releases page (90 days)
+  with listing data plus what the wire knows about it.
+  - **Price:** input, output and a blended price (3 parts input to 1 part
+    output) per million tokens, from OpenRouter.
+  - **Size:** total and active parameters from the name, the Hugging Face
+    sizes or the listing's blurb ("501B A23B", "2.5B active … 40B total").
+  - **Coverage:** stories and outlets since launch, the first week, the last
+    seven days, stories per day and the first reporter (reusing release
+    coverage).
+  - **Reported benchmark scores:** read from stored articles that name the
+    model, but only from a sentence that names this model and no other, with
+    a percentage right beside a known benchmark (SWE-bench Verified/Pro,
+    Terminal-Bench by version, HLE, GPQA, ARC-AGI by version, AIME, OSWorld
+    and others). Tables and comparisons are skipped. When outlets disagree,
+    the value most outlets printed wins and the score is marked disputed.
+- **Cost:** ~1 s for all ~120 releases in the history worker, cached 30
+  minutes, warmed 20 s after start. Only text near each mention of the name
+  is split into sentences (8.2 s → 1.0 s).
+- **`GET /api/models`:** all models plus the benchmarks found (17 KB gzipped).
+
+**UI.** `#models`, reached from a List | Compare switch on Releases, the
+command palette and the Releases tab.
+- **Price chart:** blended price (log) against stories since launch or
+  context window. API-only and open-weight models are two validated colours
+  with a legend. Free models get their own strip. Labels go on the most
+  covered and the picked models, placed clear of other labels and dots.
+  Dots pop in with a stagger; hover shows a tooltip, click picks a model.
+- **Table:** sortable by name, date, price, context, size and stories, with
+  reported-score chips linking to the article that printed them.
+- **Side by side:** up to four models (`#models/<id>+<id>`, shareable).
+  Prices, context, parameters, weights, coverage, a stories-per-day spark on
+  one scale, first report and every reported benchmark. The best value in
+  each row is marked.
+
+## 2026-10-22 · API and feeds (#developers)
+
+**Backend.**
+- **Feeds (`src/feeds.js`)** as RSS 2.0 and JSON Feed 1.1 (`.xml` / `.json`):
+  - `/feeds/topic/<key>`: live stories on a topic.
+  - `/feeds/account/<handle>`: an X account's posts (14 days).
+  - `/feeds/search?q=`: newest results for a search.
+  - `/feeds/foryou?t=&n=&a=&o=`: the For you ranking for a set of follows
+    (the follows travel in the address; nothing is stored).
+  - `/feeds/breaking`: stories as they break.
+  - Items link to the article, with the story page and other outlets in the
+    body. Built at most once a minute per address. An ETag made from the
+    items gives readers a 304 when nothing changed. CORS is open.
+- **`GET /api`:** the API described from one catalog (`src/apicatalog.js`):
+  groups, parameters, notes and live example URLs. A test calls every
+  documented example to check it's routed.
+- **`stopWorkers()`** in `offload.js` lets tests (and shutdown) end the
+  worker threads.
+
+**UI.** `#developers` (footer link "API and feeds", and the palette).
+- **Make a feed:** topic, X account, search, your follows or breaking; RSS
+  or JSON Feed. Shows the address with Copy and Open, and a live preview of
+  the first items with the build time.
+- **Endpoints:** every endpoint grouped, with parameters and notes. "Try it"
+  runs the example (filled with ids from the live page) and shows status,
+  time, size and highlighted JSON, with long arrays and strings cut.
+- **Feed buttons** on topic pages, account pages, For you (your follows)
+  and Breaking. A click copies the feed address for a reader; a modified
+  click opens it. The page head also advertises the breaking feed.
+
 ## 2026-10-22 · X account pages ("Who’s first on X")
 
 **Backend** (`src/index/accounts.js`, in the vectors worker).

@@ -5,6 +5,41 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-22 (08:49 run)
+
+**Search sorted by date (`search()`, live index of ~203k docs, one process,
+warm).**
+
+| Query | Before | After |
+| --- | ---: | ---: |
+| `nvidia` | 537 ms | 167 ms |
+| `anthropic` | 511 ms | 141 ms |
+| `open weights` | 384 ms | 90 ms |
+| `"claude duet"` | 7 ms | 8 ms |
+
+- **What was slow:** in date order, `bm25()` and two `snippet()` calls ran
+  for every matching row before the sort picked 20. On common words that's
+  thousands of rows. Behind a busy server the same request took 4.7–6.5 s.
+- **Now:** a subquery picks the page by date alone, then columns and inlinks
+  are read for its rows and snippets are built for the page only, as
+  relevance mode already did. Results are identical.
+
+**Model comparison (`computeModels`, ~120 releases, history worker).**
+
+| | Before | After |
+| --- | ---: | ---: |
+| All models | 8,168 ms | 978 ms |
+| `/api/models`, warm | — | 20 ms (17 KB gzipped) |
+
+- Score extraction split whole article bodies into sentences. Only the text
+  within 320 characters of each mention of the model is read now.
+- One-word names ("Extract", "Summarize") must appear with their lab, as
+  in coverage, which dropped their 80 ms scans.
+
+**Feeds:** a topic feed builds in about 3 ms from the live snapshot, an
+account feed in about 270 ms, a follows feed in about 350 ms (the For you
+ranking). Each is cached a minute and answers repeats with a 304.
+
 ## 2026-10-22 (06:49 run)
 
 **X account analytics (`computeAccounts`, 30 days: ~700 posts against

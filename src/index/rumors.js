@@ -101,7 +101,7 @@ export function urlSimilarity(db, index) {
 }
 
 // A settling headline must be at least this close in meaning to the claim.
-export const SAME_STORY = 0.72;
+export const SAME_STORY = 0.76;
 // Two hedged headlines this close are the same claim.
 export const SAME_CLAIM = 0.84;
 

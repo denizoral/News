@@ -74,7 +74,7 @@ export function definitionsIn(body, form) {
     .map((s) => s.replace(/^which (?:is|are)\s+|^(?:is|are)\s+/i, '').replace(/\s+/g, ' ').trim())
     // "a/an ..." is a definition; "the/its ..." only when it names what kind
     // of thing it is early on ("the inference framework that ...").
-    .filter((s) => /^(?:an?)\s/i.test(s) || (/^(?:the|its|their)\s/i.test(s) && HEADS.test(s.split(' ').slice(0, 6).join(' ')) && !/^(?:the|its|their) \w+ (?:is|are|was|has|have|will|would|can|\w+s)\b/i.test(s)))
+    .filter((s) => /^(?:an?)\s/i.test(s) || (/^(?:the|its|their)\s/i.test(s) && HEADS.test(s.split(' ').slice(0, 4).join(' ')) && !/^(?:the|its|their) \w+ (?:is|are|was|has|have|will|would|can|\w+s)\b/i.test(s)))
     .filter((s) => s.split(' ').length >= 3 && !/\b(?:said|says|told|according)\b/i.test(s));
 }
 
@@ -243,7 +243,8 @@ export function computeNewNames(db, { now = Date.now(), days = NEW_DAYS, limit =
   });
   // People named in the news are a different list; keep products and
   // projects we can say something about.
-  const list = names.filter((n) => n.kind !== 'person' && (n.definition?.agree >= 2 || (n.definition && /\d|\p{Ll}\p{Lu}|^\p{Lu}{2,}/u.test(n.name)) || (n.owner && n.kind !== 'other')));
+  // A thing we can't place ("other") needs two outlets agreeing on what it is.
+  const list = names.filter((n) => n.kind !== 'person' && (n.kind === 'other' ? n.definition?.agree >= 2 : n.definition || n.owner));
   return {
     days,
     since,

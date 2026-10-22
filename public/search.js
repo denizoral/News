@@ -2,6 +2,8 @@
 // tabs and filters, image results, and a reader view for stored pages.
 // Needs the Node server; when hosted statically, app.js uses the box as a feed filter.
 
+import { looksLikeQuestion } from './ask.js';
+
 const $ = (s, el = document) => el.querySelector(s);
 
 const TABS = [
@@ -156,7 +158,8 @@ export function createSearch({ esc, ago, time, fav, pct, compact }) {
     if (d.loosened) notes.push('No page has every word, so these match some of them.');
     if (d.parsed?.site) notes.push(`Only results from ${esc(d.parsed.site)}.`);
     if (d.error) notes.push(esc(d.error));
-    const trend = s.q && s.mode !== 'meaning' && s.q.length <= 60 && !/\w+:/.test(s.q) ? ` <a class="tr-link" href="#trends?q=${encodeURIComponent(s.q.replace(/,/g, ' '))}">How often it comes up →</a>` : '';
+    const trend = s.q && looksLikeQuestion(s.q) ? ` <a class="tr-link" href="#ask?q=${encodeURIComponent(s.q)}">Answer it from the coverage →</a>`
+      : s.q && s.mode !== 'meaning' && s.q.length <= 60 && !/\w+:/.test(s.q) ? ` <a class="tr-link" href="#trends?q=${encodeURIComponent(s.q.replace(/,/g, ' '))}">How often it comes up →</a>` : '';
     $('#searchHead').innerHTML = `<h1>${s.q ? esc(s.q) : 'Everything in the index'}</h1><p>${count} <span class="took">(${d.tookMs} ms)</span>${notes.length ? ` ${notes.join(' ')}` : ''}${trend}</p>`;
     const facets = s.data.facets || {};
     const all = Object.values(facets).reduce((a, b) => a + b, 0);

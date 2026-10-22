@@ -2,6 +2,8 @@
 // keyboard shortcuts (j/k through any list, s to save, ? for help).
 // Server side: /api/jump and /api/saved (src/index/jump.js).
 
+import { looksLikeQuestion } from './ask.js';
+
 const PAGES = [
   ['News', '#news', 'Top stories now'],
   ['For you', '#foryou', 'The live feed ranked for what you follow'],
@@ -16,11 +18,13 @@ const PAGES = [
   ['Markets', '#markets', 'Polymarket odds on AI'],
   ['Breaking', '#breaking', 'Stories breaking now, and alerts'],
   ['Saved', '#saved', 'Your reading list'],
+  ['Ask the Wire', '#ask', 'A question answered with sentences from the coverage, with sources'],
+  ['Deals', '#deals', 'Funding rounds, valuations and acquisitions'],
   ['Trends', '#trends', 'How often any term comes up, since 2024'],
   ['Status', '#status', 'Every source hour by hour, server vitals, quiet X accounts'],
   ['API and feeds', '#developers', 'JSON API, RSS and JSON feeds for any topic, account or search'],
 ];
-const KIND = { page: 'Page', topic: 'Topic', name: 'Name', account: 'X account', release: 'Release', theme: 'Emerging', story: 'Story', market: 'Market', action: 'Action', search: 'Search', recent: 'Recent' };
+const KIND = { ask: 'Ask', page: 'Page', topic: 'Topic', name: 'Name', account: 'X account', release: 'Release', theme: 'Emerging', story: 'Story', market: 'Market', action: 'Action', search: 'Search', recent: 'Recent' };
 const ICON = {
   page: '<path d="M4 4h12v12H4z" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   topic: '<path d="M3 10h14M10 3v14" stroke="currentColor" stroke-width="1.6"/>',
@@ -34,6 +38,7 @@ const ICON = {
   search: '<circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m13 13 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   recent: '<circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4l3 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
 };
+ICON.ask = '<path d="M4 4h12v9H9l-4 3v-3H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>';
 const icon = (t) => `<svg viewBox="0 0 20 20" aria-hidden="true">${ICON[t] || ICON.page}</svg>`;
 
 export function createPalette({ $, $$, esc, time, setHtml, store, state, reducedMotion, actions }) {
@@ -130,7 +135,7 @@ export function createPalette({ $, $$, esc, time, setHtml, store, state, reduced
   // ---- Palette ----
   const recent = () => store.get('fw.jumps', []);
   function remember(r) {
-    if (r.type === 'action' || r.type === 'search') return;
+    if (r.type === 'action' || r.type === 'search' || r.type === 'ask') return;
     const list2 = [{ ...r, type: r.type === 'recent' ? r.was : r.type }].concat(recent().filter((x) => x.href !== r.href || x.label !== r.label)).slice(0, 6);
     store.set('fw.jumps', list2);
   }
@@ -155,7 +160,7 @@ export function createPalette({ $, $$, esc, time, setHtml, store, state, reduced
     }
     let group = null;
     setHtml(list, rows.map((r, i) => {
-      const g = r.type === 'recent' ? 'Recent' : r.type === 'page' ? 'Go to' : r.type === 'action' ? 'Actions' : r.type === 'search' ? '' : 'Jump to';
+      const g = r.type === 'recent' ? 'Recent' : r.type === 'page' ? 'Go to' : r.type === 'action' ? 'Actions' : r.type === 'search' || r.type === 'ask' ? '' : 'Jump to';
       const head = g !== group ? (group = g, g ? `<li class="pal-group" role="presentation">${g}</li>` : '') : '';
       const t = r.type === 'recent' ? r.was : r.type;
       return `${head}<li role="option" id="pal-${i}" class="pal-row${i === active ? ' on' : ''}${r.breaking ? ' hot' : ''}" data-pal="${i}" aria-selected="${i === active}">
@@ -168,12 +173,19 @@ export function createPalette({ $, $$, esc, time, setHtml, store, state, reduced
     $(`#pal-${active}`)?.scrollIntoView({ block: 'nearest' });
   }
 
+  // Search, and for a question, Ask the Wire (first when it reads as one).
+  function tail(qv) {
+    const askRow = { type: 'ask', label: `Ask the Wire: “${qv}”`, q: qv };
+    const searchRow = { type: 'search', label: `Search everything for “${qv}”`, q: qv };
+    return qv.length < 3 ? [searchRow] : looksLikeQuestion(qv) ? [askRow, searchRow] : [searchRow, askRow];
+  }
+
   async function query() {
     const qv = input.value.trim();
     rows = baseRows(qv);
     active = 0;
     if (!qv) return draw();
-    rows.push({ type: 'search', label: `Search everything for “${qv}”`, q: qv });
+    rows.push(...tail(qv));
     draw();
     if (state.mode !== 'api') return;
     ctrl?.abort();
@@ -183,7 +195,7 @@ export function createPalette({ $, $$, esc, time, setHtml, store, state, reduced
       if (!res.ok || input.value.trim() !== qv) return;
       const { results } = await res.json();
       const base = baseRows(qv);
-      rows = [...results, ...base, { type: 'search', label: `Search everything for “${qv}”`, q: qv }];
+      rows = looksLikeQuestion(qv) ? [...tail(qv), ...results, ...base] : [...results, ...base, ...tail(qv)];
       active = 0;
       draw();
     } catch { /* aborted or offline: the local rows stay */ }
@@ -209,6 +221,7 @@ export function createPalette({ $, $$, esc, time, setHtml, store, state, reduced
     remember(r);
     close();
     if (r.type === 'search') return actions.search(r.q);
+    if (r.type === 'ask') { location.hash = `#ask?q=${encodeURIComponent(r.q)}`; return; }
     if (r.run === 'theme') return actions.theme();
     if (r.run === 'help') return help();
     if (r.run === 'save') return actions.saveCurrent();

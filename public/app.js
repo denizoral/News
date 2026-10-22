@@ -7,6 +7,8 @@ import { createModels } from './models.js';
 import { createDevelopers, feedBtn } from './developers.js';
 import { createTrends } from './trends.js';
 import { createStatus } from './status.js';
+import { createDeals } from './deals.js';
+import { createAsk } from './ask.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -169,6 +171,8 @@ let modelsUi = null;
 let devUi = null;
 let trendsUi = null;
 let statusUi = null;
+let dealsUi = null;
+let askUi = null;
 
 // ---------- Data ----------
 
@@ -2046,6 +2050,8 @@ function render() {
   if (state.view === 'developers') devUi.render();
   if (state.view === 'trends') trendsUi.render();
   if (state.view === 'status') statusUi.render();
+  if (state.view === 'deals') dealsUi.render();
+  if (state.view === 'ask') askUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2061,7 +2067,7 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash);
+  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash);
   if (acct) {
     const was = state.view;
     state.view = acct;
@@ -2115,6 +2121,7 @@ document.addEventListener('click', (e) => {
   if (!t) return;
   if (devUi.onClick(t, e)) return;
   if (state.view === 'trends' && trendsUi.onClick(t, e)) return;
+  if (state.view === 'deals' && dealsUi.onClick(t, e)) return;
   if (breakingUi.onClick(t) || paletteUi.onClick(t) || foryouUi.onClick(t) || accountsUi.onClick(t) || (state.view === 'models' && modelsUi.onClick(t))) return;
   const d = t.dataset;
   if (d.xopen) { state.xHandle = d.xopen; if (location.hash === '#x') loadX({ animate: true }); return; }
@@ -2181,7 +2188,13 @@ $('#trendsView').addEventListener('pointerleave', (e) => trendsUi.hover(e), true
 $('#trendsView').addEventListener('click', (e) => trendsUi.onPlotClick(e));
 $('#statusView').addEventListener('pointermove', (e) => statusUi.hover(e));
 $('#statusView').addEventListener('pointerleave', (e) => statusUi.hover(e), true);
-document.addEventListener('submit', (e) => trendsUi.onSubmit(e));
+document.addEventListener('submit', (e) => trendsUi.onSubmit(e) || askUi.onSubmit(e));
+$('#dealsView').addEventListener('pointermove', (e) => dealsUi.hover(e));
+$('#dealsView').addEventListener('pointerleave', (e) => dealsUi.hover(e), true);
+$('#dealsView').addEventListener('input', (e) => dealsUi.onInput(e));
+$('#askView').addEventListener('pointerover', (e) => askUi.hover(e));
+$('#askView').addEventListener('focusin', (e) => askUi.hover(e));
+$('#askView').addEventListener('pointerleave', (e) => askUi.hover(e), true);
 $('#modelsView').addEventListener('pointerleave', (e) => modelsUi.hover(e), true);
 document.addEventListener('change', (e) => devUi.onChange(e.target) || accountsUi.onChange(e.target));
 $('#breakingView').addEventListener('pointermove', (e) => breakingUi.hover(e));
@@ -2292,6 +2305,8 @@ devUi = createDevelopers({ $, esc, time, setHtml, store, state, reducedMotion, t
 modelsUi = createModels({ $, esc, setHtml, store, state, reducedMotion, logo: releaseLogo });
 trendsUi = createTrends({ $, esc, setHtml, state, reducedMotion });
 statusUi = createStatus({ $, esc, setHtml, state, reducedMotion, labels: SOURCE_LABELS });
+dealsUi = createDeals({ $, esc, setHtml, state, reducedMotion });
+askUi = createAsk({ $, esc, setHtml, state, reducedMotion, store });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

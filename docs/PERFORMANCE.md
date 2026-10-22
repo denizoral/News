@@ -5,6 +5,21 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-22 (18:49 run)
+
+**Forecast scan.** 120 days of bodies (30k rows): reading takes 1.2 s; the
+first extractor tried the horizon pattern on every sentence and ran the quote
+extractor on every body with a quote mark: 8.3 s in all. Only paragraphs that
+name a year or "years"/"decade" (a cheap pattern) and then match the horizon
+are split into sentences, and quotes are extracted only when such a paragraph
+has a quote mark: **8.3 s → 2.7 s**, once per worker; later refreshes read new
+rows by id. `/api/predictions` cold 4.8 s (scan + queue), warm 3 ms, 16 KB gzip.
+
+**Catch-up.** Clustering the window costs 0.1 s (12 h, 1.2k items) to 0.6 s
+(a week, 9k items) in the history worker. Windows snap to 15 minutes (an hour
+past a day) so readers share answers; warm responses are a few ms, 6–8 KB
+gzip. Storylines are raced against 1.5 s so a cold start doesn't block it.
+
 ## 2026-10-22 (16:49 run)
 
 **Quote scan.** Reading 45 days of article bodies (31k rows, 259 MB of text)

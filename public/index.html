@@ -63,6 +63,7 @@
   <main id="main">
     <!-- News -->
     <section class="view" data-view="news" aria-label="News">
+      <div class="welcome-back" id="welcomeBack" role="region" aria-label="Catch up" hidden></div>
       <section class="trending" id="trending" aria-labelledby="trendTitle" hidden>
         <div class="trend-head">
           <h2 id="trendTitle">Trending now</h2>
@@ -246,6 +247,12 @@
     <section class="view" data-view="storylines" aria-label="Storylines" hidden>
       <div id="storylinesView"></div>
     </section>
+    <section class="view" data-view="predictions" aria-label="Predictions" hidden>
+      <div id="predictionsView"></div>
+    </section>
+    <section class="view" data-view="catchup" aria-label="Catch up" hidden>
+      <div id="catchupView"></div>
+    </section>
     <section class="view" data-view="ask" aria-label="Ask the Wire" hidden>
       <div id="askView"></div>
     </section>
@@ -308,7 +315,7 @@
   <footer class="foot">
     <p id="footStatus"></p>
     <p id="footSpider"></p>
-    <p class="foot-links"><a href="#ask">Ask the Wire</a> · <a href="#deals">Deals</a> · <a href="#storylines">Storylines</a> · <a href="#quotes">Who said what</a> · <a href="#day">Any day</a> · <a href="#outlets">Outlets</a> · <a href="#trends">Trends</a> · <a href="#status">Status</a> · <a href="#developers">API and feeds</a> · <a href="digest.xml">Weekly digest (RSS)</a></p>
+    <p class="foot-links"><a href="#ask">Ask the Wire</a> · <a href="#deals">Deals</a> · <a href="#catchup">Catch up</a> · <a href="#storylines">Storylines</a> · <a href="#predictions">Predictions</a> · <a href="#quotes">Who said what</a> · <a href="#day">Any day</a> · <a href="#outlets">Outlets</a> · <a href="#trends">Trends</a> · <a href="#status">Status</a> · <a href="#developers">API and feeds</a> · <a href="digest.xml">Weekly digest (RSS)</a></p>
     <details>
       <summary>Sources</summary>
       <div id="sourceTable"></div>

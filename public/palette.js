@@ -21,6 +21,8 @@ const PAGES = [
   ['Ask the Wire', '#ask', 'A question answered with sentences from the coverage, with sources'],
   ['Deals', '#deals', 'Funding rounds, valuations and acquisitions'],
   ['Storylines', '#storylines', 'Stories that keep coming back, day after day'],
+  ['Predictions', '#predictions', 'What people and companies say will happen, and by when'],
+  ['Catch up', '#catchup', 'Everything since your last visit'],
   ['Who said what', '#quotes', 'Who is being quoted about AI, and the lines every outlet carried'],
   ['Any day', '#day', 'The front page of any day in the last year'],
   ['Outlets', '#outlets', 'Who covers AI and what each outlet covers most'],

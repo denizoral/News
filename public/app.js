@@ -13,6 +13,8 @@ import { createDay } from './day.js';
 import { createOutlets } from './outlets.js';
 import { createQuotes } from './quotes.js';
 import { createStorylines } from './storylines.js';
+import { createPredictions } from './predictions.js';
+import { createCatchup } from './catchup.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -181,6 +183,8 @@ let dayUi = null;
 let outletsUi = null;
 let quotesUi = null;
 let storylinesUi = null;
+let predictionsUi = null;
+let catchupUi = null;
 
 // ---------- Data ----------
 
@@ -2039,7 +2043,7 @@ function render() {
   const tab = state.view === 'accounts' || state.view === 'account' ? 'x' : state.view === 'models' ? 'releases' : state.view;
   $$('.tabs a').forEach((a) => (a.dataset.view === tab ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   if (!state.data) return;
-  if (state.view === 'news') renderNews();
+  if (state.view === 'news') { renderNews(); catchupUi.welcome(); }
   if (state.view === 'x') renderX();
   if (state.view === 'tech') renderTech();
   if (state.view === 'releases') renderReleases();
@@ -2065,6 +2069,8 @@ function render() {
   if (state.view === 'outlets') outletsUi.render();
   if (state.view === 'quotes') quotesUi.render();
   if (state.view === 'storylines') storylinesUi.render();
+  if (state.view === 'predictions') predictionsUi.render();
+  if (state.view === 'catchup') catchupUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2080,7 +2086,7 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash);
+  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash);
   if (acct) {
     const was = state.view;
     state.view = acct;
@@ -2137,6 +2143,7 @@ document.addEventListener('click', (e) => {
   if (state.view === 'deals' && dealsUi.onClick(t, e)) return;
   if (state.view === 'outlets' && outletsUi.onClick(t, e)) return;
   if (state.view === 'storylines' && storylinesUi.onClick(t, e)) return;
+  if (t.closest('#welcomeBack')) catchupUi.onWelcomeClick(e);
   if (breakingUi.onClick(t) || paletteUi.onClick(t) || foryouUi.onClick(t) || accountsUi.onClick(t) || (state.view === 'models' && modelsUi.onClick(t))) return;
   const d = t.dataset;
   if (d.xopen) { state.xHandle = d.xopen; if (location.hash === '#x') loadX({ animate: true }); return; }
@@ -2217,6 +2224,11 @@ $('#quotesView').addEventListener('pointermove', (e) => quotesUi.hover(e));
 $('#quotesView').addEventListener('pointerleave', (e) => quotesUi.hover(e), true);
 $('#quotesView').addEventListener('input', (e) => quotesUi.onInput(e));
 $('#storylinesView').addEventListener('pointermove', (e) => storylinesUi.hover(e));
+$('#predictionsView').addEventListener('pointermove', (e) => predictionsUi.hover(e));
+$('#predictionsView').addEventListener('pointerleave', (e) => predictionsUi.hover(e), true);
+$('#predictionsView').addEventListener('click', (e) => predictionsUi.onClick(e));
+$('#catchupView').addEventListener('pointermove', (e) => catchupUi.hover(e));
+$('#catchupView').addEventListener('pointerleave', (e) => catchupUi.hover(e), true);
 $('#storylinesView').addEventListener('pointerleave', (e) => storylinesUi.hover(e), true);
 $('#askView').addEventListener('pointerover', (e) => askUi.hover(e));
 $('#askView').addEventListener('focusin', (e) => askUi.hover(e));
@@ -2337,6 +2349,8 @@ dayUi = createDay({ $, esc, setHtml, state, reducedMotion });
 outletsUi = createOutlets({ $, esc, setHtml, state, reducedMotion, followBtn: (...a) => foryouUi.btn(...a) });
 quotesUi = createQuotes({ $, esc, setHtml, state, reducedMotion });
 storylinesUi = createStorylines({ $, esc, setHtml, state, reducedMotion });
+predictionsUi = createPredictions({ $, esc, setHtml, state, reducedMotion });
+catchupUi = createCatchup({ $, esc, setHtml, state, reducedMotion, store });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

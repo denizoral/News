@@ -2,6 +2,52 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-22 · Catch up (#catchup, welcome back)
+
+Everything since a reader's last visit, on one page.
+
+- **Backend** (`src/index/catchup.js`, history worker): the window's AI
+  articles and X posts clustered the way the front page is and ranked by
+  outlets; each story keeps its story-page id (from `story_ids`), whether it
+  was already running before the window ("kept going"), and when each report
+  landed. Plus activity per hour (or 3 h / 6 h for longer windows), names
+  named far more than in the four weeks before, deals and X posts. The main
+  thread adds breaking alerts, explained market moves, releases and storylines
+  that gained a chapter in the window. Windows are clamped to 1 h–7 days and
+  snapped (15 min, or an hour past a day) so readers share cached answers.
+- **API**: `/api/catchup?since=<ms>`.
+- **UI**: the front page shows a "Welcome back — you were away 14 hours" bar
+  when a browser returns after 3+ hours (last-seen time in localStorage, kept
+  for the session, dismissible). `#catchup` has range chips (since my last
+  visit, 6 h … a week), tiles, a stacked articles/X-posts chart with
+  tooltips, the biggest stories with a dot strip of when coverage landed
+  (dots pop in), storylines that moved on, and a side column of breaking
+  alerts, market moves with sparklines and the story before them, releases,
+  standout names, deals and X posts. Footer and ⌘K link it.
+
+## 2026-10-22 · Predictions (#predictions)
+
+What people and companies say will happen in AI, and by when.
+
+- **Backend** (`src/index/forecasts.js`, history worker): reads 120 days of
+  article bodies for sentences that put a claim about the future on a year
+  ("by 2030", "within five years", "by the end of the decade") and pins each
+  on someone: a quoted speaker (via the quote extractor), the subject of
+  "expects/predicts/plans…" (surnames resolved to the full name used earlier
+  in the piece; headings run into the sentence dropped), or "according to".
+  Past-tense reports, fiscal years and event dates are skipped. Each gets a
+  target year, a theme (AGI, jobs, compute & power, chips, robots, adoption,
+  money) and a kind (a company's own **plan** vs a forecast). The same
+  sentence across outlets is one forecast. Incremental like quotes.
+- **API**: `/api/predictions?theme=&year=&who=`; person pages
+  (`/api/person`) now include that person's predictions.
+- **UI**: theme chips with counts; "When they say it happens" bar chart by
+  target year (hover tooltips; click a bar to filter that year, the others
+  step back); "Coming due" cards with a meter of how much time to the
+  deadline has passed; the ledger grouped by year with the date phrase
+  highlighted and a "Carried by N outlets" disclosure; "Who makes the most
+  calls" (people open their quote pages, firms filter the page).
+
 ## 2026-10-22 · Storylines (#storylines, #storyline/<id>)
 
 Stories that keep coming back over days and weeks: the arrest, then the

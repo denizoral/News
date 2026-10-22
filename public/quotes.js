@@ -146,6 +146,7 @@ export function createQuotes({ $, esc, setHtml, state, reducedMotion }) {
       <div class="dy-grid">
         <div>
           <section class="topic-card"><h2>Quotes per day<small>last ${p.days} days</small></h2><div class="tr-plot">${dailyChart(p, animate)}</div></section>
+          ${p.predictions?.length ? `<section class="qt-lines"><h2 class="when">Their predictions<span><a href="#predictions?who=${esc(p.key)}">all of them</a></span></h2><ol class="pd-list">${p.predictions.map((f) => `<li class="pd-card"><p class="pd-who"><em>Due ${f.year}</em></p><p class="pd-text">${esc(f.text)}</p><p class="qt-src"><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.source)}</a> · ${ago(f.at)}</p></li>`).join('')}</ol></section>` : ''}
           <section class="qt-lines"><h2 class="when">In their words<span>${p.lines.length < t.lines ? `latest ${p.lines.length} of ${t.lines}` : t.lines}</span></h2><ol class="qt-wall one${animate ? ' animate' : ''}">${p.lines.map((l, i) => pull(l, i, { person: false })).join('')}</ol></section>
         </div>
         <aside>${where}${along}</aside>

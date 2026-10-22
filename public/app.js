@@ -37,6 +37,10 @@ const state = {
   chartOpen: null, // market id whose odds chart is expanded
   charts: new Map(), // market id -> { at, outcomes, moves } from /api/odds
   moves: null, // { at, data } from /api/moves
+  graphDays: Number(store.get('fw.gdays', 30)) || 30,
+  graphSel: null, // { a, b } from #graph/<a>[+<b>]
+  graphCache: new Map(), // days -> { at, data, pending, error }
+  graphDetail: new Map(), // 'days|a|b' -> { at, data, pending, error }
   movesAll: false,
   topicKey: null,
   topicCache: new Map(), // topic key -> { at, data, error } from /api/topic
@@ -1186,6 +1190,247 @@ function openMarketChart(id) {
   requestAnimationFrame(() => $(`.market[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' }));
 }
 
+// ---------- Connections ----------
+// #graph: who is in the news together (src/index/graph.js). A force layout
+// computed once per window and screen shape, drawn as SVG; hovering a name
+// lights its links, and a name or a link opens its headlines in the panel.
+
+const GTYPES = [['org', 'Companies and labs'], ['person', 'People'], ['product', 'Products and models'], ['gov', 'Governments and regulators'], ['other', 'Other names']];
+const gLayouts = new Map(); // 'days|generatedAt|shape' -> { pos, w, h }
+
+async function loadGraph(days) {
+  const hit = state.graphCache.get(days);
+  if (state.mode !== 'api' || (hit && (hit.pending || Date.now() - hit.at < 10 * 60e3))) return;
+  state.graphCache.set(days, { ...hit, pending: true });
+  try {
+    const res = await fetch(`api/graph?days=${days}`);
+    const body = await res.json();
+    state.graphCache.set(days, res.ok ? { at: Date.now(), data: body } : { at: Date.now(), data: hit?.data, error: body.error });
+  } catch (err) {
+    state.graphCache.set(days, { at: Date.now(), data: hit?.data, error: err.message });
+  }
+  if (state.view === 'graph') transition(renderGraph);
+}
+
+async function loadGraphDetail(days, a, b) {
+  const k = `${days}|${a}|${b || ''}`;
+  const hit = state.graphDetail.get(k);
+  if (state.mode !== 'api' || (hit && (hit.pending || Date.now() - hit.at < 10 * 60e3))) return;
+  state.graphDetail.set(k, { ...hit, pending: true });
+  try {
+    const res = await fetch(`api/graph/detail?days=${days}&a=${encodeURIComponent(a)}${b ? `&b=${encodeURIComponent(b)}` : ''}`);
+    const body = await res.json();
+    state.graphDetail.set(k, res.ok ? { at: Date.now(), data: body } : { at: Date.now(), error: body.error });
+  } catch (err) {
+    state.graphDetail.set(k, { at: Date.now(), error: err.message });
+  }
+  if (state.view === 'graph') renderGraph();
+}
+
+// Spring-and-charge layout, seeded so the same data always lands the same way.
+function graphLayout(g, w, h, labelled) {
+  const n = g.nodes.length;
+  const idx = new Map(g.nodes.map((nd, i) => [nd.key, i]));
+  const max = Math.max(...g.nodes.map((nd) => nd.n));
+  const r = g.nodes.map((nd) => 5 + Math.sqrt(nd.n / max) * (Math.min(w, h) / 18));
+  // Biggest names in the middle, the rest on a sunflower spiral.
+  const pos = g.nodes.map((_, i) => {
+    const a = i * 2.39996, d = Math.sqrt(i + 0.5) * Math.min(w, h) / 2 / Math.sqrt(n);
+    return { x: w / 2 + Math.cos(a) * d, y: h / 2 + Math.sin(a) * d, vx: 0, vy: 0 };
+  });
+  const maxE = Math.max(...g.edges.map((e) => e.n));
+  const links = g.edges.map((e) => ({ s: idx.get(e.a), t: idx.get(e.b), k: 0.02 + 0.06 * Math.sqrt(e.n / maxE) })).filter((l) => l.s != null && l.t != null);
+  const area = w * h;
+  const charge = area / n / 1.5;
+  for (let it = 0, temp = Math.min(w, h) / 8; it < 360; it++, temp *= 0.988) {
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const a = pos[i], b = pos[j];
+      let dx = a.x - b.x, dy = a.y - b.y;
+      let d2 = dx * dx + dy * dy || 0.01;
+      const d = Math.sqrt(d2);
+      const min = r[i] + r[j] + 10;
+      const f = charge / d2 + (d < min ? (min - d) * 0.5 : 0);
+      dx /= d; dy /= d;
+      a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
+    }
+    for (const l of links) {
+      const a = pos[l.s], b = pos[l.t];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.hypot(dx, dy) || 0.01;
+      const rest = r[l.s] + r[l.t] + 40;
+      const f = (d - rest) * l.k;
+      a.vx += (dx / d) * f; a.vy += (dy / d) * f; b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+    }
+    for (const [i, p] of pos.entries()) {
+      p.vx += (w / 2 - p.x) * 0.006; p.vy += (h / 2 - p.y) * 0.006 * (w / h);
+      const v = Math.hypot(p.vx, p.vy);
+      const s = v > temp ? temp / v : 1;
+      p.x += p.vx * s; p.y += p.vy * s;
+      p.vx *= 0.5; p.vy *= 0.5;
+      p.x = Math.max(r[i] + 4, Math.min(w - r[i] - 4, p.x));
+      p.y = Math.max(r[i] + 4, Math.min(h - r[i] - 18, p.y));
+    }
+  }
+  // Stretch to fill the frame (room for labels below), then push apart
+  // anything that now overlaps, label included.
+  // The 4th to 96th percentile spans the frame, so a few outliers don't
+  // leave the core bunched up in the middle (they're clamped in below).
+  const pad = 30;
+  const q = (vals, f) => vals.slice().sort((a, b) => a - b)[Math.floor(f * (vals.length - 1))];
+  const xs = pos.map((p) => p.x), ys = pos.map((p) => p.y);
+  const x0 = q(xs, 0.04), x1 = q(xs, 0.96), y0 = q(ys, 0.04), y1 = q(ys, 0.96);
+  for (const p of pos) {
+    p.x = pad + ((p.x - x0) / Math.max(1, x1 - x0)) * (w - 2 * pad);
+    p.y = pad + ((p.y - y0) / Math.max(1, y1 - y0)) * (h - 2 * pad - 16);
+  }
+  // Each name as a box: its circle and, for the labelled ones, the label
+  // under it. Overlapping boxes move apart along the shallower side.
+  const box = g.nodes.map((nd, i) => ({ hw: Math.max(r[i], labelled.has(i) ? nd.label.length * 4.3 + 4 : r[i]) + 3, up: r[i] + 3, down: r[i] + (labelled.has(i) ? 20 : 3) }));
+  for (let it = 0; it < 120; it++) {
+    let moved = 0;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const a = pos[i], b = pos[j];
+      const ox = box[i].hw + box[j].hw - Math.abs(a.x - b.x);
+      const oy = a.y < b.y ? a.y + box[i].down - (b.y - box[j].up) : b.y + box[j].down - (a.y - box[i].up);
+      if (ox <= 0 || oy <= 0) continue;
+      moved++;
+      if (ox < oy) { const d = (ox / 2 + 0.5) * (a.x < b.x ? -1 : 1); a.x += d; b.x -= d; }
+      else { const d = (oy / 2 + 0.5) * (a.y < b.y ? -1 : 1); a.y += d; b.y -= d; }
+    }
+    for (const [i, p] of pos.entries()) {
+      p.x = Math.max(box[i].hw + 2, Math.min(w - box[i].hw - 2, p.x));
+      p.y = Math.max(box[i].up + 2, Math.min(h - box[i].down - 2, p.y));
+    }
+    if (!moved) break;
+  }
+  return { pos: pos.map((p) => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 })), r };
+}
+
+function graphSvg(g, sel) {
+  const narrow = ($('#graphView')?.clientWidth || 900) < 640;
+  const w = narrow ? 620 : 1000, h = narrow ? 820 : 640;
+  // Labels for the bigger names; the rest on hover and in the panel.
+  const labelled = new Set(g.nodes.map((nd, i) => [nd.n, i]).sort((x, y) => y[0] - x[0]).slice(0, narrow ? 24 : 40).map(([, i]) => i));
+  const lk = `${g.days}|${g.generatedAt}|${w}`;
+  if (!gLayouts.has(lk)) gLayouts.set(lk, graphLayout(g, w, h, labelled));
+  const { pos, r } = gLayouts.get(lk);
+  const idx = new Map(g.nodes.map((nd, i) => [nd.key, i]));
+  const maxE = Math.max(...g.edges.map((e) => e.n));
+  const on = (k) => sel && (sel.a === k || sel.b === k);
+  const near = new Set(sel ? g.edges.filter((e) => e.a === sel.a || e.b === sel.a).flatMap((e) => [e.a, e.b]) : []);
+  const edges = g.edges.map((e, i) => {
+    const a = pos[idx.get(e.a)], b = pos[idx.get(e.b)];
+    if (!a || !b) return '';
+    const hot = sel && (sel.b ? on(e.a) && on(e.b) : e.a === sel.a || e.b === sel.a);
+    const sw = (0.8 + 3.2 * Math.sqrt(e.n / maxE)).toFixed(2);
+    return `<a href="#graph/${esc(e.a)}+${esc(e.b)}" class="g-edge${hot ? ' hot' : ''}" data-a="${esc(e.a)}" data-b="${esc(e.b)}" aria-label="${esc(`${e.a} and ${e.b}: ${e.n} articles`)}" style="--i:${i}">
+      <line class="hit" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/><line class="ln" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke-width="${sw}" pathLength="1"/></a>`;
+  }).join('');
+  const nodes = g.nodes.map((nd, i) => {
+    const p = pos[i];
+    const cls = `g-node t-${nd.type}${on(nd.key) ? ' sel' : ''}${sel && !sel.b && near.has(nd.key) && !on(nd.key) ? ' near' : ''}`;
+    return `<a href="#graph/${esc(nd.key)}" class="${cls}" data-k="${esc(nd.key)}" style="--i:${i}" aria-label="${esc(`${nd.label}: ${nd.n} articles`)}">
+      <circle cx="${p.x}" cy="${p.y}" r="${r[i].toFixed(1)}"/></a>`;
+  }).join('');
+  // Labels above every circle, so none hides under a neighbour; shown with the node's state.
+  const labels = g.nodes.map((nd, i) => `<text class="g-label${labelled.has(i) || on(nd.key) ? ' labelled' : ''}${on(nd.key) ? ' sel' : ''}${sel && !sel.b && near.has(nd.key) && !on(nd.key) ? ' near' : ''}" data-k="${esc(nd.key)}" style="--i:${i}" x="${pos[i].x}" y="${(pos[i].y + r[i] + 15).toFixed(1)}" text-anchor="middle">${esc(nd.label)}</text>`).join('');
+  return `<svg class="g-svg${sel ? ' has-sel' : ''}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Network of names that appear together in the news"><g class="g-edges">${edges}</g><g class="g-nodes">${nodes}</g><g class="g-labels" aria-hidden="true">${labels}</g></svg>`;
+}
+
+// Articles per day (one series: no legend; the panel's heading names it).
+function graphBars(series, since) {
+  const w = 300, h = 64, n = series.length;
+  const max = Math.max(1, ...series);
+  const slot = w / n;
+  const bars = series.map((v, i) => {
+    const bh = v ? Math.max(2, (v / max) * (h - 4)) : 0;
+    const day = new Date(since + i * 86400e3).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return `<rect x="${(i * slot + 0.5).toFixed(1)}" y="${(h - bh).toFixed(1)}" width="${Math.max(1, slot - 1.5).toFixed(1)}" height="${bh.toFixed(1)}" rx="${Math.min(2, slot / 3).toFixed(1)}" style="--i:${i}"><title>${day}: ${v}</title></rect>`;
+  }).join('');
+  return `<svg class="g-bars" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Articles per day, peak ${max}">${bars}</svg>
+    <div class="g-bars-axis"><span>${new Date(since).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span><span>peak ${max} a day</span><span>Today</span></div>`;
+}
+
+const gTypeName = (t) => (GTYPES.find(([k]) => k === t) || [, ''])[1];
+const gHeadlines = (items) => `<ul class="topic-live g-heads">${items.map((it) => `<li><a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title)}</a><span class="tl-meta"><img src="${esc(fav(it.site))}" alt="" loading="lazy" width="14" height="14">${esc(it.source)} · ${ago(it.at)}</span></li>`).join('')}</ul>`;
+
+function graphPanel(g, sel) {
+  const days = g.days;
+  const byKey = new Map(g.nodes.map((nd) => [nd.key, nd]));
+  if (!sel) {
+    // Nothing chosen: the strongest links and the names rising fastest.
+    const top = g.edges.slice().sort((x, y) => y.n * Math.log2(1 + y.lift) - x.n * Math.log2(1 + x.lift)).slice(0, 8);
+    const rising = g.nodes.filter((nd) => nd.prev != null && nd.n >= 12).map((nd) => ({ ...nd, rise: nd.n / Math.max(3, nd.prev) })).sort((x, y) => y.rise - x.rise).slice(0, 6);
+    return `<section><h2>Strongest links</h2><ol class="g-links">${top.map((e) => `<li><a href="#graph/${esc(e.a)}+${esc(e.b)}">${esc(byKey.get(e.a)?.label || e.a)} <span>×</span> ${esc(byKey.get(e.b)?.label || e.b)}</a><small>${e.n} articles · ${e.lift}× chance</small></li>`).join('')}</ol></section>
+      ${rising.length ? `<section><h2>Rising <small>against the ${days} days before</small></h2><ol class="g-links">${rising.map((nd) => `<li><a href="#graph/${esc(nd.key)}"><i class="g-dot t-${nd.type}"></i>${esc(nd.label)}</a><small>${nd.prev} → ${nd.n} articles</small></li>`).join('')}</ol></section>` : ''}`;
+  }
+  const k = `${days}|${sel.a}|${sel.b || ''}`;
+  loadGraphDetail(days, sel.a, sel.b);
+  const entry = state.graphDetail.get(k);
+  const d = entry?.data;
+  if (!d) return `<section aria-busy="${!entry?.error}">${entry?.error ? `<h2>Not in this window</h2><p class="rail-note">${esc(entry.error)} Try a longer window.</p>` : '<i class="skeleton sk-title"></i><i class="skeleton"></i><i class="skeleton"></i>'}</section>`;
+  const name = (x) => `${x.topic ? `<a href="#topic/${esc(x.topic)}">${esc(x.label)}</a>` : esc(x.label)}`;
+  if (d.b) {
+    const e = g.edges.find((x) => (x.a === d.a.key && x.b === d.b.key) || (x.a === d.b.key && x.b === d.a.key));
+    return `<section class="g-detail"><p class="kicker">Together</p><h2>${name(d.a)} <span class="g-x">×</span> ${name(d.b)}</h2>
+      <p class="g-sum"><b>${d.n}</b> articles in ${days} days mention both${e ? `, ${e.lift}× more often than chance` : ''}.</p>
+      ${graphBars(d.series, d.since)}${gHeadlines(d.items)}
+      <p class="g-also"><a href="#graph/${esc(d.a.key)}">All of ${esc(d.a.label)}</a> · <a href="#graph/${esc(d.b.key)}">All of ${esc(d.b.label)}</a></p></section>`;
+  }
+  const nd = byKey.get(d.a.key);
+  const change = nd?.prev != null && nd.prev >= 3 ? Math.round((nd.n / nd.prev - 1) * 100) : null;
+  return `<section class="g-detail"><p class="kicker"><i class="g-dot t-${d.a.type}"></i>${esc(gTypeName(d.a.type))}</p><h2>${name(d.a)}</h2>
+    <p class="g-sum"><b>${d.n}</b> articles in ${days} days${change != null ? `, <span class="${change >= 0 ? 'up' : 'down'}">${change >= 0 ? '▲' : '▼'} ${Math.abs(change)}%</span> on the ${days} days before` : ''}.</p>
+    ${graphBars(d.series, d.since)}
+    ${d.with.length ? `<h3>Most often with</h3><ol class="g-links">${d.with.map((x) => `<li><a href="#graph/${esc(d.a.key)}+${esc(x.key)}"><i class="g-dot t-${x.type}"></i>${esc(x.label)}</a><small>${x.n}</small></li>`).join('')}</ol>` : ''}
+    <h3>Latest</h3>${gHeadlines(d.items.slice(0, 8))}</section>`;
+}
+
+let graphShown = '';
+function renderGraph() {
+  const days = state.graphDays;
+  loadGraph(days);
+  const entry = state.graphCache.get(days);
+  const g = entry?.data;
+  const sel = state.graphSel;
+  const site = state.data?.site?.name || 'Frontier Wire';
+  const selName = sel && g ? [sel.a, sel.b].filter(Boolean).map((k) => g.nodes.find((nd) => nd.key === k)?.label || k).join(' × ') : '';
+  document.title = `${selName ? `${selName} · ` : ''}Connections · ${site}`;
+  const chips = [7, 30, 90].map((d) => `<button class="chip" type="button" data-gdays="${d}" aria-pressed="${d === days}">${d} days</button>`).join('');
+  const legend = `<ul class="g-legend">${GTYPES.filter(([t]) => !g || g.nodes.some((nd) => nd.type === t)).map(([t, l]) => `<li><i class="g-dot t-${t}"></i>${l}</li>`).join('')}</ul>`;
+  const animate = !!g && graphShown !== `${days}|${g.generatedAt}` && !reducedMotion();
+  if (g) graphShown = `${days}|${g.generatedAt}`;
+  setHtml($('#graphView'), `
+    <header class="topic-head"><p class="kicker">Connections</p><h1>Who's in the news together</h1>
+      <p class="topic-sum">Labs, companies, people and products named in the same articles${g ? ` (${g.articles.toLocaleString()} in the last ${days} days)` : ''}. Thicker lines mean more articles. Point at a name to see its links, or open it for the headlines.</p>
+      <div class="chips" role="group" aria-label="Time window">${chips}</div></header>
+    <div class="topic-grid g-grid">
+      <div class="topic-card g-card${animate ? ' animate' : ''}">${g ? graphSvg(g, sel) : entry?.error ? `<p class="rail-note">The graph is unavailable: ${esc(entry.error)}</p>` : '<div class="g-loading" aria-busy="true"><i class="skeleton"></i></div>'}${legend}</div>
+      <aside class="topic-side">${g ? graphPanel(g, sel) : ''}</aside>
+    </div>`);
+}
+
+// Hover: light a name's links without re-rendering.
+function graphHover(e) {
+  const svg = $('#graphView .g-svg');
+  if (!svg) return;
+  const node = e.type === 'pointerover' ? e.target.closest('.g-node, .g-edge') : null;
+  svg.classList.toggle('hovering', !!node);
+  for (const el of svg.querySelectorAll('.lit')) el.classList.remove('lit');
+  if (!node) return;
+  node.classList.add('lit');
+  if (node.classList.contains('g-edge')) {
+    for (const k of [node.dataset.a, node.dataset.b]) for (const el of svg.querySelectorAll(`[data-k="${CSS.escape(k)}"]`)) el.classList.add('lit');
+    return;
+  }
+  const k = node.dataset.k;
+  svg.querySelector(`.g-label[data-k="${CSS.escape(k)}"]`)?.classList.add('lit');
+  for (const ed of svg.querySelectorAll(`.g-edge[data-a="${CSS.escape(k)}"], .g-edge[data-b="${CSS.escape(k)}"]`)) {
+    ed.classList.add('lit');
+    for (const el of svg.querySelectorAll(`[data-k="${CSS.escape(ed.dataset.a === k ? ed.dataset.b : ed.dataset.a)}"]`)) el.classList.add('lit');
+  }
+}
+
 // ---------- Topic pages ----------
 // #topic/<key>: a company or theme's share of all coverage over 30 days, a
 // dated timeline of its biggest headlines (from the stored index), and what's
@@ -1773,6 +2018,7 @@ function render() {
   if (state.view === 'week') renderWeek();
   if (state.view === 'story') renderStory();
   if (state.view === 'theme') renderTheme();
+  if (state.view === 'graph') renderGraph();
   renderFoot();
   updateLive();
   animateOdds();
@@ -1800,6 +2046,14 @@ function route() {
     state.view = 'story';
     const go = () => { render(); window.scrollTo({ top: 0 }); };
     return state.data ? transition(go) : go();
+  }
+  const graph = /^graph(?:\/([a-z0-9-]{1,60})(?:\+([a-z0-9-]{1,60}))?)?$/.exec(v);
+  if (graph) {
+    const wasGraph = state.view === 'graph';
+    state.graphSel = graph[1] ? { a: graph[1], b: graph[2] || null } : null;
+    state.view = 'graph';
+    const go = () => { render(); if (!wasGraph) window.scrollTo({ top: 0 }); };
+    return state.data && !wasGraph ? transition(go) : go();
   }
   const topic = /^topic\/([a-z0-9]+)$/.exec(v);
   if (topic) {
@@ -1864,6 +2118,7 @@ document.addEventListener('click', (e) => {
     transition(render);
     $(`[data-related="${CSS.escape(d.related)}"]`)?.focus();
   }
+  else if (d.gdays) { state.graphDays = Number(d.gdays); store.set('fw.gdays', d.gdays); transition(renderGraph); }
   else if (d.moveMarket) openMarketChart(d.moveMarket);
   else if ('movesAll' in d) { state.movesAll = !state.movesAll; transition(renderMoves); }
   else if (d.msort) { state.marketSort = d.msort; store.set('fw.msort', d.msort); renderMarkets(); }
@@ -1878,6 +2133,8 @@ document.addEventListener('click', (e) => {
   }
 });
 
+$('#graphView').addEventListener('pointerover', graphHover);
+$('#graphView').addEventListener('pointerleave', graphHover);
 $('#marketList').addEventListener('pointermove', chartHover);
 $('#topicView').addEventListener('pointermove', topicHover);
 $('#storyView').addEventListener('pointermove', spreadHover);

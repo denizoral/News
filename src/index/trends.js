@@ -67,8 +67,21 @@ const RANKED = `SELECT d.id FROM docs_fts JOIN docs d INDEXED BY docs_when ON d.
   WHERE docs_fts MATCH ? AND ${KEEP} AND ${AT} >= ? AND ${AT} < ?
   ORDER BY bm25(docs_fts, 10, 3, 1, 0, 0) LIMIT ?`;
 
+// Rows for ranked ids, in rank order, English first: the archive also holds
+// machine-translated copies of the same story.
+const english = (d) => (!d.lang || d.lang.startsWith('en')) && !/[\u0370-\u03ff\u0400-\u04ff\u0600-\u06ff\u3040-\u9fff\uac00-\ud7af]/.test(d.title);
+function rankedRows(db, match, from, to, n) {
+  const ids = db.prepare(RANKED).all(match, from, to, n).map((r) => r.id);
+  if (!ids.length) return [];
+  const byId = new Map(db.prepare(`SELECT d.id, d.title, d.url, d.site, d.source, d.type, d.lang, ${AT} AS at FROM docs d
+    WHERE d.id IN (${ids.map(() => '?').join(',')}) AND d.title != ''`).all(...ids).map((d) => [d.id, d]));
+  const rows = ids.map((id) => byId.get(id)).filter(Boolean);
+  return [...rows.filter(english), ...rows.filter((d) => !english(d))].map(({ lang, ...d }) => d);
+}
+
 function bestDoc(db, match, from, to) {
-  return db.prepare(`SELECT d.title, d.url, d.site, ${AT} AS at FROM docs d WHERE d.id IN (${RANKED}) AND d.title != '' LIMIT 1`).get(match, from, to, 3) || null;
+  const [d] = rankedRows(db, match, from, to, 12);
+  return d ? { title: d.title, url: d.url, site: d.site, at: d.at } : null;
 }
 
 // The `n` highest buckets, at least `gap` buckets apart, with three mentions or more.
@@ -123,10 +136,7 @@ export function computeTrends(db, { q, range = '1y', now = Date.now() }) {
 export function trendMoment(db, { q, from, to, limit = 6 }) {
   const [term] = parseTerms(q);
   if (!term) return { docs: [] };
-  const ids = db.prepare(RANKED).all(term.match, from, to, limit * 4).map((r) => r.id);
-  const byId = new Map(db.prepare(`SELECT d.id, d.title, d.url, d.site, d.source, d.type, ${AT} AS at FROM docs d
-    WHERE d.id IN (${ids.map(() => '?').join(',') || 'NULL'}) AND d.title != ''`).all(...ids).map((d) => [d.id, d]));
-  const docs = ids.map((id) => byId.get(id)).filter(Boolean);
+  const docs = rankedRows(db, term.match, from, to, limit * 4);
   // One per headline: syndicated copies are the same story.
   const seen = new Set();
   const out = [];

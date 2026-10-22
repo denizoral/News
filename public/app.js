@@ -17,6 +17,8 @@ import { createPredictions } from './predictions.js';
 import { createCatchup } from './catchup.js';
 import { createNewsMap } from './newsmap.js';
 import { createVersus } from './versus.js';
+import { createRumors } from './rumors.js';
+import { createNewNames } from './newnames.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -189,6 +191,8 @@ let predictionsUi = null;
 let catchupUi = null;
 let mapUi = null;
 let versusUi = null;
+let rumorsUi = null;
+let newNamesUi = null;
 
 // ---------- Data ----------
 
@@ -2077,6 +2081,8 @@ function render() {
   if (state.view === 'catchup') catchupUi.render();
   if (state.view === 'map') mapUi.render();
   if (state.view === 'versus') versusUi.render();
+  if (state.view === 'rumors') rumorsUi.render();
+  if (state.view === 'newnames') newNamesUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2092,7 +2098,7 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash) || mapUi.route(location.hash) || versusUi.route(location.hash);
+  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash) || mapUi.route(location.hash) || versusUi.route(location.hash) || rumorsUi.route(location.hash) || newNamesUi.route(location.hash);
   if (acct) {
     const was = state.view;
     state.view = acct;
@@ -2244,6 +2250,9 @@ $('#mapView').addEventListener('input', (e) => mapUi.onInput(e));
 $('#versusView').addEventListener('pointermove', (e) => versusUi.hover(e));
 $('#versusView').addEventListener('pointerleave', (e) => versusUi.hover(e), true);
 $('#versusView').addEventListener('change', (e) => versusUi.onChange(e));
+$('#rumorsView').addEventListener('click', (e) => rumorsUi.onClick(e));
+$('#newnamesView').addEventListener('click', (e) => newNamesUi.onClick(e));
+$('#newnamesView').addEventListener('keydown', (e) => newNamesUi.onKey(e));
 $('#storylinesView').addEventListener('pointerleave', (e) => storylinesUi.hover(e), true);
 $('#askView').addEventListener('pointerover', (e) => askUi.hover(e));
 $('#askView').addEventListener('focusin', (e) => askUi.hover(e));
@@ -2368,6 +2377,8 @@ predictionsUi = createPredictions({ $, esc, setHtml, state, reducedMotion });
 catchupUi = createCatchup({ $, esc, setHtml, state, reducedMotion, store });
 mapUi = createNewsMap({ $, esc, setHtml, state, reducedMotion });
 versusUi = createVersus({ $, esc, setHtml, state, reducedMotion });
+rumorsUi = createRumors({ $, esc, setHtml, state, reducedMotion });
+newNamesUi = createNewNames({ $, esc, setHtml, state, reducedMotion });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

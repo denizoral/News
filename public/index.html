@@ -12,6 +12,7 @@
   <meta name="theme-color" content="#eef1f4" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#0b1626" media="(prefers-color-scheme: dark)" />
   <link rel="alternate" type="application/rss+xml" title="The week in AI" href="digest.xml" />
+  <link rel="alternate" type="application/rss+xml" title="Breaking AI news" href="feeds/breaking.xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet" />
@@ -221,6 +222,9 @@
     <section class="view" data-view="models" aria-label="Compare models" hidden>
       <div id="modelsView"></div>
     </section>
+    <section class="view" data-view="developers" aria-label="API and feeds" hidden>
+      <div id="developersView"></div>
+    </section>
     <!-- Reading list -->
     <section class="view" data-view="saved" aria-label="Saved stories" hidden>
       <div id="savedView"></div>
@@ -280,6 +284,7 @@
   <footer class="foot">
     <p id="footStatus"></p>
     <p id="footSpider"></p>
+    <p class="foot-links"><a href="#developers">API and feeds</a> · <a href="digest.xml">Weekly digest (RSS)</a></p>
     <details>
       <summary>Sources</summary>
       <div id="sourceTable"></div>

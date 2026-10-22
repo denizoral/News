@@ -16,6 +16,7 @@ const PAGES = [
   ['Markets', '#markets', 'Polymarket odds on AI'],
   ['Breaking', '#breaking', 'Stories breaking now, and alerts'],
   ['Saved', '#saved', 'Your reading list'],
+  ['API and feeds', '#developers', 'JSON API, RSS and JSON feeds for any topic, account or search'],
 ];
 const KIND = { page: 'Page', topic: 'Topic', name: 'Name', account: 'X account', release: 'Release', theme: 'Emerging', story: 'Story', market: 'Market', action: 'Action', search: 'Search', recent: 'Recent' };
 const ICON = {

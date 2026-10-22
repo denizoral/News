@@ -4,6 +4,7 @@ import { createPalette } from './palette.js';
 import { createForYou } from './foryou.js';
 import { createAccounts } from './accounts.js';
 import { createModels } from './models.js';
+import { createDevelopers, feedBtn } from './developers.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -163,6 +164,7 @@ let paletteUi = null;
 let foryouUi = null;
 let accountsUi = null;
 let modelsUi = null;
+let devUi = null;
 
 // ---------- Data ----------
 
@@ -1540,7 +1542,7 @@ function renderTopic() {
     <header class="topic-head">
       <a class="back" href="#news">← News</a>
       <p class="kicker">Topic</p>
-      <div class="head-row"><h1>${esc(label)}</h1>${foryouUi.btn('topic', key, label)}</div>
+      <div class="head-row"><h1>${esc(label)}</h1>${feedBtn(`/feeds/topic/${encodeURIComponent(key)}.xml`)}${foryouUi.btn('topic', key, label)}</div>
       <p class="topic-sum">${summary}</p>
     </header>
     ${chart ? `<section class="topic-card"><h2>Share of all coverage <small>last 30 days, every stored story</small></h2>${chart}</section>` : ''}
@@ -2036,6 +2038,7 @@ function render() {
   if (state.view === 'accounts') accountsUi.renderDirectory();
   if (state.view === 'account') accountsUi.renderAccount();
   if (state.view === 'models') modelsUi.render();
+  if (state.view === 'developers') devUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2087,9 +2090,9 @@ function route() {
     const go = () => { render(); window.scrollTo({ top: 0 }); };
     return state.data ? transition(go) : go();
   }
-  state.view = ['news', 'foryou', 'x', 'tech', 'week', 'releases', 'builds', 'markets', 'breaking', 'saved'].includes(v) ? v : 'news';
+  state.view = ['news', 'foryou', 'developers', 'x', 'tech', 'week', 'releases', 'builds', 'markets', 'breaking', 'saved'].includes(v) ? v : 'news';
   const name = state.data?.site?.name || 'Frontier Wire';
-  document.title = { news: name, x: `On X · ${name}`, tech: `Tech · ${name}`, week: `This week · ${name}`, releases: `AI releases · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}`, breaking: `Breaking · ${name}`, saved: `Saved · ${name}`, foryou: `For you · ${name}` }[state.view];
+  document.title = { news: name, x: `On X · ${name}`, tech: `Tech · ${name}`, week: `This week · ${name}`, releases: `AI releases · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}`, breaking: `Breaking · ${name}`, saved: `Saved · ${name}`, foryou: `For you · ${name}`, developers: `API and feeds · ${name}` }[state.view];
   const changed = $(`.view[data-view="${state.view}"]`)?.hidden;
   const go = () => {
     render();
@@ -2103,6 +2106,7 @@ function route() {
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button, a');
   if (!t) return;
+  if (devUi.onClick(t, e)) return;
   if (breakingUi.onClick(t) || paletteUi.onClick(t) || foryouUi.onClick(t) || accountsUi.onClick(t) || (state.view === 'models' && modelsUi.onClick(t))) return;
   const d = t.dataset;
   if (d.xopen) { state.xHandle = d.xopen; if (location.hash === '#x') loadX({ animate: true }); return; }
@@ -2165,7 +2169,7 @@ $('#accountView').addEventListener('pointermove', (e) => accountsUi.hover(e));
 $('#accountView').addEventListener('pointerleave', (e) => accountsUi.hover(e), true);
 $('#modelsView').addEventListener('pointermove', (e) => modelsUi.hover(e));
 $('#modelsView').addEventListener('pointerleave', (e) => modelsUi.hover(e), true);
-document.addEventListener('change', (e) => accountsUi.onChange(e.target));
+document.addEventListener('change', (e) => devUi.onChange(e.target) || accountsUi.onChange(e.target));
 $('#breakingView').addEventListener('pointermove', (e) => breakingUi.hover(e));
 $('#breakingView').addEventListener('pointerleave', (e) => breakingUi.hover(e), true);
 $('#keysDialog').addEventListener('click', (e) => { if (e.target.closest('[data-close]') || e.target.id === 'keysDialog') $('#keysDialog').close(); });
@@ -2270,6 +2274,7 @@ foryouUi = createForYou({
   savedSids: () => (store.get('fw.saved', []) || []).map((x) => x?.sid).filter(Boolean),
 });
 accountsUi = createAccounts({ $, esc, time, setHtml, store, state, reducedMotion, followBtn: (...a) => foryouUi.btn(...a) });
+devUi = createDevelopers({ $, esc, time, setHtml, store, state, reducedMotion, toast: (m) => paletteUi.toast(m) });
 modelsUi = createModels({ $, esc, setHtml, store, state, reducedMotion, logo: releaseLogo });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.

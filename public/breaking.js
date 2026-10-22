@@ -2,6 +2,8 @@
 // each story's coverage curve, and opt-in push alerts.
 // Server side: src/pipeline/breaking.js (detection), src/pipeline/alerts.js.
 
+import { feedBtn } from './developers.js';
+
 const MIN = 60e3;
 const STEP = 10 * MIN;
 
@@ -256,7 +258,7 @@ export function createBreaking({ $, esc, ago, time, setHtml, store, state, reduc
     setHtml($('#breakingView'), `
       <header class="topic-head">
         <a class="back" href="#news">← News</a>
-        <p class="kicker">Breaking</p>
+        <div class="head-row"><p class="kicker">Breaking</p>${feedBtn('/feeds/breaking.xml')}</div>
         <h1>When everyone picks it up at once</h1>
         <p class="topic-sum">Stories that many separate outlets, labs and X accounts covered within the same hour.${perDay ? ` ${perDay} a day over the last ${page.days === 1 ? 'day' : `${page.days} days`}.` : ''}</p>
       </header>

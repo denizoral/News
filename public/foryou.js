@@ -2,6 +2,8 @@
 // has something to follow (topics, names, X accounts, outlets), and #foryou,
 // the live feed ranked for them. Server side: src/index/foryou.js.
 
+import { feedBtn } from './developers.js';
+
 const KINDS = { topic: 'topics', name: 'names', account: 'accounts', outlet: 'outlets' };
 const PARAM = { topics: 't', names: 'n', accounts: 'a', outlets: 'o' };
 const TITLES = { topics: 'Topics', names: 'Names', accounts: 'X accounts', outlets: 'Outlets' };
@@ -168,7 +170,7 @@ export function createForYou({ $, $$, esc, time, setHtml, store, state, reducedM
     setHtml($('#foryouView'), `
       <header class="topic-head">
         <a class="back" href="#news">← News</a>
-        <p class="kicker">For you</p>
+        <div class="head-row"><p class="kicker">For you</p>${n ? feedBtn(`/feeds/foryou.xml?${query().replace(/(^|&)s=[^&]*/, '').replace(/^&/, '')}`) : ''}</div>
         <h1>Your wire</h1>
         <p class="topic-sum">${sum}</p>
       </header>

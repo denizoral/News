@@ -3,6 +3,8 @@
 // that led the news) and #account/<a>/vs/<b> (two side by side).
 // Server side: src/index/accounts.js.
 
+import { feedBtn } from './developers.js';
+
 const GROUPS = [['all', 'All'], ['lab', 'Labs'], ['people', 'People'], ['scoops', 'Scoops'], ['markets', 'Markets']];
 const SORTS = [['ahead', 'Ahead of the press'], ['posts', 'Most active'], ['stories', 'In stories']];
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -208,7 +210,7 @@ export function createAccounts({ $, esc, time, setHtml, store, state, reducedMot
           <h1>${esc(a.name)}</h1>
           <p class="topic-sum"><a href="https://x.com/${encodeURIComponent(a.handle)}" target="_blank" rel="noopener">@${esc(a.handle)} on X ↗</a> · <a href="#x" data-xopen="${esc(a.handle)}">Latest posts</a></p>
         </div>
-        <div class="ac-tools">${followBtn('account', a.handle, a.name)}${compareSelect(a.handle)}</div>
+        <div class="ac-tools"><div class="ac-btns">${feedBtn(`/feeds/account/${encodeURIComponent(a.handle)}.xml`)}${followBtn('account', a.handle, a.name)}</div>${compareSelect(a.handle)}</div>
       </div>
     </header>`;
   }

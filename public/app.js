@@ -11,6 +11,8 @@ import { createDeals } from './deals.js';
 import { createAsk } from './ask.js';
 import { createDay } from './day.js';
 import { createOutlets } from './outlets.js';
+import { createQuotes } from './quotes.js';
+import { createStorylines } from './storylines.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -177,6 +179,8 @@ let dealsUi = null;
 let askUi = null;
 let dayUi = null;
 let outletsUi = null;
+let quotesUi = null;
+let storylinesUi = null;
 
 // ---------- Data ----------
 
@@ -1870,6 +1874,7 @@ function renderStory() {
         <h1><a href="${esc(lead?.url || d?.url || live?.url)}" target="_blank" rel="noopener">${esc(title)}</a></h1>
         ${summary && summary !== title && !isUrlOnly(summary) ? `<p class="story-dek">${esc(summary)}</p>` : ''}
         <p class="topic-sum">${meta}</p>
+        ${d?.storyline ? `<a class="story-line" href="#storyline/${esc(d.storyline.id)}"><span>Part of a storyline${d.storyline.active ? ' · developing' : ''}</span><b>${esc(d.storyline.title)}</b><small>${d.storyline.dayCount} days, ${d.storyline.chapterCount} stories →</small></a>` : ''}
         <div class="story-acts"><button class="chip story-share" type="button" data-share="${esc(sid)}">Copy link</button><button class="chip story-save" type="button" data-save="${esc(sid)}" aria-pressed="${paletteUi.isSaved(sid)}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h10v15l-5-3.6-5 3.6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>${paletteUi.isSaved(sid) ? 'Saved' : 'Save'}</button></div>
       </div>
       ${image ? `<img class="story-hero" src="${esc(image)}" alt="" loading="lazy" data-fallback="remove">` : ''}
@@ -2058,6 +2063,8 @@ function render() {
   if (state.view === 'ask') askUi.render();
   if (state.view === 'day') dayUi.render();
   if (state.view === 'outlets') outletsUi.render();
+  if (state.view === 'quotes') quotesUi.render();
+  if (state.view === 'storylines') storylinesUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2073,7 +2080,7 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash);
+  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash);
   if (acct) {
     const was = state.view;
     state.view = acct;
@@ -2129,6 +2136,7 @@ document.addEventListener('click', (e) => {
   if (state.view === 'trends' && trendsUi.onClick(t, e)) return;
   if (state.view === 'deals' && dealsUi.onClick(t, e)) return;
   if (state.view === 'outlets' && outletsUi.onClick(t, e)) return;
+  if (state.view === 'storylines' && storylinesUi.onClick(t, e)) return;
   if (breakingUi.onClick(t) || paletteUi.onClick(t) || foryouUi.onClick(t) || accountsUi.onClick(t) || (state.view === 'models' && modelsUi.onClick(t))) return;
   const d = t.dataset;
   if (d.xopen) { state.xHandle = d.xopen; if (location.hash === '#x') loadX({ animate: true }); return; }
@@ -2205,6 +2213,11 @@ $('#dayView').addEventListener('change', (e) => dayUi.onChange(e));
 $('#outletsView').addEventListener('pointermove', (e) => outletsUi.hover(e));
 $('#outletsView').addEventListener('pointerleave', (e) => outletsUi.hover(e), true);
 $('#outletsView').addEventListener('input', (e) => outletsUi.onInput(e));
+$('#quotesView').addEventListener('pointermove', (e) => quotesUi.hover(e));
+$('#quotesView').addEventListener('pointerleave', (e) => quotesUi.hover(e), true);
+$('#quotesView').addEventListener('input', (e) => quotesUi.onInput(e));
+$('#storylinesView').addEventListener('pointermove', (e) => storylinesUi.hover(e));
+$('#storylinesView').addEventListener('pointerleave', (e) => storylinesUi.hover(e), true);
 $('#askView').addEventListener('pointerover', (e) => askUi.hover(e));
 $('#askView').addEventListener('focusin', (e) => askUi.hover(e));
 $('#askView').addEventListener('pointerleave', (e) => askUi.hover(e), true);
@@ -2322,6 +2335,8 @@ dealsUi = createDeals({ $, esc, setHtml, state, reducedMotion });
 askUi = createAsk({ $, esc, setHtml, state, reducedMotion, store });
 dayUi = createDay({ $, esc, setHtml, state, reducedMotion });
 outletsUi = createOutlets({ $, esc, setHtml, state, reducedMotion, followBtn: (...a) => foryouUi.btn(...a) });
+quotesUi = createQuotes({ $, esc, setHtml, state, reducedMotion });
+storylinesUi = createStorylines({ $, esc, setHtml, state, reducedMotion });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

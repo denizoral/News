@@ -739,8 +739,57 @@ test('on general-news sites only AI feeds are followed', async () => {
 });
 
 test('sites that keep producing AI articles keep their main feed', () => {
-  for (let i = 0; i < 3; i++) upsertDoc({ url: `https://aifocus.example/post-${i}`, type: 'article', title: `AI policy ${i}`, site: 'aifocus.example', fetched_at: Date.now(), body: 'AI governance. '.repeat(50) });
+  for (let i = 0; i < 10; i++) upsertDoc({ url: `https://aifocus.example/post-${i}`, type: 'article', title: `AI policy ${i}`, site: 'aifocus.example', fetched_at: Date.now(), body: 'AI governance. '.repeat(50) });
   const page = { url: 'https://aifocus.example/post-9', title: 'AI governance research', description: '', feeds: ['https://aifocus.example/feed'] };
   spider.discoverFeeds(row(page.url), page);
   assert.ok(frontier('https://aifocus.example/feed'));
+});
+
+test('when the queue runs low, AI sitemaps are backfilled with older articles at low priority', () => {
+  const sm = 'https://backfill-ai.example/sitemap.xml';
+  settings.update({ 'crawler.hubs': [...settings.get('crawler.hubs'), 'https://backfill-ai.example/'] }, { role: 'owner', actor: 't' });
+  spider.enqueue(sm, { kind: 'sitemap' });
+  q("UPDATE frontier SET status = 'done' WHERE kind = 'article' AND status = 'queued'").run(); // an empty queue
+  assert.ok(spider.maybeBackfill() >= 1);
+  assert.ok(spider.backfilling.has(sm));
+  const day = 86400e3;
+  const iso = (ago) => new Date(Date.now() - ago).toISOString();
+  const xml = `<urlset>
+    <url><loc>https://backfill-ai.example/2026/10/new-ai-agent-release</loc><lastmod>${iso(day)}</lastmod></url>
+    <url><loc>https://backfill-ai.example/2026/09/older-ai-model-review</loc><lastmod>${iso(30 * day)}</lastmod></url>
+    <url><loc>https://backfill-ai.example/2026/06/ancient-ai-story-here</loc><lastmod>${iso(120 * day)}</lastmod></url>
+  </urlset>`;
+  spider.handleSitemap(row(sm, 'sitemap'), xml);
+  assert.ok(frontier('https://backfill-ai.example/2026/10/new-ai-agent-release').priority > 5);
+  assert.equal(frontier('https://backfill-ai.example/2026/09/older-ai-model-review').priority, 3, 'older entries queue low');
+  assert.equal(frontier('https://backfill-ai.example/2026/06/ancient-ai-story-here'), undefined, 'beyond the backfill window');
+  assert.equal(spider.wasBackfilled(sm), true);
+  assert.equal(spider.maybeBackfill() >= 0 && spider.backfilling.has(sm), false, 'not again within 30 days');
+  // A normal read only takes the last week.
+  spider.handleSitemap(row('https://backfill-ai.example/other-sitemap.xml', 'sitemap'), xml.replaceAll('backfill-ai.example/2026', 'backfill-ai.example/x/2026'));
+  assert.equal(frontier('https://backfill-ai.example/x/2026/09/older-ai-model-review'), undefined);
+});
+
+test('repeated rate limits get longer rests; section feeds in the query are judged by section', async () => {
+  const h = spider.host('ratelimited.example');
+  const u = 'https://ratelimited.example/2026/a-b-c-d';
+  spider.fail(row(u), h, new HttpError(429, u, 1));
+  const first = h.next_allowed_at - Date.now();
+  spider.fail(row(u), h, new HttpError(429, u, 1));
+  const second = h.next_allowed_at - Date.now();
+  assert.ok(first < 2 * 60e3 && second > 9 * 60e3, `honours a short Retry-After once, then escalates (${first}, ${second})`);
+  spider.hostOk(h);
+  assert.equal(h.rateStreak, 0);
+  const { isUsefulFeed } = await import('../src/spider/policy.js');
+  assert.equal(isUsefulFeed('https://paper.example/search/?f=rss&c=news%2Fcharlotte&l=50'), false);
+  assert.equal(isUsefulFeed('https://paper.example/search/?f=rss&c=technology%2Fartificial-intelligence'), true);
+});
+
+test('links to PDFs and other files are never queued', async () => {
+  const { isFileUrl } = await import('../src/spider/policy.js');
+  assert.equal(isFileUrl('https://arxiv.org/pdf/2610.28122'), true);
+  assert.equal(isFileUrl('https://example.com/report.PDF'), true);
+  assert.equal(isFileUrl('https://example.com/2026/ai-report'), false);
+  assert.equal(spider.enqueue('https://arxiv.org/pdf/2610.99999'), false);
+  assert.equal(spider.enqueue('https://files.example/whitepaper.pdf'), false);
 });

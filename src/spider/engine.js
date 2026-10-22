@@ -32,7 +32,7 @@ import { DeadEnds } from './deadends.js';
 import { LAST_UPDATE_URL, latestGkgUrl, batchesSince, unzipFirst, parseGkg } from './gdelt.js';
 import { downloadImage, enforceBudget } from './media.js';
 import { upsertDoc, findByContentHash, addInlinks } from '../index/documents.js';
-import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, isNonNewsPath, isAiHeadline, looksEnglish } from './policy.js';
+import { bare, cleanUrl, isSkipped, allowedByPatterns, isAiHost, isRelevantText, decide, inQuietHours, isUsefulFeed, isNonNewsHost, pickSitemaps, isWantedSitemap, slugRelevance, isListingUrl, sectionOf, isNonNewsPath, isAiHeadline, looksEnglish, isFileUrl } from './policy.js';
 
 export { inQuietHours };
 
@@ -65,6 +65,7 @@ export class Spider extends EventEmitter {
     this.stats = { fetched: 0, indexed: 0, duplicates: 0, blocked: 0, errors: 0, deferred: 0, images: 0, feeds: 0, startedAt: Date.now(), recent: [] };
     this.inflightUrls = new Map(); // url -> { host, kind, started }
     this.linkResults = new Map(); // page URL -> { ok, missing } for the links it queued
+    this.backfilling = new Map(); // sitemap URL -> when it was picked; its next read is a backfill
     this.capped = new Map(); // section prefix -> UTC day it hit its undated limit
     this.deadEndStore = new DeadEnds(() => this.cfg);
     this.ring = []; // newest crawl-log entries, for the live view
@@ -151,7 +152,7 @@ export class Spider extends EventEmitter {
       // Pages that would only be skipped after fetching: docs, help and forum
       // sections, job boards, stock photos, login-walled social sites.
       const host = bare(new URL(u).hostname);
-      if (isNonNewsPath(u) || (isNonNewsHost(host) && !this.trusted.has(host))) return false;
+      if (isFileUrl(u) || isNonNewsPath(u) || (isNonNewsHost(host) && !this.trusted.has(host))) return false;
       // Disallowed by a robots.txt already fetched: it would only be logged as blocked.
       const known = this.hostCache.get(new URL(u).hostname);
       if (known?.parsed && !this.robotsAllows(known, u)) return false;
@@ -234,7 +235,8 @@ export class Spider extends EventEmitter {
         const host = bare(r.host);
         let why = null;
         try {
-          if (isNonNewsPath(r.url) || (isNonNewsHost(host) && !this.trusted.has(host))) why = 'Not a news page';
+          if (isFileUrl(r.url)) why = 'A file download, not a page';
+          else if (isNonNewsPath(r.url) || (isNonNewsHost(host) && !this.trusted.has(host))) why = 'Not a news page';
           else if (this.isDeadEnd(r.url)) why = 'Learned dead end';
           // The URL-slug rules only for pages never fetched (not retries or recrawls).
           else if (r.fetched_at) why = null;
@@ -418,6 +420,7 @@ export class Spider extends EventEmitter {
   // sitemap, which sites often serve while refusing pages) ends a refusal rest.
   hostOk(h, kind = 'page') {
     h.failStreak = 0;
+    h.rateStreak = 0;
     const refusing = h.refuseStreak >= REFUSAL_LIMIT;
     if (kind === 'feed' || kind === 'sitemap') {
       if (!refusing) h.pausedUntil = 0;
@@ -530,6 +533,10 @@ export class Spider extends EventEmitter {
       try { this.discoverHubs(now); } catch (e) { console.warn('[spider] hub discovery failed', e.message); }
       try { this.expireQueue(now); } catch (e) { console.warn('[spider] queue expiry failed', e.message); }
       try { this.retireBarrenSources(now); } catch (e) { console.warn('[spider] source review failed', e.message); }
+    }
+    if (now - (this.backfillAt || 0) > 5 * 60e3) {
+      this.backfillAt = now;
+      try { this.maybeBackfill(now); } catch (e) { console.warn('[spider] backfill failed', e.message); }
     }
     const cap = this.cfg.maxPagesPerMinute;
     if (cap && this.stats.recent.filter((t) => t > now - 60e3).length >= cap) {
@@ -706,7 +713,12 @@ export class Spider extends EventEmitter {
     }
     // Rate limited: honor Retry-After for the whole host and try again; not an error.
     if (err.status === 429 || (err.status === 503 && err.retryAfterSec != null)) {
-      const wait = Math.min(6 * 3600, Math.max(60, err.retryAfterSec ?? 300)) * 1000;
+      // Honour Retry-After, but a site that keeps rate-limiting gets a longer
+      // rest each time (5, 10, 20 min… up to 6 h): arXiv asks for a minute
+      // and refuses again when it's up.
+      h.rateStreak = (h.rateStreak || 0) + 1;
+      const escalated = 300 * 2 ** (h.rateStreak - 1);
+      const wait = Math.min(6 * 3600, Math.max(60, err.retryAfterSec ?? 300, h.rateStreak > 1 ? escalated : 0)) * 1000;
       h.next_allowed_at = Math.max(h.next_allowed_at, now + wait);
       this.saveHost(h);
       this.stats.deferred++;
@@ -839,6 +851,14 @@ export class Spider extends EventEmitter {
       throw err;
     }
     const type = res.headers.get('content-type') || '';
+    // A PDF, image, video or archive where a page should be: stop before
+    // downloading it. (Sitemaps can be gzip files, so not for those.)
+    if (!RECURRING.has(row.kind) && /^(application\/(pdf|zip|octet-stream|x-)|image\/|video\/|audio\/|font\/)/i.test(type) && !/xml|json|rss|atom/i.test(type)) {
+      await res.body?.cancel?.().catch(() => {});
+      this.hostOk(h, row.kind);
+      this.log(row, { outcome: 'skipped', http: res.status, reason: `Not a web page (${type.split(';')[0]}); not downloaded` });
+      return this.done(row, { status: 'skipped', httpStatus: res.status });
+    }
     const { text: body, bytes, truncated } = await readText(res, this.cfg.maxPageBytes);
     this.hostOk(h, row.kind);
     this.stats.fetched++;
@@ -904,16 +924,24 @@ export class Spider extends EventEmitter {
   }
 
   handleSitemap(row, xml) {
+    // A backfill reads further back, takes more, and queues the older entries low.
+    const backfill = this.backfilling.has(row.url);
+    this.backfilling.delete(row.url);
+    const maxAgeDays = backfill ? Math.max(this.cfg.backfillDays, this.cfg.sitemapMaxAgeDays) : this.cfg.sitemapMaxAgeDays;
     let parsed;
     try {
-      parsed = parseSitemap(xml, { maxAgeDays: this.cfg.sitemapMaxAgeDays, maxUrls: this.cfg.sitemapMaxUrls });
+      parsed = parseSitemap(xml, { maxAgeDays, maxUrls: backfill ? Math.max(this.cfg.sitemapMaxUrls, 2000) : this.cfg.sitemapMaxUrls });
     } catch {
       return 0;
     }
+    if (backfill) this.noteBackfilled(row.url);
     let n = 0;
     tx(() => {
       for (const sm of parsed.sitemaps) {
-        if (isWantedSitemap(sm.url, { languages: this.cfg.languages }) && this.enqueue(sm.url, { kind: 'sitemap', priority: 8.5, depth: 0, via: row.url })) n++;
+        if (!isWantedSitemap(sm.url, { languages: this.cfg.languages })) continue;
+        if (this.enqueue(sm.url, { kind: 'sitemap', priority: 8.5, depth: 0, via: row.url })) n++;
+        // A backfilled index backfills its children too.
+        if (backfill && !this.wasBackfilled(sm.url)) this.backfill(sm.url);
       }
       const filtering = this.cfg.relevance !== 'all' && !isAiHost(row.host);
       for (const u of parsed.urls) {
@@ -921,10 +949,69 @@ export class Spider extends EventEmitter {
         if (this.isDeadEnd(u.url) || isListingUrl(u.url)) continue;
         // Judge by the Google News title when there is one, else by a descriptive slug.
         if (filtering && (u.title ? !this.isRelevantText(u.title) : slugRelevance(u.url) === false)) continue;
-        if (this.enqueue(u.url, { kind: 'article', priority: 6 + Math.max(0, 3 - ageH / 12), depth: 1, via: row.url })) n++;
+        const old = ageH > this.cfg.sitemapMaxAgeDays * 24;
+        if (this.enqueue(u.url, { kind: 'article', priority: old ? 3 : 6 + Math.max(0, 3 - ageH / 12), depth: 1, via: row.url })) n++;
       }
     });
     return n;
+  }
+
+  // ---------- backfill ----------
+
+  // When the queue runs low (see below), sitemaps of
+  // starting sites and AI publishers are read again for older articles (see
+  // crawler.backfillDays), a few at a time, each at most once every 30 days.
+  maybeBackfill(now = Date.now()) {
+    if (!this.cfg.backfillDays) return 0;
+    // One round at a time; a pick that never got fetched (retired, blocked) lapses after 30 min.
+    for (const [url, at] of this.backfilling) if (at < now - 30 * 60e3) this.backfilling.delete(url);
+    if (this.backfilling.size) return 0;
+    // Low: few articles ready, or ready on too few sites to keep the parallel
+    // fetchers busy (one site at a time each, and arXiv alone asks for a
+    // long Crawl-delay).
+    const ready = q("SELECT COUNT(*) AS n, COUNT(DISTINCT host) AS hosts FROM frontier WHERE status = 'queued' AND kind = 'article' AND next_at <= ?").get(now);
+    if (ready.n >= 200 && ready.hosts >= 2 * this.cfg.concurrency) return 0;
+    // The best candidates: sitemaps of the most productive sites that don't
+    // refuse the crawler. News sitemaps only list the last two days, so they
+    // have nothing older to give.
+    const productivity = new Map(q('SELECT site, COUNT(*) AS n FROM docs WHERE fetched_at > ? GROUP BY site').all(now - 30 * 86400e3).map((r) => [r.site, r.n]));
+    const picks = q("SELECT url, host FROM frontier WHERE kind = 'sitemap' AND status = 'queued'").all()
+      .filter((r) => {
+        const host = bare(r.host);
+        return (this.trusted.has(host) || isAiHost(host)) && !/news/i.test(new URL(r.url).pathname) && !this.wasBackfilled(r.url) && !this.refuses(r.url) && !this.isDeadEnd(r.url);
+      })
+      .sort((a, b) => (productivity.get(bare(b.host)) || 0) - (productivity.get(bare(a.host)) || 0))
+      // One per site: the point is to give idle fetchers other sites to work on.
+      .filter((r, i, all) => all.findIndex((x) => bare(x.host) === bare(r.host)) === i)
+      .slice(0, 3);
+    for (const r of picks) this.backfill(r.url);
+    const n = picks.length;
+    if (n) console.log(`[spider] queue is low: backfilling ${n} sitemaps (up to ${this.cfg.backfillDays} days back)`);
+    return n;
+  }
+
+  backfill(url) {
+    this.backfilling.set(url, Date.now());
+    q("UPDATE frontier SET next_at = ?, etag = NULL, last_modified = NULL WHERE url = ?").run(Date.now(), url); // a 304 would skip it
+  }
+
+  backfilledMap() {
+    if (!this._backfilled) {
+      try { this._backfilled = JSON.parse(q("SELECT v FROM kv WHERE k = 'spider.backfilled'").get()?.v || '{}'); } catch { this._backfilled = {}; }
+    }
+    return this._backfilled;
+  }
+
+  wasBackfilled(url) {
+    return (this.backfilledMap()[url] || 0) > Date.now() - 30 * 86400e3;
+  }
+
+  noteBackfilled(url) {
+    const m = this.backfilledMap();
+    m[url] = Date.now();
+    const cutoff = Date.now() - 30 * 86400e3;
+    for (const [k, t] of Object.entries(m)) if (t < cutoff) delete m[k];
+    this.saveKv('spider.backfilled', m);
   }
 
   // RSS/Atom: newest entries first, filtered by title like sitemap entries.
@@ -955,11 +1042,11 @@ export class Spider extends EventEmitter {
   }
 
   // A site whose main feed is worth following: a starting site, a known AI
-  // publisher, or one with 3+ pages indexed in the last 30 days (governance.ai
-  // posts rarely but only about AI; a local paper found through one story doesn't).
+  // publisher, or one with 10+ pages indexed in the last 30 days (governance.ai
+  // posts rarely but only about AI; a local paper running a few AP stories doesn't).
   coversAi(host) {
     if (this.trusted.has(host) || isAiHost(host)) return true;
-    return q('SELECT COUNT(*) AS n FROM docs WHERE site = ? AND fetched_at > ?').get(host, Date.now() - 30 * 86400e3).n >= 3;
+    return q('SELECT COUNT(*) AS n FROM docs WHERE site = ? AND fetched_at > ?').get(host, Date.now() - 30 * 86400e3).n >= 10;
   }
 
   // A starting site that advertises no feed often still has one at a usual

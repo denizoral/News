@@ -108,6 +108,12 @@ the oldest images first.
     and drops the ones that don't exist.
   - Sites that keep producing indexed articles are promoted to starting pages
     automatically, up to 25. You can review and dismiss them in the dashboard.
+  - When the queue runs low (or is all on a few slow sites like arXiv), it
+    backfills: sitemaps of the most productive starting sites and AI
+    publishers are read again for articles up to 60 days old, queued below
+    fresh news, each sitemap at most once a month (Settings → Discovery).
+  - Links to files (PDFs, archives, media, images, arXiv's `/pdf/`) are never
+    queued, and a page that turns out to be a file isn't downloaded.
   - It follows links freely inside starting sites, and one hop out to other
     sites when the link is about AI. On general news sites, a link whose anchor
     and URL slug are both clearly about something else (`/sport/…-late-winner`)
@@ -126,7 +132,8 @@ the oldest images first.
   - It waits at least 2 seconds between requests to the same site, and caps each
     site at 600 pages a day.
   - When a site rate-limits it (HTTP 429, or 503 with Retry-After), the whole
-    site rests for as long as it asks, without counting as an error.
+    site rests for as long as it asks, without counting as an error; a site
+    that keeps doing it rests longer each time (5, 10, 20 minutes… up to 6 h).
   - After 8 failures in a row (timeouts, server errors), a site rests for 15
     minutes, doubling up to 6 hours. A site that refuses 10 pages in a row
     (403/404, usually blocking crawlers) rests for 6 hours, doubling up to 2 days.

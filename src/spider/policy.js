@@ -42,6 +42,10 @@ export function isUsefulFeed(feedUrl, pageUrl, { topicOnly = false } = {}) {
   }
   // Comment and review feeds, and Web Stories (swipeable image cards, not articles).
   if (/comments?|replies|reviews|web-stories/i.test(u.pathname + u.search)) return false;
+  // Section feeds named in the query (TownNews: /search/?f=rss&c=news/charlotte)
+  // are judged by that section.
+  const section = ['c', 'cat', 'category', 'section', 'tag', 'topic'].map((k) => u.searchParams.get(k)).find(Boolean);
+  if (section) return isAiSlug(section.toLowerCase());
   const segs = u.pathname.split('/').filter(Boolean);
   const content = segs.filter((s) => !/^(feed|feeds|rss|atom|index\.xml|rss\.xml|feed\.xml|atom\.xml|xml|all)$/i.test(s));
   if (content.some((s) => s.split('-').length >= 4)) return false; // a post's own feed
@@ -121,6 +125,14 @@ export function sectionPath(url) {
 export function sectionOf(url) {
   const u = new URL(url);
   return { site: bare(u.hostname), prefix: `${u.origin}/${sectionPath(u)}` };
+}
+
+// Downloads, not pages: PDFs (arXiv links every paper's /pdf/ next to its
+// abstract), archives, office documents, media and images.
+const FILE_EXT = /\.(pdf|zip|gz|tgz|tar|rar|7z|docx?|xlsx?|pptx?|odt|csv|epub|mp3|mp4|m4a|wav|ogg|mov|avi|mkv|webm|png|jpe?g|gif|webp|svg|ico|exe|dmg|apk|iso|bin)$/i;
+export function isFileUrl(url) {
+  const path = new URL(url).pathname;
+  return FILE_EXT.test(path) || /\/pdf\//i.test(path);
 }
 
 // Listing pages (a tag, topic or author's page) that sitemaps often include

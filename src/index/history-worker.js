@@ -1,11 +1,13 @@
-// Runs history queries (topic pages, the weekly digest, release coverage, vector search, market moves, the entity graph) off the main thread
+// Runs history queries (topic pages, the weekly digest, release coverage, vector search, market moves, the entity graph, X accounts, For you) off the main thread
 // with its own read-only connection (see offload.js).
 
 import { parentPort, workerData } from 'node:worker_threads';
 import { DatabaseSync } from 'node:sqlite';
 import { computeTopic } from './topics.js';
 import { computeDigest } from './digest.js';
-import { similarDocs } from './semantic.js';
+import { similarDocs, vectorIndex } from './semantic.js';
+import { computeAccount, computeAccounts, compareAccounts } from './accounts.js';
+import { tasteScores } from './foryou.js';
 import { computeReleaseCoverage } from './releases.js';
 import { computeEmerging } from './emerging.js';
 import { computeMoves } from './moves.js';
@@ -23,6 +25,10 @@ const JOBS = {
   moves: ({ markets, vectors }) => computeMoves(db, markets, vectors),
   graph: ({ days }) => computeGraph(db, { days }),
   graphDetail: ({ days, a, b }) => graphDetail(db, { days, a, b }),
+  account: ({ handle }) => computeAccount(db, vectorIndex(db), handle),
+  accounts: () => computeAccounts(db, vectorIndex(db)),
+  compare: ({ a, b }) => compareAccounts(db, vectorIndex(db), a, b),
+  taste: (job) => tasteScores(db, job),
 };
 
 parentPort.on('message', ({ id, job }) => {

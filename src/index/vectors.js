@@ -118,6 +118,46 @@ export class VectorIndex {
     return rows.length;
   }
 
+  rowOf(docId) {
+    return this.slot.get(docId) ?? null;
+  }
+
+  // Cosine similarity of two stored rows.
+  dot(i, j) {
+    const { data } = this;
+    const oi = i * DIM, oj = j * DIM;
+    let a = 0, b = 0, c = 0, d = 0;
+    for (let k = 0; k < DIM; k += 4) {
+      a = (a + data[oi + k] * data[oj + k]) | 0;
+      b = (b + data[oi + k + 1] * data[oj + k + 1]) | 0;
+      c = (c + data[oi + k + 2] * data[oj + k + 2]) | 0;
+      d = (d + data[oi + k + 3] * data[oj + k + 3]) | 0;
+    }
+    return (a + b + c + d) * this.scales[i] * this.scales[j];
+  }
+
+  // Mean of some rows, unit length (a "taste" vector), as floats.
+  centroid(rows) {
+    const out = new Float32Array(DIM);
+    for (const r of rows) {
+      const o = r * DIM, s = this.scales[r];
+      for (let k = 0; k < DIM; k++) out[k] += this.data[o + k] * s;
+    }
+    let n = 0;
+    for (const x of out) n += x * x;
+    n = Math.sqrt(n) || 1;
+    for (let k = 0; k < DIM; k++) out[k] /= n;
+    return out;
+  }
+
+  // Cosine of a float query against one row.
+  score(query, i) {
+    const o = i * DIM;
+    let a = 0;
+    for (let k = 0; k < DIM; k++) a += query[k] * this.data[o + k];
+    return a * this.scales[i];
+  }
+
   grow() {
     const cap = this.ids.length * 2;
     const ids = new Int32Array(cap); ids.set(this.ids); this.ids = ids;

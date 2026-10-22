@@ -14,6 +14,12 @@ const esc = (t = '') => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<
 // ---- Worker side ----
 
 let index = null;
+// The worker's one copy of every vector, current as of this call.
+export function vectorIndex(db) {
+  index ||= new VectorIndex(db);
+  index.refresh();
+  return index;
+}
 const headKey = (title) => tokens(title).slice(0, 6).join(' ');
 const tokenSet = (s) => new Set(tokens(s));
 function overlap(a, b) {

@@ -11,9 +11,11 @@ let seq = 0;
 const waiting = new Map(); // job id -> { resolve, reject, lane }
 
 // Two workers ("lanes"): vector search answers people typing, so it gets its
-// own and never queues behind a multi-second topic or digest job.
+// own and never queues behind a multi-second topic or digest job. Jobs that
+// read the vectors (accounts, For you) share that lane and its one copy.
 const workers = new Map();
-const laneOf = (job) => (job.kind === 'similar' ? 'vectors' : 'history');
+const VECTOR_JOBS = new Set(['similar', 'account', 'accounts', 'compare', 'taste']);
+const laneOf = (job) => (VECTOR_JOBS.has(job.kind) ? 'vectors' : 'history');
 
 function getWorker(lane) {
   let worker = workers.get(lane);

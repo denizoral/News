@@ -35,7 +35,9 @@ const state = {
   limit: 60,
   open: new Set(),
   chartOpen: null, // market id whose odds chart is expanded
-  charts: new Map(), // market id -> { at, outcomes } from /api/odds
+  charts: new Map(), // market id -> { at, outcomes, moves } from /api/odds
+  moves: null, // { at, data } from /api/moves
+  movesAll: false,
   topicKey: null,
   topicCache: new Map(), // topic key -> { at, data, error } from /api/topic
   week: null, // { at, data, error, pending } from /api/digest
@@ -338,9 +340,27 @@ function oddsChartHtml(id) {
   const dots = series.map((o, i) => { const [ts, v] = o.points.at(-1); return `<circle class="s${i + 1}" cx="${x(ts).toFixed(1)}" cy="${y(v).toFixed(1)}" r="4"/>`; }).join('');
   const labels = ends.map(({ i, o, y: ly }) => `<text class="end" x="${w - r + 10}" y="${(ly + 4).toFixed(1)}">${esc(o.label.length > (CHART.w < 520 ? 10 : 16) ? `${o.label.slice(0, CHART.w < 520 ? 9 : 15)}…` : o.label)} ${pct(o.points.at(-1)[1])}</text>`).join('');
   const legend = series.length > 1 ? `<ul class="odds-legend">${series.map((o, i) => `<li><i class="s${i + 1}"></i>${esc(o.label)}</li>`).join('')}</ul>` : '';
+  // Jumps (from /api/moves): a band over each, numbered, and what came before it underneath.
+  const jumps = (c.moves || []).filter((mv) => mv.end >= t0 && mv.start <= t1 && series.some((o) => o.label === mv.label)).sort((a, z) => a.start - z.start).slice(-6);
+  let lastX = -Infinity, row = 0;
+  const bands = jumps.map((mv, k) => {
+    const xa = x(Math.max(t0, mv.start)), xb = Math.max(xa + 4, x(Math.min(t1, mv.end)));
+    const cx = (xa + xb) / 2;
+    // Markers that would touch drop a row.
+    row = cx - lastX < 18 ? row + 1 : 0;
+    lastX = cx;
+    const cy = t + row * 18;
+    return `<g class="jump${mv.explained ? '' : ' quiet'}"><rect x="${xa.toFixed(1)}" y="${t}" width="${(xb - xa).toFixed(1)}" height="${h - t - b}" rx="2"/><circle cx="${cx.toFixed(1)}" cy="${cy}" r="8"/><text x="${cx.toFixed(1)}" y="${cy + 4}" text-anchor="middle">${k + 1}</text></g>`;
+  }).join('');
+  const notes = jumps.length ? `<ol class="jump-notes">${jumps.map((mv, k) => {
+    const a = mv.explained ? mv.after[0] : null;
+    const who = series.length > 1 ? `${esc(mv.label)} ` : '';
+    return `<li><b class="jn-n">${k + 1}</b><span><span class="jn-move ${mv.change > 0 ? 'up' : 'down'}">${who}${pct(mv.from)} → ${pct(mv.to)}</span> · ${whenLabel(mv.end)}
+      ${a ? `<br><span class="jn-k">Before it:</span> <a href="${esc(afterHref(a))}"${a.sid && state.mode === 'api' ? '' : ' target="_blank" rel="noopener"'}>${esc(a.title)}</a> <small>${esc(a.source)}, ${leadLabel(a.lead)}</small>` : '<br><small>No story found that clearly matches, in the six hours before.</small>'}</span></li>`;
+  }).join('')}</ol>` : '';
   return `<div class="odds-chart" data-chart="${esc(id)}" data-t0="${t0}" data-t1="${t1}">
-    <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Odds over the last 7 days">${grid}${dayTicks}<g class="lines">${lines}</g>${dots}${labels}<line class="cross" y1="${t}" y2="${h - b}" x1="0" x2="0"/></svg>
-    <div class="odds-tip" hidden></div>${legend}</div>`;
+    <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Odds over the last 7 days">${grid}${dayTicks}${bands}<g class="lines">${lines}</g>${dots}${labels}<line class="cross" y1="${t}" y2="${h - b}" x1="0" x2="0"/></svg>
+    <div class="odds-tip" hidden></div>${legend}${notes}</div>`;
 }
 
 async function toggleChart(id) {
@@ -351,7 +371,7 @@ async function toggleChart(id) {
   try {
     const res = await fetch(`api/odds?id=${encodeURIComponent(id)}`);
     const data = res.ok ? await res.json() : { outcomes: [] };
-    state.charts.set(id, { at: Date.now(), outcomes: data.outcomes });
+    state.charts.set(id, { at: Date.now(), outcomes: data.outcomes, moves: data.moves || [] });
   } catch {
     state.charts.set(id, { at: Date.now(), outcomes: [] });
   }
@@ -1057,6 +1077,7 @@ function interleave(list) {
 // ---------- Markets view ----------
 
 function renderMarkets() {
+  renderMoves();
   const sorts = [['moving', 'Moving most'], ['volume', 'Most traded today'], ['linked', 'In the news'], ['ending', 'Ending soonest']];
   setHtml($('#marketSort'), sorts.map(([k, l]) => `<button class="chip" type="button" data-msort="${k}" aria-pressed="${state.marketSort === k}">${l}</button>`).join(''));
   let list = state.data.markets.filter((m) => matchesQuery(`${m.title} ${m.outcomes.map((o) => o.label).join(' ')}`));
@@ -1083,6 +1104,86 @@ function renderMarkets() {
         return `<a href="${esc(s?.url || '#news')}" target="_blank" rel="noopener">${esc(r.title)}</a>`;
       }).join('')}</div>` : ''}
     </article>`).join('') || `<p class="empty">No markets match. Clear the search to see all AI markets.</p>`);
+}
+
+// ---------- Market moves ----------
+// Odds jumps of 7+ points in the past week and what was reported in the
+// hours before each (/api/moves). Close in time isn't proof of cause, and
+// the copy says "before", never "because".
+
+const jumpPts = (c) => `${c > 0 ? '▲' : '▼'} ${Math.abs(Math.round(c * 100))} pts`;
+const leadLabel = (min) => (min == null ? '' : min <= 0 ? 'as it moved' : min < 60 ? `${min} min before` : `${Math.floor(min / 60)}h${min % 60 >= 10 ? ` ${min % 60}m` : ''} before`);
+const whenLabel = (ts) => new Date(ts).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+const afterHref = (a) => (a.sid && state.mode === 'api' ? `#story/${encodeURIComponent(a.sid)}` : a.url);
+
+async function loadMoves() {
+  if (state.mode !== 'api' || state.moves?.pending || (state.moves && Date.now() - state.moves.at < 5 * 60e3)) return;
+  state.moves = { ...state.moves, pending: true };
+  try {
+    const res = await fetch('api/moves');
+    state.moves = { at: Date.now(), data: res.ok ? await res.json() : state.moves?.data || null };
+  } catch {
+    state.moves = { at: Date.now(), data: state.moves?.data || null };
+  }
+  if (state.view === 'markets') renderMoves();
+}
+
+// The price around the jump, the jump itself drawn heavier.
+function moveSpark(mv) {
+  const pts = mv.path || [];
+  if (pts.length < 2) return '';
+  const w = 112, h = 40, p = 3;
+  const ta = pts[0][0], tb = pts.at(-1)[0];
+  const ys = pts.map(([, v]) => v);
+  const lo = Math.min(...ys), hi = Math.max(...ys);
+  const x = (t) => p + ((t - ta) / Math.max(1, tb - ta)) * (w - 2 * p);
+  const y = (v) => p + (1 - (v - lo) / Math.max(0.02, hi - lo)) * (h - 2 * p);
+  const line = (list) => list.map(([t, v]) => `${x(t).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const during = pts.filter(([t]) => t >= mv.start - 1 && t <= mv.end + (tb - ta) / 24);
+  return `<svg class="mv-spark ${mv.change > 0 ? 'up' : 'down'}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+    <rect class="mv-band" x="${x(mv.start).toFixed(1)}" y="0" width="${Math.max(3, x(mv.end) - x(mv.start)).toFixed(1)}" height="${h}" rx="2"/>
+    <polyline class="mv-base" points="${line(pts)}" pathLength="1"/>${during.length > 1 ? `<polyline class="mv-jump" points="${line(during)}"/>` : ''}</svg>`;
+}
+
+function moveHtml(mv, i) {
+  const [a, ...more] = mv.after;
+  const label = mv.binary || /^yes$/i.test(mv.label) ? '' : `<span class="mv-label">${esc(mv.label)}</span>`;
+  return `<li class="mv" style="--i:${i}">
+    <div class="mv-top">
+      <button class="mv-q" type="button" data-move-market="${esc(mv.market)}">${esc(mv.title)}</button>
+      ${moveSpark(mv)}
+    </div>
+    <p class="mv-odds ${mv.change > 0 ? 'up' : 'down'}">${label}<span class="num">${pct(mv.from)} → <b>${pct(mv.to)}</b></span><span class="mv-chg num">${jumpPts(mv.change)}</span><time datetime="${new Date(mv.end).toISOString()}">${whenLabel(mv.end)}</time></p>
+    ${a ? `<p class="mv-after"><span class="mv-k">Before it</span><a href="${esc(afterHref(a))}"${a.sid && state.mode === 'api' ? '' : ' target="_blank" rel="noopener"'}>${esc(a.title)}</a>
+      <small><img src="${esc(fav(a.site))}" alt="" loading="lazy" width="14" height="14">${esc(a.source)} · ${leadLabel(a.lead)}${more.length ? ` · <span class="mv-more" title="${esc(more.map((m) => `${m.source}: ${m.title}`).join('\n'))}">+${more.length} more</span>` : ''}</small></p>` : ''}
+  </li>`;
+}
+
+function renderMoves() {
+  const box = $('#marketMoves');
+  if (!box) return;
+  if (state.mode !== 'api') { box.hidden = true; return; }
+  loadMoves();
+  const d = state.moves?.data;
+  if (!d) {
+    box.hidden = false;
+    return setHtml(box, state.moves && !state.moves.pending ? '' : '<div class="mv-head"><h2>Moved after the news</h2></div><ol class="mv-list" aria-busy="true"><li class="mv"><i class="skeleton"></i><i class="skeleton"></i></li><li class="mv"><i class="skeleton"></i><i class="skeleton"></i></li></ol>');
+  }
+  const list = d.moves.filter((m) => matchesQuery(`${m.title} ${m.label} ${m.after.map((a) => a.title).join(' ')}`));
+  box.hidden = !list.length;
+  if (!list.length) return setHtml(box, '');
+  const shown = state.movesAll ? list : list.slice(0, 6);
+  setHtml(box, `<div class="mv-head"><h2>Moved after the news</h2>
+      <p>Odds jumps of 7 points or more in the past week that held, and what was reported in the six hours before. Timing alone doesn't prove the news moved the price.</p></div>
+    <ol class="mv-list">${shown.map(moveHtml).join('')}</ol>
+    ${list.length > 6 ? `<button class="chip mv-all" type="button" data-moves-all aria-expanded="${state.movesAll}">${state.movesAll ? 'Show fewer' : `Show all ${list.length}`}</button>` : ''}`);
+}
+
+// Opens a market's chart from the moves list, sorting so it's in the list.
+function openMarketChart(id) {
+  if (!$(`.market[data-id="${CSS.escape(id)}"]`)) { state.marketSort = 'volume'; store.set('fw.msort', 'volume'); }
+  if (state.chartOpen !== id) toggleChart(id);
+  requestAnimationFrame(() => $(`.market[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' }));
 }
 
 // ---------- Topic pages ----------
@@ -1427,13 +1528,15 @@ function storyMarketHtml(m, firstAt) {
     const y = (v) => p + (1 - (v - lo) / Math.max(0.01, hi - lo)) * (h - 2 * p);
     const line = pts.map(([ts, v]) => `${x(ts).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
     const mark = firstAt > ta && firstAt < tb ? `<line class="broke" x1="${x(firstAt).toFixed(1)}" x2="${x(firstAt).toFixed(1)}" y1="0" y2="${h}"/>` : '';
-    chart = `<svg class="sm-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${mark}<polyline points="${line}" pathLength="1"/></svg>`;
+    const bands = (m.jumps || []).filter((j) => j.label === o.label && j.end > ta && j.start < tb).map((j) => `<rect class="sm-band" x="${x(Math.max(ta, j.start)).toFixed(1)}" y="0" width="${Math.max(3, x(Math.min(tb, j.end)) - x(Math.max(ta, j.start))).toFixed(1)}" height="${h}"/>`).join('');
+    chart = `<svg class="sm-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${bands}${mark}<polyline points="${line}" pathLength="1"/></svg>`;
   }
   const mv = m.move;
   const move = mv && Math.abs(mv.change) >= 0.005
     ? `<span class="sm-move ${mv.change > 0 ? 'up' : 'down'}">${pct(mv.from)} → <b>${pct(mv.to)}</b> since the story broke</span>`
     : mv ? `<span class="sm-move">Steady at <b>${pct(mv.to)}</b> since the story broke</span>` : o?.yes != null ? `<span class="sm-move"><b>${pct(o.yes)}</b>${m.binary ? '' : ` ${esc(o.label)}`}</span>` : '';
-  return `<li><a href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.title)}</a>${chart}${move}${chart && mv ? '<small class="sm-key"><i></i>Story broke</small>' : ''}</li>`;
+  const jumps = (m.jumps || []).map((j) => `<span class="sm-jump ${j.change > 0 ? 'up' : 'down'}"><b>${jumpPts(j.change)}</b>${m.binary || /^yes$/i.test(j.label) ? '' : ` ${esc(j.label)}`} (${pct(j.from)} → ${pct(j.to)}) ${j.lead > 0 ? `${leadLabel(j.lead).replace(' before', '')} after this story's coverage` : 'as this story broke'}</span>`).join('');
+  return `<li><a href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.title)}</a>${chart}${move}${jumps}${chart && mv ? '<small class="sm-key"><i></i>Story broke</small>' : ''}</li>`;
 }
 
 let storyShown = '';
@@ -1761,6 +1864,8 @@ document.addEventListener('click', (e) => {
     transition(render);
     $(`[data-related="${CSS.escape(d.related)}"]`)?.focus();
   }
+  else if (d.moveMarket) openMarketChart(d.moveMarket);
+  else if ('movesAll' in d) { state.movesAll = !state.movesAll; transition(renderMoves); }
   else if (d.msort) { state.marketSort = d.msort; store.set('fw.msort', d.msort); renderMarkets(); }
   else if (d.toggle) {
     state.open.has(d.toggle) ? state.open.delete(d.toggle) : state.open.add(d.toggle);

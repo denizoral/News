@@ -18,6 +18,8 @@ import { topicHistory, topicKeys, warmTopics } from './index/topics.js';
 import { weeklyDigest, digestRss } from './index/digest.js';
 import { releasesCoverage, coverageCounts } from './index/releases.js';
 import { modelsTable } from './index/models.js';
+import { trendsQuery, trendMomentQuery, parseTerms } from './index/trends.js';
+import { statusHistory, startVitals, noteRequest } from './status.js';
 import { storyPage } from './index/storypage.js';
 import { emergingThemes } from './index/emerging.js';
 import { marketMoves, explainedMoves, readyMoves } from './index/moves.js';
@@ -208,6 +210,7 @@ export function createApp({ store, spider }) {
   let jump = { key: null, index: [] };
   // Feeds: built at most once a minute per URL, then served by ETag.
   const feedCache = new Map(); // path + query -> { at, feed }
+  const healthCache = new Map(); // hours -> { at, data }
   const originOf = (req) => `${req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'}://${/^[\w.:[\]-]+$/.test(req.headers.host || '') ? req.headers.host : 'localhost'}`;
   async function buildFeed(url, [, kind, topic, handle], origin) {
     if (topic) return topicKeys().includes(topic) ? topicFeed(store, topic, origin) : { error: [404, 'No topic with that name.'] };
@@ -394,6 +397,31 @@ export function createApp({ store, spider }) {
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=300' }))
         .catch((err) => json(req, res, 503, { error: `Model comparison is unavailable: ${err.message}` }));
     }
+    // Trends: share of coverage per day or week for up to four terms, with peaks.
+    if (p === '/api/trends') {
+      if (limited(req, res)) return;
+      const terms = url.searchParams.get('q') || '';
+      if (!parseTerms(terms).length) return json(req, res, 400, { error: 'Give one to four terms, comma-separated, in q.' });
+      return trendsQuery(terms, url.searchParams.get('range') || '1y')
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=600' }))
+        .catch((err) => json(req, res, 503, { error: `Trends are unavailable: ${err.message}` }));
+    }
+    if (p === '/api/trends/moment') {
+      if (limited(req, res)) return;
+      const from = Number(url.searchParams.get('from'));
+      const to = Number(url.searchParams.get('to'));
+      if (!parseTerms(url.searchParams.get('q') || '').length || !(from > 0) || !(to > from) || to - from > 31 * 86400e3) return json(req, res, 400, { error: 'Give q, and from < to (ms, at most 31 days apart).' });
+      return trendMomentQuery(url.searchParams.get('q'), from, to)
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: err.message }));
+    }
+    // Status page: source runs, arrivals, spider outcomes, vitals and X accounts per hour.
+    if (p === '/api/health') {
+      const hours = [24, 48, 168].includes(Number(url.searchParams.get('hours'))) ? Number(url.searchParams.get('hours')) : 48;
+      const hit = healthCache.get(hours);
+      if (!hit || Date.now() - hit.at > 60e3) healthCache.set(hours, { at: Date.now(), data: statusHistory({ hours, live: store.sourceStatus }) });
+      return json(req, res, 200, healthCache.get(hours).data, { 'cache-control': 'public, max-age=60' });
+    }
     if (p === '/api/digest' || p === '/digest.xml') {
       if (limited(req, res)) return;
       return weeklyDigest()
@@ -515,6 +543,10 @@ export function createApp({ store, spider }) {
   }
 
   const server = http.createServer((req, res) => {
+    if (req.url.startsWith('/api/')) {
+      const t0 = performance.now();
+      res.once('finish', () => noteRequest(performance.now() - t0));
+    }
     try {
       handle(req, res);
     } catch (err) {
@@ -555,6 +587,7 @@ function main() {
   setInterval(checkpoint, 5 * 60e3).unref();
   if (background) {
     startRetention();
+    startVitals(() => store.status());
     startEmbedder(); // independent of the first crawl (Reddit alone takes minutes)
     keepVectorsWarm();
     releasesCoverage(store.releases || []).catch(() => {}); // from the saved list; refreshed when it changes

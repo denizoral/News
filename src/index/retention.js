@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import { q, tx, getDb } from '../db.js';
 import { settings } from '../settings.js';
 import { enforceBudget, mediaPath } from '../spider/media.js';
+import { pruneStatus } from '../status.js';
 
 const BATCH = 5000;
 
@@ -61,6 +62,7 @@ export function runRetention() {
   out.crawlLog = Number(q('DELETE FROM crawl_log WHERE at < ?').run(Date.now() - 14 * 86400e3).changes);
   const cut = q('SELECT id FROM crawl_log ORDER BY id DESC LIMIT 1 OFFSET 200000').get();
   if (cut) out.crawlLog += Number(q('DELETE FROM crawl_log WHERE id <= ?').run(cut.id).changes);
+  out.status = pruneStatus();
   out.evicted = enforceBudget();
   out.ms = Date.now() - started;
   return out;

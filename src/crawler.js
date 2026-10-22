@@ -7,6 +7,7 @@ import { fetchTech, techStatus } from './sources/tech.js';
 import { fetchReleases } from './sources/releases.js';
 import { fetchHuggingFace, fetchGitHub, fetchProductHunt, fetchShowHN, fetchOpenRouter } from './sources/builds.js';
 import { ingestAggregatorItems, ingestMarkets } from './index/documents.js';
+import { recordRun } from './status.js';
 import { recordOdds, attachSparks, backfillOdds } from './pipeline/odds.js';
 
 // The spider (optional) receives every URL the aggregator finds.
@@ -97,6 +98,7 @@ export async function runSource(store, name) {
     store.sourceStatus[name] = { ok: false, count: 0, error: err.message, lastRun: Date.now(), ms: Date.now() - started };
   }
   const s = store.sourceStatus[name];
+  recordRun(name, s);
   console.log(`[crawl] ${name.padEnd(11)} ${s.ok ? 'ok ' : 'ERR'} ${String(s.count).padStart(4)} items  +${s.added || 0} new  ${s.ms}ms${s.error ? '  ' + s.error.slice(0, 100) : ''}`);
 }
 

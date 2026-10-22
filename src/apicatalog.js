@@ -12,6 +12,8 @@ export const API = [
   { group: 'Search', path: '/api/search', summary: 'Full-text search over about 200,000 stored articles, posts, models and markets, with facets.', params: [['q', 'Query; supports "phrases", -exclusions, site: and type:', true], ['sort', 'relevance or date'], ['type', 'news, posts, models, markets, builds, images'], ['page', '1 to 50']], example: '/api/search?q=open%20weights&sort=date' },
   { group: 'Search', path: '/api/search?mode=meaning', summary: 'Search by meaning with sentence embeddings, for when the words differ.', params: [['q', 'Query', true]], example: '/api/search?mode=meaning&q=robots%20learning%20from%20video' },
   { group: 'Search', path: '/api/related', summary: 'Earlier coverage close in meaning to a story.', params: [['id', 'Story item id', true]], example: '/api/related?id={id}' },
+  { group: 'Search', path: '/api/trends', summary: 'How much of the coverage mentions each term, per day or week, as mentions per 1,000 stories, with each term’s peaks and the headline behind them.', params: [['q', 'One to four terms, comma-separated; "phrases" work', true], ['range', '30d, 90d, 1y or 2y (default 1y)']], example: '/api/trends?q=openai,anthropic&range=1y' },
+  { group: 'Search', path: '/api/trends/moment', summary: 'The best-matching stories for one term in one period: what was said at a peak.', params: [['q', 'One term', true], ['from', 'Start, ms since 1970', true], ['to', 'End, ms (at most 31 days later)', true]], example: '/api/trends/moment?q=anthropic&from=1790035200000&to=1790640000000' },
   { group: 'X', path: '/api/x', summary: 'Posts from the tracked X accounts, newest first.', params: [['limit', 'Up to 100'], ['handle', 'One account']], example: '/api/x?limit=5' },
   { group: 'X', path: '/api/accounts', summary: 'Every tracked account ranked by how often it posted a story before the press.', example: '/api/accounts' },
   { group: 'X', path: '/api/account', summary: 'One account: cadence, posting hours, topics, its lead posts. Add vs= to compare two.', params: [['handle', 'X handle', true], ['vs', 'A second handle']], example: '/api/account?handle=Kalshi' },
@@ -21,6 +23,8 @@ export const API = [
   { group: 'Markets', path: '/api/moves', summary: 'Odds jumps that held, and the news just before them.', params: [['market', 'One market']], example: '/api/moves' },
   { group: 'Connections', path: '/api/graph', summary: 'The co-mention network of labs, people, products and governments.', params: [['days', '7, 30 or 90']], example: '/api/graph?days=7' },
   { group: 'Personal', path: '/api/foryou', summary: 'The live feed ranked for a set of follows. Nothing is stored; the follows travel in the query.', params: [['t', 'Topic keys, comma-separated'], ['n', 'Names from the graph'], ['a', 'X handles'], ['o', 'Outlets'], ['s', 'Saved story ids (for taste)']], example: '/api/foryou?t=anthropic,nvidia&a=Kalshi' },
+  { group: 'Status', path: '/api/health', summary: 'Hour by hour: each source’s runs, failures and timing, documents arriving, what the spider did, server vitals and when each X account last posted.', params: [['hours', '24, 48 or 168 (default 48)']], example: '/api/health?hours=24' },
+  { group: 'Status', path: '/api/status', summary: 'Each source right now, with the labeler and embedding queues.', example: '/api/status' },
 ];
 
 export const FEEDS = [

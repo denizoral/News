@@ -19,6 +19,7 @@ import { weeklyDigest, digestRss } from './index/digest.js';
 import { releasesCoverage, coverageCounts } from './index/releases.js';
 import { storyPage } from './index/storypage.js';
 import { emergingThemes } from './index/emerging.js';
+import { marketMoves, explainedMoves, readyMoves } from './index/moves.js';
 import { semanticSearch, relatedTo, keepVectorsWarm } from './index/semantic.js';
 import { startEmbedder } from './index/vectors.js';
 import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
@@ -240,9 +241,8 @@ export function createApp({ store, spider }) {
       if (limited(req, res)) return;
       const market = (store.markets || []).find((m) => m.id === url.searchParams.get('id'));
       if (!market) return json(req, res, 404, { error: 'No market with that id.' });
-      return backfillMarket(market)
-        .catch(() => {})
-        .then(() => json(req, res, 200, { id: market.id, outcomes: marketHistory(market) }, { 'cache-control': 'public, max-age=60' }));
+      return Promise.all([backfillMarket(market).catch(() => {}), readyMoves(store)])
+        .then(([, mv]) => json(req, res, 200, { id: market.id, outcomes: marketHistory(market), moves: mv ? mv.moves.filter((m) => m.market === market.id) : null }, { 'cache-control': 'public, max-age=60' }));
     }
     if (p === '/api/topic') {
       if (limited(req, res)) return;
@@ -263,6 +263,15 @@ export function createApp({ store, spider }) {
           return t ? json(req, res, 200, { ...t, generatedAt: d.generatedAt, window: d.window }, { 'cache-control': 'public, max-age=120' }) : json(req, res, 404, { error: 'That theme is no longer rising.' });
         })
         .catch((err) => json(req, res, 503, { error: `Emerging themes are unavailable: ${err.message}` }));
+    }
+    // Odds jumps and the news before them: the explained ones across markets,
+    // or every jump on one market.
+    if (p === '/api/moves') {
+      if (limited(req, res)) return;
+      const id = url.searchParams.get('market');
+      return marketMoves(store)
+        .then((d) => json(req, res, 200, id ? { ...d, moves: d.moves.filter((m) => m.market === id) } : { ...d, moves: explainedMoves(d).slice(0, 24) }, { 'cache-control': 'public, max-age=120' }))
+        .catch((err) => json(req, res, 503, { error: `Market moves are unavailable: ${err.message}` }));
     }
     if (p === '/api/story') {
       if (limited(req, res)) return;
@@ -390,6 +399,7 @@ function main() {
     startEmbedder(); // independent of the first crawl (Reddit alone takes minutes)
     keepVectorsWarm();
     releasesCoverage(store.releases || []).catch(() => {}); // from the saved list; refreshed when it changes
+    setTimeout(() => marketMoves(store).catch(() => {}), 30e3).unref();
     crawlAll(store)
       .then(() => {
         store.save();

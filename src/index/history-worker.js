@@ -1,4 +1,4 @@
-// Runs history queries (topic pages, the weekly digest, release coverage, vector search) off the main thread
+// Runs history queries (topic pages, the weekly digest, release coverage, vector search, market moves) off the main thread
 // with its own read-only connection (see offload.js).
 
 import { parentPort, workerData } from 'node:worker_threads';
@@ -8,6 +8,7 @@ import { computeDigest } from './digest.js';
 import { similarDocs } from './semantic.js';
 import { computeReleaseCoverage } from './releases.js';
 import { computeEmerging } from './emerging.js';
+import { computeMoves } from './moves.js';
 
 const db = new DatabaseSync(workerData.file, { readOnly: true });
 db.exec('PRAGMA busy_timeout = 5000; PRAGMA cache_size = -32000;');
@@ -18,6 +19,7 @@ const JOBS = {
   similar: (job) => similarDocs(db, job),
   releases: ({ releases }) => computeReleaseCoverage(db, releases),
   emerging: ({ stories }) => computeEmerging(db, stories),
+  moves: ({ markets, vectors }) => computeMoves(db, markets, vectors),
 };
 
 parentPort.on('message', ({ id, job }) => {

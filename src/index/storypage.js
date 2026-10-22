@@ -16,6 +16,7 @@ import { marketHistory } from '../pipeline/odds.js';
 import { loggedStory } from './stories.js';
 import { embedTexts } from './vectors.js';
 import { runJob } from './offload.js';
+import { readyMoves, movesAfter } from './moves.js';
 
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
@@ -159,15 +160,20 @@ export async function storyPage(store, id, { now = Date.now() } = {}) {
     .sort((a, b) => (a.at || 0) - (b.at || 0))
     .slice(0, 12);
 
-  const marketIds = live ? (live.markets || []).map((m) => m.id) : logged.marketIds;
+  // Odds jumps this story's coverage came just before, on any market.
+  const allMoves = await readyMoves(store);
+  const moved = allMoves ? movesAfter(allMoves, entries.map((e) => e.url)) : [];
+  const marketIds = [...new Set([...(live ? (live.markets || []).map((m) => m.id) : logged.marketIds), ...moved.map((m) => m.market)])];
   const days = Math.min(14, Math.max(2, Math.ceil((now - firstAt) / DAY) + 1));
+  const urls = new Set(entries.map((e) => canonicalUrl(e.url)));
   const markets = marketIds
     .map((mid) => (store.markets || []).find((m) => m.id === mid))
     .filter(Boolean)
     .slice(0, 4)
     .map((m) => {
       const outcomes = marketHistory(m, { days, now, max: 120 });
-      return { id: m.id, title: m.title, url: m.url, image: m.image, binary: m.binary, outcomes, move: marketMove(outcomes, firstAt) };
+      const jumps = moved.filter((mv) => mv.market === m.id).map(({ label, start, end, from, to, change, after }) => ({ label, start, end, from, to, change, lead: after.find((a) => urls.has(canonicalUrl(a.url)))?.lead ?? null }));
+      return { id: m.id, title: m.title, url: m.url, image: m.image, binary: m.binary, outcomes, move: marketMove(outcomes, firstAt), jumps };
     });
 
   const data = {

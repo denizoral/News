@@ -1,6 +1,95 @@
 # Features changelog
 
-One full-stack feature per scheduled maintenance run, newest first.
+Full-stack features from the scheduled maintenance runs, newest first.
+
+## 2026-10-22 · Connections (entity graph)
+
+**Backend.**
+- **Names:** `src/index/graph.js` uses a typed vocabulary of about 110 names:
+  labs and companies, people, products and models, and governments and
+  regulators. It adds up to 25 names the coverage itself keeps using
+  ("Claude Duet", "Gemini 4 Argon", "GPT-6 Astra"). A discovered name is a
+  capitalised phrase in article summaries that:
+  - is almost never written in lower case (so "Link" and "Hardware" drop
+    out),
+  - isn't an outlet's name,
+  - doesn't start with "AI-",
+  - isn't a shorter form of a longer name used about as often ("Opus 5.5").
+- **Matching:** each article's headline and the start of its summary are
+  matched case-sensitively, longest name first, so "Claude Code" isn't also
+  "Claude". Model repo pages, OpenRouter listings and GitHub repos aren't
+  counted.
+- **Links:** ranked by co-mentions × log(1 + lift), keeping each name's 5
+  strongest so the biggest names don't link to everything. A window has up
+  to 72 names and 220 links.
+- **Trend:** each name's count per day, and the window before it (for 7 and
+  30 days) to show which names are rising.
+- **`GET /api/graph?days=7|30|90`:** the network.
+- **`GET /api/graph/detail?days=&a=[&b=]`:** a name's or a pair's headlines
+  and articles per day, plus a name's most frequent companions. It's served
+  from the scan the worker keeps.
+
+**UI.**
+- **`#graph`** (the new "Connections" tab): a force-laid-out SVG network.
+  - Circles are sized by articles and coloured by kind, with a legend and
+    labels on the 40 biggest names. The palette passes the dataviz
+    validator.
+  - The layout is deterministic and fitted to the frame. A collision pass
+    keeps labels apart, and labels sit on a layer above every circle.
+- **Interaction:**
+  - Pointing at a name lights its links and neighbours and dims the rest,
+    with no re-render.
+  - Names and links are links to `#graph/<name>` and `#graph/<a>+<b>`, so
+    they work from the keyboard.
+- **Panel:** with nothing chosen, the strongest links and the names rising
+  fastest. For a name: articles in the window, the change against the window
+  before, articles per day, most frequent companions and latest headlines.
+  For a pair, the same with the lift ("2.2× more often than chance").
+  Names with a topic page link to it.
+- **Window:** 7, 30 or 90 days, remembered per browser.
+- **Motion:** circles pop in staggered, links draw, labels fade in and bars
+  grow. All of it is off under `prefers-reduced-motion`.
+
+## 2026-10-22 · Market moves ("Moved after the news")
+
+**Backend.**
+- **Jumps:** `src/index/moves.js` finds odds jumps in the stored history: 7+
+  points within 3 hours that hold.
+  - The median price for the 3 hours after must still differ from the median
+    of the 6 hours before by 6+ points, in the same direction. Snap-back
+    spikes and bid-ask bounce on thin markets don't count.
+  - A move in two steps is one jump.
+  - A jump isn't judged until an hour has passed.
+  - It runs on the top 3 outcomes of every market with $20k+ volume, over
+    the last 7 days.
+- **Attribution:** each jump is credited to English articles and posts from
+  the 6 hours before it (and its first hour) that are:
+  - close in meaning to the market question (bge-small with the query
+    instruction; market titles are embedded once), and
+  - naming its subject: the outcome that moved ("Anthropic") plus a fairly
+    uncommon word of the question ("Muse") on multi-outcome markets,
+    otherwise two words of the question, one of them uncommon ("GPT Sol",
+    not "OpenAI GPT").
+  Weaker matches need a closer meaning. Words in more than 0.5% of the
+  week's titles ("Google", "GPT") don't count as uncommon. Each match carries
+  its story id when it reached the feed, so it links to the story page.
+- **Endpoints:**
+  - `GET /api/moves`: the explained jumps across markets.
+  - `GET /api/moves?market=`: every jump on one market.
+  - `/api/odds` now includes a market's jumps, and `/api/story` lists the
+    moves a story's coverage came before.
+
+**UI.**
+- **Markets view:** "Moved after the news" cards above the list. Each shows
+  the market, the outcome, from → to with ▲/▼ points, the time, and a small
+  chart of the price around the jump with the jump drawn heavier. Below
+  that, "Before it" gives the headline, the outlet and how long before. The
+  copy says timing isn't proof of cause. Six cards show, then "Show all".
+- **Odds charts:** each jump gets a shaded band and a numbered marker. The
+  notes underneath give what came before each one, or "no story found". A
+  card opens its market's chart.
+- **Story pages:** each market gets a band on its small chart and a line
+  such as "▲ 14 pts Anthropic (84% → 98%) 1h after this story's coverage".
 
 ## 2026-10-22 · Emerging themes
 

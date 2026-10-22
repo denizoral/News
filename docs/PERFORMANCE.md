@@ -5,6 +5,39 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-22 (02:49 run)
+
+**Market moves (`computeMoves`, 129 markets with $20k+ volume, 7 days).**
+
+| | Time | Notes |
+| --- | ---: | --- |
+| One query per jump, every vector in the window decoded | 5.98 s | 386 jumps × ~1,500 documents |
+| One pass over the week's titles, an index by title word, vectors read only for documents that name the market | 0.39–0.41 s | ~11k documents read once |
+
+Jumps come from the odds table (an index on market, outcome, ts). Market
+titles are embedded once per title and kept in memory. The result is cached
+for 10 minutes and warmed 30 s after start. `/api/moves` is 34 KB for 24
+moves, ~13 ms when cached.
+
+**Entity graph (`computeGraph`, history worker).**
+
+| Window | Before | After |
+| --- | ---: | ---: |
+| 7 days | 679 ms | 516 ms |
+| 30 days (scans 60 for the trend) | 2,488 ms | 581 ms |
+| 90 days | 1,999 ms | 754 ms |
+
+- **Repo pages:** Hugging Face model pages, OpenRouter listings and GitHub
+  repos are no longer read. They aren't coverage, and their long
+  descriptions were most of the bytes.
+- **Summaries:** only their first 300 characters are fetched, with
+  `substr()` in SQL.
+- **Detail views:** the window's scan stays in the worker, so a name's or a
+  pair's headlines take ~1–5 ms.
+- **Payloads:** `/api/graph` is 15–28 KB. The force layout runs once per
+  window and screen shape in the browser (~70 names, 360 iterations, then a
+  collision pass) and is cached, so live updates don't recompute it.
+
 ## 2026-10-22 (00:50 run)
 
 **Story pages, uncached (`/api/story`, 20 live stories, after warm-up).**

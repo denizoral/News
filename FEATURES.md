@@ -2,6 +2,84 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-22 · Ask the Wire (#ask)
+
+**Backend.** `src/index/ask.js` answers a question with up to five sentences
+quoted from stored coverage, each citing its article. Nothing is generated.
+- **Retrieval:** the nearest articles by meaning (bge-small, in the vectors
+  worker) and the best BM25 matches on the question's words, merged by
+  reciprocal rank. English only. Model cards and repos (Hugging Face, GitHub,
+  OpenRouter) are left out.
+- **Sentences:** split from each article's body and cleaned:
+  - datelines, photo credits and "Skip to content" are stripped
+  - paragraphs that were glued together are split
+  - questions, menus, boilerplate and other languages are dropped
+
+  The lead and the sentences sharing the question's words make up about 70
+  candidates.
+- **Ranking:** candidates are embedded (vectors cached across questions) and
+  scored by similarity to the question, plus small credit for shared words,
+  the lead, the article's rank and recency. Recency weighs more when the
+  question asks for the "latest".
+- **Answer:** picked by maximal marginal relevance, so near-copies are skipped,
+  with at most two sentences from one article.
+- **Confidence:** well covered, partly covered or closest matches.
+- **`GET /api/ask?q=`**, cached 30 minutes. About 1.5–2.5 s cold.
+
+**UI.** `#ask?q=…`, reached from the footer, the ⌘K palette and search.
+- **Palette:** a question typed into ⌘K offers "Ask the Wire" first.
+- **Search:** a question typed into search gets an "Answer it from the
+  coverage →" link.
+- **Empty page:** example questions and the visitor's recent questions, kept
+  in this browser.
+- **Answer card:** shows a confidence label (icon and word) and how many
+  articles it drew on. Sentences rise in one after another with a brief accent
+  on their rule, each with its outlet, date and a numbered citation.
+- **Sources:** pointing at a citation lights up its source in the numbered
+  list, which shows cited sources first and related ones after.
+- **Links:** "Search every article" and "How often it comes up".
+
+## 2026-10-22 · Deals (#deals)
+
+**Backend.** `src/index/deals.js` reads funding rounds, valuations and
+acquisitions out of headlines.
+- **Parsing:** a full-text query finds headlines with deal verbs. Each is
+  parsed for:
+  - the company, cutting descriptors ("Legal AI startup Harvey",
+    "Berlin-based YGO", "OpenAI-backed …") and title-case bridges ("OpenAI Is
+    Racing to Raise")
+  - the amount, in dollars, with euros and pounds converted and flagged
+  - the round, valuation, investors ("led by", "from")
+  - whether it is only in talks
+- **Filters:** contracts, chip orders, funds, price targets, stock tips and
+  undated archive pages are skipped. Only AI coverage counts.
+- **Grouping:** headlines about the same company, kind and a similar amount
+  within 30 days become one deal, with its outlets and first report. A
+  valuation-only headline joins its round. An amount that equals the
+  company's reported valuation is dropped as a misprint (an "Anthropic raises
+  $965B" headline).
+- **Totals:** capital raised per week or month by stage (seed, A–B, C and
+  later, not given), top raisers, the largest round and acquisitions.
+- **Per company:** every deal on record with its valuation history.
+- **`GET /api/deals?range=90d|1y|2y`** and **`GET /api/deals/company?key=`**.
+  Computed in the history worker in 0.15–0.6 s, cached 30 minutes; 60–74 KB
+  gzipped.
+
+**UI.** `#deals?r=…&k=…&c=…`, reached from the footer and the palette.
+- **Header:** four tiles.
+- **Chart:** a stacked bar chart of capital raised by stage, in the validated
+  four-colour set, with a legend. Bars grow in, and hovering shows a band and
+  a tooltip per period.
+- **Deal list:** grouped by month, with:
+  - round, buyer, valuation and "In talks" labels
+  - the first report and the number of outlets
+  - a live filter by company or investor
+  - Latest or Largest sorting, and "Show more"
+- **Raised the most:** a sticky sidebar whose bars grow in.
+- **Company panel:** clicking any company opens its total raised, a
+  valuation line with hover, and a timeline of every deal with its headlines.
+- **Acquisitions view:** shows the list alone.
+
 ## 2026-10-22 · Trends (#trends)
 
 **Backend.**

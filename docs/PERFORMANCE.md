@@ -5,6 +5,32 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-22 (12:49 run)
+
+**Deals.** The first version filtered by `d.published_at BETWEEN …`. On two
+years SQLite chose `docs_pub` and ran the FTS match per row: it had not
+finished after more than 120 s. With `+d.published_at`, FTS runs first:
+
+| /api/deals | Time | Gzipped |
+| --- | ---: | ---: |
+| 90 days | 0.13 s | 42 KB |
+| 1 year | 0.15 s | 61 KB |
+| 2 years | 0.6 s | 74 KB |
+| company history (all time) | 0.27 s | 2.7 KB |
+
+**Ask the Wire.** Embedding the candidate sentences is the cost:
+
+| Candidates | Embedding time |
+| ---: | ---: |
+| 120 sentences | 1.75 s |
+| 72 sentences, pre-ranked by shared words and position | ~1 s |
+
+- **Vector cache:** an LRU of sentence vectors (8,000 Float32Arrays, ~12 MB)
+  skips articles that came up before.
+- **Response times:** 0.9–2.7 s cold and about 1 ms cached, against 2.3–2.7 s
+  before.
+- **Passages step:** 0.3–0.5 s warm in the vectors worker.
+
 ## 2026-10-22 (10:49 run)
 
 **Spider: 304s were crashes.** Since conditional GET (22cea59), `get()`

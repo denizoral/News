@@ -21,10 +21,13 @@ import { runJob } from './offload.js';
 const DAY = 86400e3;
 export const WINDOW_DAYS = 60;
 const MIN_OUTLETS = 2;
-const JOIN = 0.78; // cosine to a line's recent chapters to join it, with shared words
+const JOIN = 0.8; // cosine to a line's recent chapters to join it, with shared words
 const SURE = 0.85; // ...or without
 const GAP_DAYS = 8; // a line with nothing for longer is closed
 const RECENT = 4; // chapters that stand for where a line is now
+const DRIFT = 0.04; // how far below `join` a chapter may sit from the whole line
+// Words that say what kind of story it is, not which story.
+const GENERIC = new Set(['raises', 'raise', 'raised', 'raising', 'funding', 'fundraising', 'round', 'series', 'seed', 'valuation', 'valued', 'startup', 'startups', 'billion', 'million', 'launches', 'launch', 'announces', 'unveils', 'introduces', 'new', 'report', 'reports', 'says', 'deal', 'stock', 'shares', 'invest', 'investment']);
 const MIN_DAYS = 3;
 
 // ---- History worker: the window's stories, a day at a time ----
@@ -96,7 +99,7 @@ const cos = (a, b) => {
 export function chainChapters(chapters, vecOf, { join = JOIN, sure = SURE, gapDays = GAP_DAYS } = {}) {
   // Headline words that are rare across the window: names, places, numbers.
   const df = new Map();
-  const toks = new Map(chapters.map((c) => [c, new Set(tokens(c.title).filter((t) => t.length > 2 || /\d/.test(t)))]));
+  const toks = new Map(chapters.map((c) => [c, new Set(tokens(c.title).filter((t) => (t.length > 2 && !GENERIC.has(t)) || /\d\D/.test(t)))]));
   for (const ts of toks.values()) for (const t of ts) df.set(t, (df.get(t) || 0) + 1);
   const rare = (t) => df.get(t) <= Math.max(3, chapters.length * 0.03);
   const lines = [];
@@ -113,6 +116,8 @@ export function chainChapters(chapters, vecOf, { join = JOIN, sure = SURE, gapDa
       if (c.entities.length && l.entities.size && !c.entities.some((k) => l.entities.has(k))) continue;
       const sc = cos(v, l.recent);
       if (sc <= bestScore) continue;
+      // ...and not far from what the line has been about all along.
+      if (cos(v, l.whole) < join - DRIFT) continue;
       // Close in meaning alone is often just the same company's other news;
       // below `sure`, a chapter also has to share a rare headline word
       // with the line’s recent chapters (the defendant’s name, the deal size).
@@ -120,7 +125,7 @@ export function chainChapters(chapters, vecOf, { join = JOIN, sure = SURE, gapDa
       [best, bestScore] = [l, sc];
     }
     if (!best) {
-      best = { chapters: [], vecs: [], entities: new Set(), words: new Set(), said: [], lastT: t, recent: null };
+      best = { chapters: [], vecs: [], entities: new Set(), words: new Set(), said: [], lastT: t, recent: null, sum: new Float32Array(v.length), whole: null };
       lines.push(best);
     }
     best.chapters.push({ ...c, score: best.chapters.length ? +bestScore.toFixed(3) : null });
@@ -130,6 +135,8 @@ export function chainChapters(chapters, vecOf, { join = JOIN, sure = SURE, gapDa
     const r = new Float32Array(v.length);
     for (const x of best.vecs.slice(-RECENT)) for (let k = 0; k < r.length; k++) r[k] += x[k];
     best.recent = unit(r);
+    for (let k = 0; k < v.length; k++) best.sum[k] += v[k];
+    best.whole = unit(Float32Array.from(best.sum));
     best.said.push(words);
     best.words = new Set(best.said.slice(-RECENT * 2).flat());
   }

@@ -5,6 +5,25 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-22 (04:49 run)
+
+New work per feed rebuild and per request, measured on the live feed (400
+news stories, ~4,900 items):
+
+| | Time | Notes |
+| --- | ---: | --- |
+| Breaking detection (`BreakingTracker.update`) | 0.35 ms | per rebuild; a rebuild is ~140 ms |
+| Palette index build (`buildIndex`) | 3.1 ms | ~600 entries; once per feed version |
+| Palette query (`jumpSearch`) | 0.6–1.5 ms | linear prefix scan; no need for a trie at this size |
+| Push payload encryption | <1 ms | per subscriber; ECDH + HKDF + AES-GCM in `node:crypto` |
+
+- **Snapshot size:** only the active breaks go in the snapshot (no curves,
+  images or topics; a few hundred bytes). The curves come from
+  `/api/breaking`.
+- **Service worker:** network-first, so it adds no latency online. It
+  caches only the shell, the snapshot, story pages and the breaking archive,
+  not search, so the cache stays small.
+
 ## 2026-10-22 (02:49 run)
 
 **Market moves (`computeMoves`, 129 markets with $20k+ volume, 7 days).**

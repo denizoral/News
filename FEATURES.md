@@ -2,6 +2,92 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-22 · ⌘K palette, reading list, shortcuts and installable app
+
+**Backend.**
+- **`src/index/jump.js`:** one in-memory index of everything with a page or
+  panel: topic pages, names from the entity graph, X accounts, releases
+  (linking to their story when there is one), emerging themes, live stories
+  and markets. It is rebuilt only when the feed, the graph or the themes
+  change (~3 ms for ~600 entries); a query takes ~1 ms.
+  - Every word typed must start a word of the entry ("cl du" finds Claude
+    Duet, "@sama" an account). Ranking: whole and leading matches, then kind
+    (topics and names first), then size. At most five of one kind.
+- **`GET /api/jump?q=`:** palette results. Slow inputs (graph, themes) are
+  waited on for at most 250 ms.
+- **`GET /api/saved?ids=`:** for up to 100 saved story ids, how each looks
+  now: sources, still live, breaking, or from the story log once it has
+  left the feed.
+
+**UI** (`public/palette.js`).
+- **⌘K / Ctrl+K** (or the ⌘K button) opens a palette: recent jumps, pages
+  and actions when empty; server results grouped by kind as you type, with
+  a "Search everything" fallback. Arrow keys, Enter, Esc; pointer hover
+  follows. It scales in, with the backdrop blurring (off under reduced
+  motion).
+- **Reading list (`#saved`):** save from a story page's **Save** button, the
+  palette, or `s` on the story under the keyboard. Kept per browser. Each
+  row shows what changed since saving ("+3 sources since you saved it",
+  "Breaking now", "Left the live feed"). A bookmark counter appears in the
+  masthead once something is saved.
+- **Keyboard:** `j`/`k` move through the front page (lead, "also leading"
+  and the river), Tech, X, search results, This week, Breaking and Saved,
+  with a focus outline that follows; `s` save, `b` breaking, `g` front
+  page, `?` the list of shortcuts.
+- **Installable app:** `manifest.webmanifest`, 192/512 px and maskable
+  icons, theme colours and shortcuts (Breaking, Saved, On X). The service
+  worker (`public/sw.js`) is network-first, so deploys are live on the next
+  load; offline, it serves the last app shell, front page and every saved
+  story page. Service workers need HTTPS or localhost.
+
+## 2026-10-22 · Breaking news and push alerts
+
+**Backend.**
+- **Detection (`src/pipeline/breaking.js`)**, run on every feed rebuild
+  (0.35 ms over 400 stories). A story's last hour is counted in distinct
+  voices:
+  - an outlet counts 1, a lab's own post 1.5,
+  - an X account 0.75 (at most four),
+  - Hacker News or a subreddit 0.4 (at most two),
+  - outlets running the same headline word for word (syndicated copy)
+    0.25 after the first.
+  It breaks at 4 with at least two outlets or labs, if its first report is
+  under six hours old. It ends when the pace stays under 2 for 30 minutes,
+  or after six hours. Tuned by replaying 48 hours of the feed: 6–7 breaks,
+  about three a day (Claude Duet, the SpaceX revenue beat, ChatGPT Ads, the
+  $35B Nvidia orders).
+- **History:** every break is stored in a `breaking` table with its
+  coverage curve (distinct voices every 10 minutes from the first report).
+  Breaks still running survive a restart. `scripts/breaking-backfill.js`
+  replays the stored feed to fill the archive on a fresh install.
+- **Web Push with only `node:crypto` (`src/pipeline/webpush.js`):** VAPID
+  (ES256 JWT) and aes128gcm payload encryption (RFC 8291). The VAPID key
+  pair is made on first use in `data/vapid.json` (mode 600, never in git).
+  Subscriptions are accepted only for the browsers' push services over
+  HTTPS, so the server can't be pointed elsewhere.
+- **Alerts (`src/pipeline/alerts.js`):** one push per break, at most one
+  every 20 minutes; subscriptions answered with 404/410 are removed, and
+  ones failing five times in a row. Send counts are in `/api/status`
+  (`alerts`).
+- **API:** `GET /api/breaking?days=1|7|30` (active breaks with curves, plus
+  history); `GET /api/push/key`; `POST /api/push/subscribe` and
+  `/api/push/unsubscribe` (same-origin JSON only, 4 KB limit, rate-limited).
+  The snapshot carries the active breaks, so the banner needs no extra
+  request.
+
+**UI** (`public/breaking.js`).
+- **Banner** under the masthead on every page while a story is breaking:
+  a pulsing label, the headline (links to the story page), sources in the
+  last hour and when it broke, "+N more". It slides in with one shimmer
+  sweep. Dismissable per story. The masthead bell gets a pinging dot.
+- **`#breaking`:** each live break as a card with its coverage curve (the
+  break moment marked, crosshair tooltip, line draws in). The archive
+  (24 hours, 7 or 30 days) shows a sparkline per break, how long after the
+  first report it broke, its peak and how long it lasted. A "How it works"
+  panel explains the rule.
+- **Alerts card:** turns push on or off. It explains plainly when the
+  browser can't (no HTTPS, notifications blocked, unsupported).
+
 ## 2026-10-22 · Connections (entity graph)
 
 **Backend.**

@@ -74,6 +74,11 @@
           <button class="more" id="moreStories" type="button" hidden>Show more stories</button>
         </div>
         <aside class="rail" aria-label="Markets and social">
+          <section class="rail-block rail-emerging" id="railEmerging" hidden>
+            <h2>Emerging</h2>
+            <p class="rail-note">Subjects whose coverage is picking up fast right now.</p>
+            <ol class="em-list" id="emergingList"></ol>
+          </section>
           <section class="rail-block">
             <h2>Markets moving</h2>
             <p class="rail-note">AI questions on Polymarket with the biggest odds change in the last day.</p>
@@ -179,6 +184,10 @@
     <!-- Topic page -->
     <section class="view" data-view="topic" aria-label="Topic" hidden>
       <div id="topicView"></div>
+    </section>
+    <!-- Emerging theme -->
+    <section class="view" data-view="theme" aria-label="Emerging theme" hidden>
+      <div id="themeView"></div>
     </section>
     <!-- Story page -->
     <section class="view" data-view="story" aria-label="Story" hidden>

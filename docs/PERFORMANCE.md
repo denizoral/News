@@ -5,6 +5,31 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-22 (00:50 run)
+
+**Story pages, uncached (`/api/story`, 20 live stories, after warm-up).**
+
+| | Median | Range |
+| --- | ---: | ---: |
+| Two vector scans per page (X reactions, then background) | ~0.6 s | 0.41–0.79 s, one at 9.8 s |
+| Second query reuses the first scan of the same vector | 0.29 s | 0.04–0.69 s |
+
+- **Vector scans:** the scan over 200k vectors is ~140 ms. Time-window and
+  site filters drop most neighbours, so filtered queries take 800 candidates
+  instead of ~80.
+- **Brief:** the "how many outlets agree" step compared every candidate
+  sentence with every other, which is quadratic (~700 sentences on a big
+  story). It now runs only for the 80 most central sentences.
+- **Payloads:** a story page is ~6.6 KB; cached responses take ~1 ms.
+
+**Emerging themes:** 400 stories, each a mean of its stored vectors, grouped
+in 0.25–0.36 s in the history worker (vector reads ~100 ms, grouping
+~25–80 ms), cached for 10 minutes. `/api/emerging` is 11 KB.
+
+**Story ids:** assigning ids to ~550 live stories on each rebuild is in-memory
+map lookups. Only new links and changed stories are written: a story's log
+row at most every 5 minutes.
+
 ## 2026-10-21 (20:37 run)
 
 **Main-thread SQLite.** A CPU profile of a restart showed two queries

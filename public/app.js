@@ -47,6 +47,9 @@ const state = {
   storyId: null,
   storyCache: new Map(), // sid -> { at, data, error, pending } from /api/story
   storyAll: new Set(), // sids showing every outlet in the timeline
+  emerging: null, // { at, data, pending } from /api/emerging
+  themeId: null,
+  themeCache: new Map(), // theme id -> { at, data, error, pending } from /api/emerging?id=
   read: new Set(store.get('fw.read', [])),
   live: 'connecting',
   mode: 'api',
@@ -657,6 +660,7 @@ function renderNews({ animate = false } = {}) {
 }
 
 function renderRail() {
+  renderEmergingRail();
   const { markets, social } = state.data;
   const heat = (m) => m.move * Math.log10(10 + m.volume24h);
   const moving = markets.filter((m) => m.volume24h > 1000).slice().sort((a, b) => heat(b) - heat(a)).slice(0, 6);
@@ -1200,6 +1204,125 @@ function renderTopic() {
   loadTopic(key);
 }
 
+// ---------- Emerging themes ----------
+// Groups of live stories whose coverage is accelerating (server:
+// src/index/emerging.js): a rail block on the front page, and #theme/<id>
+// with the hour-by-hour build-up and every story in it.
+
+async function loadEmerging() {
+  const hit = state.emerging;
+  if (state.mode !== 'api' || hit?.pending || (hit && Date.now() - hit.at < 5 * 60e3)) return;
+  state.emerging = { ...hit, pending: true };
+  let data = hit?.data || null;
+  try {
+    const res = await fetch('api/emerging');
+    if (res.ok) data = await res.json();
+  } catch {}
+  state.emerging = { at: Date.now(), data };
+  if (state.view === 'news') transition(renderEmergingRail);
+}
+
+const themeTitle = (t) => t.name.length ? t.name.join(' · ') : t.headline;
+const paceLabel = (t) => (t.isNew ? '<span class="em-new">New</span>' : `<span class="em-pace" title="Reports per hour in the last ${t.recent ? 12 : 0} hours against the 36 before">↑ ${t.growth}×</span>`);
+
+// 48 hourly counts as a bar strip; the last 12 hours carry the colour.
+function emSpark(spark, { w = 96, h = 20 } = {}) {
+  const max = Math.max(1, ...spark);
+  const slot = w / spark.length;
+  return `<svg class="em-spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true">${spark.map((n, i) => {
+    const bh = n ? Math.max(1.5, (n / max) * h) : 0;
+    return bh ? `<rect class="${i >= spark.length - 12 ? 'hot' : ''}" x="${(i * slot).toFixed(2)}" y="${(h - bh).toFixed(2)}" width="${Math.max(1, slot - 0.6).toFixed(2)}" height="${bh.toFixed(2)}"/>` : '';
+  }).join('')}</svg>`;
+}
+
+function renderEmergingRail() {
+  const block = $('#railEmerging');
+  if (!block) return;
+  loadEmerging();
+  const themes = state.emerging?.data?.themes?.slice(0, 5) || [];
+  block.hidden = !themes.length;
+  if (!themes.length) return;
+  setHtml($('#emergingList'), themes.map((t, i) => `<li style="--i:${i}"><a href="#theme/${esc(t.id)}">
+    <b>${esc(themeTitle(t))}</b>
+    <span class="em-head">${esc(t.headline)}</span>
+    <span class="em-row">${emSpark(t.spark)}${paceLabel(t)}<span>${t.n} stories · ${t.outlets} outlets</span></span></a></li>`).join(''));
+}
+
+async function loadTheme(id) {
+  const hit = state.themeCache.get(id);
+  if (state.mode !== 'api' || hit?.pending || (hit && Date.now() - hit.at < 2 * 60e3)) return;
+  state.themeCache.set(id, { ...hit, pending: true });
+  let data = hit?.data || null;
+  let error = null;
+  try {
+    const res = await fetch(`api/emerging?id=${encodeURIComponent(id)}`);
+    const body = await res.json();
+    if (res.ok) data = body;
+    else error = body.error;
+  } catch (e) {
+    error = e.message;
+  }
+  state.themeCache.set(id, { at: Date.now(), data, error });
+  if (state.view === 'theme' && state.themeId === id) transition(renderTheme);
+}
+
+const ECHART = { h: 150, l: 30, r: 8, t: 10, b: 22 };
+function themeChartHtml(t, animate) {
+  const w = ECHART.w = Math.max(280, Math.round(($('#themeView')?.clientWidth || 720) - (innerWidth <= 560 ? 34 : 42)));
+  const { h, l, r, t: top, b } = ECHART;
+  const n = t.spark.length;
+  const max = Math.max(2, ...t.spark);
+  const ceil = Math.ceil(max / 2) * 2;
+  const slot = (w - l - r) / n;
+  const bw = Math.max(2, slot - 2);
+  const y = (v) => top + (1 - v / ceil) * (h - top - b);
+  const grid = [0, ceil / 2, ceil].map((v) => `<line class="grid" x1="${l}" x2="${w - r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="axis" x="${l - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${v}</text>`).join('');
+  const bars = t.spark.map((v, i) => {
+    const bh = v ? Math.max(2, y(0) - y(v)) : 0;
+    return bh ? `<rect class="bar${i >= n - 12 ? ' recent' : ''}${i === n - 1 ? ' partial' : ''}" x="${(l + i * slot + 1).toFixed(1)}" y="${(y(0) - bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="${Math.min(3, bw / 2)}" style="--i:${i}"/>` : '';
+  }).join('');
+  const split = l + (n - 12) * slot;
+  const ticks = [[0, '48h ago'], [n - 24, '24h ago'], [n - 12, '12h ago'], [n - 1, 'Now']].map(([i, s]) => `<text class="axis" x="${(l + i * slot + slot / 2).toFixed(1)}" y="${h - 6}" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}">${s}</text>`).join('');
+  return `<div class="topic-chart theme-chart${animate ? ' animate' : ''}">
+    <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Reports per hour over the last 48 hours">${grid}<line class="split" x1="${split.toFixed(1)}" x2="${split.toFixed(1)}" y1="${top}" y2="${h - b}"/><g class="bars">${bars}</g>${ticks}</svg>
+  </div>`;
+}
+
+let themeShown = '';
+function renderTheme() {
+  const id = state.themeId;
+  const entry = state.themeCache.get(id);
+  const t = entry?.data || state.emerging?.data?.themes?.find((x) => x.id === id);
+  const site = state.data?.site?.name || 'Frontier Wire';
+  if (!t) {
+    document.title = `Emerging · ${site}`;
+    setHtml($('#themeView'), `<header class="topic-head"><a class="back" href="#news">← News</a><p class="kicker">Emerging theme</p>
+      ${entry?.error ? `<h1>No longer rising</h1><p class="topic-sum">${esc(entry.error)} Its stories are still on their story pages.</p>` : '<i class="skeleton sk-title"></i><i class="skeleton"></i>'}</header>`);
+    return loadTheme(id);
+  }
+  document.title = `${themeTitle(t)} · ${site}`;
+  const full = entry?.data;
+  const animate = !!full && themeShown !== `${id}:${full.generatedAt}` && !reducedMotion();
+  if (full) themeShown = `${id}:${full.generatedAt}`;
+  const pace = t.isNew ? 'new in the last 12 hours' : `${t.growth}× the pace of the 36 hours before`;
+  const stories = (full || t).stories;
+  setHtml($('#themeView'), `
+    <header class="topic-head">
+      <a class="back" href="#news">← News</a>
+      <p class="kicker">Emerging theme${t.entities.length ? ` · ${t.entities.map((k) => `<a href="#topic/${esc(k)}">${esc(topicName(k))}</a>`).join(', ')}` : ''}</p>
+      <h1>${esc(themeTitle(t))}</h1>
+      <p class="topic-sum"><b>${t.recent}</b> reports in the last 12 hours, ${pace} · ${t.n} stories from ${t.outlets} outlets</p>
+    </header>
+    <section class="topic-card"><h2>Reports per hour <small>last 48 hours; the last 12 in colour</small></h2>${themeChartHtml(t, animate)}</section>
+    <section class="story-card"><h2>Stories <small>biggest first; each opens its story page</small></h2>
+      <ol class="theme-stories${animate ? ' animate' : ''}">${stories.map((s, i) => `<li style="--i:${Math.min(i, 14)}">
+        <a href="#story/${esc(s.sid)}">${esc(s.title)}</a>
+        <span class="tl-meta">${esc(s.source || '')}${s.sources > 1 ? ` · ${s.sources} sources` : ''} · ${time(s.publishedAt)}</span></li>`).join('')}</ol>
+      ${!full ? '<p class="rail-note">Loading every story…</p>' : ''}
+    </section>`);
+  loadTheme(id);
+}
+
 // ---------- Story pages ----------
 // #story/<sid>: one story in full (server: src/index/storypage.js). How it
 // spread (who reported it when), a brief across outlets, X reactions, linked
@@ -1527,7 +1650,7 @@ function applySite(site) {
   }
   $('.tabs a[data-view="builds"]').hidden = !site.showBuilds;
   $('.tabs a[data-view="markets"]').hidden = !site.showMarkets;
-  $('.rail-block:first-child').hidden = !site.showMarkets;
+  $('#railMarkets').closest('.rail-block').hidden = !site.showMarkets;
   state.sections = { builds: site.showBuilds, markets: site.showMarkets };
 }
 
@@ -1546,6 +1669,7 @@ function render() {
   if (state.view === 'topic') renderTopic();
   if (state.view === 'week') renderWeek();
   if (state.view === 'story') renderStory();
+  if (state.view === 'theme') renderTheme();
   renderFoot();
   updateLive();
   animateOdds();
@@ -1560,6 +1684,13 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
+  const theme = /^theme\/([\w-]{6,16})$/.exec(v);
+  if (theme) {
+    state.themeId = theme[1];
+    state.view = 'theme';
+    const go = () => { render(); window.scrollTo({ top: 0 }); };
+    return state.data ? transition(go) : go();
+  }
   const story = /^story\/([\w-]{6,16})$/.exec(v);
   if (story) {
     state.storyId = story[1];

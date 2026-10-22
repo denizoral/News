@@ -2,6 +2,87 @@
 
 One full-stack feature per scheduled maintenance run, newest first.
 
+## 2026-10-22 · Emerging themes
+
+**Backend.**
+- **Grouping:** `src/index/emerging.js` gives each live story the mean of
+  its stored articles' embeddings (`story_ids` → `docs` → `doc_vecs`). It
+  then groups related stories, biggest first. A story joins a theme only if
+  it's close to both the theme's centre and the story that started it, so
+  one broad "AI news" theme can't swallow everything.
+- **Ranking:** themes need at least 3 stories and 3 outlets, with at least 3
+  reports in the last 12 hours. They're ranked by recent reports × √growth,
+  where growth is the reports-per-hour rate over the last 12 hours against
+  the 36 before. Each theme gets a 48-hour hourly count.
+- **Names:** the phrase its headlines share that the rest of the feed
+  doesn't. Bigrams beat words, proper nouns ("Claude Duet") beat common words,
+  and the headlines' own capitalisation is kept.
+- **Cost:** ~0.25–0.35 s for 400 stories in the history worker, cached for
+  10 minutes.
+- **`GET /api/emerging`:** the top 8 themes.
+- **`GET /api/emerging?id=`:** one theme with all its stories. It's keyed by
+  the theme's lead story and still found if the theme has regrouped.
+
+**UI.**
+- **Front page:** an "Emerging" block at the top of the rail lists up to 5
+  themes. Each shows its name, lead headline, a 48-hour bar strip (last 12
+  hours in colour), a "New" or "↑ 15×" badge, and story and outlet counts.
+- **`#theme/<id>`:**
+  - a headline summary ("45 reports in the last 12 hours, new in the last 12
+    hours · 19 stories from 29 outlets") with links to related topics,
+  - a reports-per-hour chart with a dashed line 12 hours back,
+  - every story in the theme, each linking to its story page.
+- **Motion:** rail items rise in, the "New" badge shimmers, chart bars grow
+  and story rows stagger. All of it is off under `prefers-reduced-motion`.
+
+## 2026-10-22 · Story pages
+
+**Backend.**
+- **Stable story ids (`src/index/stories.js`):** every item that has ever
+  been in a story is linked to the id that story first had (`story_ids`). A
+  re-clustered story takes the id most of its items already carry. A link
+  therefore survives new sources, a new lead article, merges and the story
+  leaving the 3-day feed: `story_log` keeps its headline, topics and markets,
+  and the stored documents keep the rest. The feed's stories now carry
+  `sid`.
+- **`GET /api/story?id=<sid>` (`src/index/storypage.js`):**
+  - **timeline:** each outlet's first report in order. Hacker News and Reddit
+    are marked as discussion, and the first original report is the lead.
+  - **growth:** outlets and X accounts over time.
+  - **brief:** an extractive summary across outlets (`src/pipeline/brief.js`).
+    Sentences are scored by TF-IDF closeness to the story's centre and by how
+    many outlets said much the same thing. Lead sentences get a small boost.
+    Sentences leaning on an earlier one ("The decision…") and boilerplate are
+    penalised. Picks skip near-repeats and the summary already shown under the
+    headline, at most two per outlet, each credited and linked.
+  - **reactions:** the story's own X posts plus X posts close in meaning
+    within its time window.
+  - **background:** earlier articles on the subject from at least 12 hours
+    before it broke, by meaning.
+  - **markets:** each linked market's odds history over the story's life,
+    and the leading outcome's price when it broke against now.
+  - A story that has left the feed is rebuilt from the stored documents;
+    one that was merged resolves to the live story it joined.
+- **Vector search:** `similarDocs` gains `until` and `sites` filters, with a
+  wider candidate pool when filtering.
+
+**UI.**
+- **`#story/<sid>`:**
+  - a header with status (Developing / Archived), topic links, headline, dek,
+    who reported it first, outlet count, latest update and "Copy link"
+    (share sheet on touch),
+  - **The brief**,
+  - **How it spread:** a step chart of outlets over time with a crosshair
+    tooltip, and a timeline of outlets with "+2h 14m" offsets (first 10,
+    then "Show all"),
+  - a side column with **On X**, **Markets** (sparkline, dashed "story
+    broke" marker, "41% → 62% since the story broke") and **Background**.
+- **Entry points:** the "Developing" badge on story cards, and a "Full
+  coverage" link under the expanded source list.
+- **Motion:** the step line draws itself, dots pop in as outlets arrived,
+  timeline rows and brief sentences rise in, and the hero image fades up.
+  All of it is off under `prefers-reduced-motion`.
+
 ## 2026-10-21 · Release coverage
 
 **Backend.**

@@ -23,6 +23,8 @@ import { ask } from './index/ask.js';
 import { dealsQuery, companyDealsQuery, RANGES as DEAL_RANGES } from './index/deals.js';
 import { dayQuery, calendarQuery, withMarkets, withReleases, isDay, dayOf } from './index/day.js';
 import { outletsQuery, outletQuery, siteKey } from './index/outlets.js';
+import { personKey, personQuery, quotesQuery } from './index/quotes.js';
+import { storylineById, storylineList, storylineOf, storylinesData } from './index/storylines.js';
 import { statusHistory, startVitals, noteRequest } from './status.js';
 import { storyPage } from './index/storypage.js';
 import { emergingThemes } from './index/emerging.js';
@@ -379,7 +381,8 @@ export function createApp({ store, spider }) {
     if (p === '/api/story') {
       if (limited(req, res)) return;
       const id = (url.searchParams.get('id') || '').slice(0, 2000);
-      return storyPage(store, id)
+      return Promise.all([storyPage(store, id), storylinesData().catch(() => null)])
+        .then(([d, lines]) => (d && lines ? { ...d, storyline: storylineOf(lines, d) } : d))
         .then((d) => (d ? json(req, res, 200, d, { 'cache-control': 'public, max-age=60' }) : json(req, res, 404, { error: 'No story with that id.' })))
         .catch((err) => json(req, res, 503, { error: `The story is unavailable: ${err.message}` }));
     }
@@ -459,6 +462,33 @@ export function createApp({ store, spider }) {
       return dayQuery(day)
         .then((d) => json(req, res, 200, withReleases(withMarkets(d, store.markets || []), store.releases || []), { 'cache-control': `public, max-age=${d.partial ? 300 : 3600}` }))
         .catch((err) => json(req, res, 503, { error: `That day is unavailable: ${err.message}` }));
+    }
+    if (p === '/api/quotes') {
+      if (limited(req, res)) return;
+      const q = (url.searchParams.get('q') || '').trim().toLowerCase().slice(0, 60);
+      return quotesQuery(q)
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=600' }))
+        .catch((err) => json(req, res, 503, { error: `Quotes are unavailable: ${err.message}` }));
+    }
+    if (p === '/api/person') {
+      if (limited(req, res)) return;
+      const key = personKey(url.searchParams.get('name') || '').slice(0, 60);
+      if (!key) return json(req, res, 400, { error: 'Give a name as name=sam-altman.' });
+      return personQuery(key)
+        .then((d) => (d ? json(req, res, 200, d, { 'cache-control': 'public, max-age=600' }) : json(req, res, 404, { error: 'Nobody by that name is quoted in the last 45 days.' })))
+        .catch((err) => json(req, res, 503, { error: `Quotes are unavailable: ${err.message}` }));
+    }
+    if (p === '/api/storylines' || p === '/api/storyline') {
+      if (limited(req, res)) return;
+      const id = (url.searchParams.get('id') || '').replace(/[^a-f0-9]/g, '').slice(0, 10);
+      if (p === '/api/storyline' && !id) return json(req, res, 400, { error: 'Give a storyline as id=.' });
+      return storylinesData()
+        .then((d) => {
+          if (p === '/api/storylines') return json(req, res, 200, storylineList(d), { 'cache-control': 'public, max-age=600' });
+          const s = storylineById(d, id);
+          return s ? json(req, res, 200, { ...s, generatedAt: d.generatedAt }, { 'cache-control': 'public, max-age=600' }) : json(req, res, 404, { error: 'No storyline with that id (they are rebuilt every half hour).' });
+        })
+        .catch((err) => json(req, res, 503, { error: `Storylines are unavailable: ${err.message}` }));
     }
     if (p === '/api/outlets') {
       if (limited(req, res)) return;

@@ -1,4 +1,4 @@
-// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, any-day pages, outlets, the entity graph, X accounts, For you) off the main thread
+// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, any-day pages, outlets, quotes, storylines, the entity graph, X accounts, For you) off the main thread
 // with its own read-only connection (see offload.js).
 
 import { parentPort, workerData } from 'node:worker_threads';
@@ -18,6 +18,8 @@ import { computeTrends, trendMoment } from './trends.js';
 import { computeDeals, companyDeals } from './deals.js';
 import { computeDay, dayCalendar } from './day.js';
 import { computeOutlets, computeOutlet, outletScan } from './outlets.js';
+import { computePerson, computeQuotes, quoteIndex } from './quotes.js';
+import { computeStorylines, storyDays } from './storylines.js';
 
 const db = new DatabaseSync(workerData.file, { readOnly: true });
 db.exec('PRAGMA busy_timeout = 5000; PRAGMA cache_size = -32000;');
@@ -45,6 +47,10 @@ const JOBS = {
   dayCalendar: () => dayCalendar(db),
   outlets: () => computeOutlets(db, { scan: outletScan(db) }),
   outlet: ({ site }) => computeOutlet(db, { site, scan: outletScan(db) }),
+  quotes: ({ q }) => computeQuotes(quoteIndex(db), { q }),
+  person: ({ key }) => computePerson(quoteIndex(db), { key }),
+  storyDays: () => storyDays(db),
+  storylines: ({ chapters }) => computeStorylines(vectorIndex(db), { chapters }),
 };
 
 parentPort.on('message', ({ id, job }) => {

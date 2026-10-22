@@ -46,7 +46,7 @@ function cleanTitle(title, source, site) {
 }
 
 // The day's items in the shape clusterItems() takes.
-function dayItems(db, from, to) {
+export function dayItems(db, from, to) {
   const rows = db.prepare(`SELECT d.id, d.url, d.type, d.title, substr(d.description, 1, 400) AS description, d.site, d.source, d.author, d.image_url, d.published_at, d.engagement, d.meta FROM docs d
     WHERE d.published_at >= ? AND d.published_at < ? AND d.hidden = 0 AND d.type IN ('article', 'post') AND ${EN} AND ${NOT_COVERAGE}`).all(from, to);
   const items = [];
@@ -136,7 +136,7 @@ export function centralHeadline(group) {
   return pool[best];
 }
 
-const outletsOf = (s) => new Set(s.sources.filter((x) => x.platform !== 'x').map((x) => x.name)).size;
+export const outletsOf = (s) => new Set(s.sources.filter((x) => x.platform !== 'x').map((x) => x.name)).size;
 
 export function computeDay(db, { day, now = Date.now() }) {
   const from = Date.parse(`${day}T00:00:00Z`);

@@ -1,0 +1,41 @@
+// The public API, described once: /api lists it as JSON and the #developers
+// page renders it with live examples. A test checks every example answers.
+
+export const API = [
+  { group: 'News', path: '/api/snapshot', summary: 'Everything on the front page: stories with their sources, X posts, releases, markets, trending topics and breaking stories.', example: '/api/snapshot', notes: 'Sends an ETag; poll with If-None-Match. /api/stream pushes the new version as Server-Sent Events.' },
+  { group: 'News', path: '/api/story', summary: 'One story: how it spread, every source, the brief, X reactions and linked markets.', params: [['id', 'Story id (the sid on a story)', true]], example: '/api/story?id={sid}' },
+  { group: 'News', path: '/api/trending', summary: 'Topics gaining mentions against their usual rate.', params: [['hours', '1, 3, 6, 12 or 24 (default 6)']], example: '/api/trending?hours=6' },
+  { group: 'News', path: '/api/emerging', summary: 'Rising themes found by meaning, not by topic list, ranked by acceleration.', params: [['id', 'One theme in full']], example: '/api/emerging' },
+  { group: 'News', path: '/api/breaking', summary: 'Stories breaking now with their coverage curves, and the past breaks.', params: [['days', '1, 7 or 30 (default 7)']], example: '/api/breaking?days=1' },
+  { group: 'News', path: '/api/topic', summary: 'A topic’s 30-day history: daily share, top outlets, stories and related names.', params: [['key', 'Topic key, e.g. openai, anthropic, nvidia', true]], example: '/api/topic?key=anthropic' },
+  { group: 'News', path: '/api/digest', summary: 'The week in AI: top stories, releases and market movers.', example: '/api/digest' },
+  { group: 'Search', path: '/api/search', summary: 'Full-text search over about 200,000 stored articles, posts, models and markets, with facets.', params: [['q', 'Query; supports "phrases", -exclusions, site: and type:', true], ['sort', 'relevance or date'], ['type', 'news, posts, models, markets, builds, images'], ['page', '1 to 50']], example: '/api/search?q=open%20weights&sort=date' },
+  { group: 'Search', path: '/api/search?mode=meaning', summary: 'Search by meaning with sentence embeddings, for when the words differ.', params: [['q', 'Query', true]], example: '/api/search?mode=meaning&q=robots%20learning%20from%20video' },
+  { group: 'Search', path: '/api/related', summary: 'Earlier coverage close in meaning to a story.', params: [['id', 'Story item id', true]], example: '/api/related?id={id}' },
+  { group: 'X', path: '/api/x', summary: 'Posts from the tracked X accounts, newest first.', params: [['limit', 'Up to 100'], ['handle', 'One account']], example: '/api/x?limit=5' },
+  { group: 'X', path: '/api/accounts', summary: 'Every tracked account ranked by how often it posted a story before the press.', example: '/api/accounts' },
+  { group: 'X', path: '/api/account', summary: 'One account: cadence, posting hours, topics, its lead posts. Add vs= to compare two.', params: [['handle', 'X handle', true], ['vs', 'A second handle']], example: '/api/account?handle=Kalshi' },
+  { group: 'Models', path: '/api/models', summary: 'Every model released in the last 90 days with prices, context, size, coverage and benchmark scores the press reported.', example: '/api/models' },
+  { group: 'Models', path: '/api/release', summary: 'Coverage of one release since launch: count per day, outlets, first reporter.', params: [['id', 'Release id from /api/models', true]], example: '/api/release?id={release}' },
+  { group: 'Markets', path: '/api/odds', summary: 'Odds history for one Polymarket or Kalshi market, with the jumps found in it.', params: [['id', 'Market id from the snapshot', true]], example: '/api/odds?id={market}' },
+  { group: 'Markets', path: '/api/moves', summary: 'Odds jumps that held, and the news just before them.', params: [['market', 'One market']], example: '/api/moves' },
+  { group: 'Connections', path: '/api/graph', summary: 'The co-mention network of labs, people, products and governments.', params: [['days', '7, 30 or 90']], example: '/api/graph?days=7' },
+  { group: 'Personal', path: '/api/foryou', summary: 'The live feed ranked for a set of follows. Nothing is stored; the follows travel in the query.', params: [['t', 'Topic keys, comma-separated'], ['n', 'Names from the graph'], ['a', 'X handles'], ['o', 'Outlets'], ['s', 'Saved story ids (for taste)']], example: '/api/foryou?t=anthropic,nvidia&a=Kalshi' },
+];
+
+export const FEEDS = [
+  { path: '/feeds/topic/{key}.xml', summary: 'New stories on one topic.', example: '/feeds/topic/anthropic.xml' },
+  { path: '/feeds/account/{handle}.xml', summary: 'Posts from one X account.', example: '/feeds/account/Kalshi.xml' },
+  { path: '/feeds/search.xml?q=', summary: 'Newest results for a search.', example: '/feeds/search.xml?q=%22open%20weights%22' },
+  { path: '/feeds/foryou.xml?t=&n=&a=&o=', summary: 'Your For you feed: the same follows as /api/foryou.', example: '/feeds/foryou.xml?t=anthropic&a=Kalshi' },
+  { path: '/feeds/breaking.xml', summary: 'Stories as they break.', example: '/feeds/breaking.xml' },
+  { path: '/digest.xml', summary: 'The weekly digest.', example: '/digest.xml' },
+];
+
+export const apiIndex = (origin) => ({
+  name: 'Frontier Wire API',
+  docs: `${origin}/#developers`,
+  notes: 'Read-only, JSON, no key. Responses are compressed and cacheable; searches share a per-connection rate limit (429 with Retry-After). Every feed also comes as JSON Feed 1.1: swap .xml for .json.',
+  endpoints: API.map(({ group, path, summary, params = [], example, notes }) => ({ group, path, summary, params: params.map(([name, about, required]) => ({ name, about, required: !!required })), example: `${origin}${example}`, ...(notes ? { notes } : {}) })),
+  feeds: FEEDS.map((f) => ({ ...f, example: `${origin}${f.example}`, json: `${origin}${f.example.replace('.xml', '.json')}` })),
+});

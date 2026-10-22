@@ -73,3 +73,14 @@ export function expireJob(key) {
   const hit = cache.get(key);
   if (hit) hit.at = 0;
 }
+
+// Stops the workers (tests, shutdown); jobs still waiting fail.
+export async function stopWorkers() {
+  const all = [...workers.values()];
+  workers.clear();
+  for (const [id, w] of waiting) {
+    waiting.delete(id);
+    w.reject(new Error('Workers stopped.'));
+  }
+  await Promise.all(all.map((w) => w.terminate()));
+}

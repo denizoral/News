@@ -38,6 +38,11 @@ function loadPosts(db, since, handle = null) {
   return out;
 }
 
+// The newest posts from one account (for its feed).
+export function recentPosts(db, handle, { days = 14, limit = 40, now = Date.now() } = {}) {
+  return loadPosts(db, now - days * 86400e3, handle.toLowerCase()).slice(-limit).reverse();
+}
+
 // Articles in the window, oldest first: ids, times and vector rows only.
 // Reddit and Hacker News relay links, so they don't count as the press.
 const RELAY_SITES = new Set(['reddit.com', 'news.ycombinator.com', 'x.com']);

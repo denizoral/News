@@ -25,7 +25,7 @@ import { entityGraph, entityDetail, WINDOWS } from './index/graph.js';
 import { semanticSearch, relatedTo, keepVectorsWarm } from './index/semantic.js';
 import { startEmbedder } from './index/vectors.js';
 import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
-import { openDb, checkpoint, closeDb } from './db.js';
+import { openDb, checkpoint, closeDb, getDb } from './db.js';
 import { settings } from './settings.js';
 import { Spider } from './spider/engine.js';
 import { MEDIA_DIR } from './spider/media.js';
@@ -43,8 +43,10 @@ import { breakingHistory } from './pipeline/breaking.js';
 import { subscribe, unsubscribe, pushBreaking, alertStatus, subscriberCount } from './pipeline/alerts.js';
 import { vapidKeys } from './pipeline/webpush.js';
 import { buildIndex, jumpSearch, savedStatus } from './index/jump.js';
-import { accountsDirectory, accountProfile, accountCompare } from './index/accounts.js';
+import { accountsDirectory, accountProfile, accountCompare, recentPosts } from './index/accounts.js';
 import { forYou, parseFollows, followSuggestions } from './index/foryou.js';
+import { topicFeed, breakingFeed, accountFeed, searchFeed, followsFeed, etagOf, renderRss, renderJsonFeed } from './feeds.js';
+import { apiIndex } from './apicatalog.js';
 
 const PROD = process.env.NODE_ENV === 'production';
 const PUBLIC = path.resolve('public');
@@ -204,6 +206,50 @@ export function createApp({ store, spider }) {
   // The palette's index, rebuilt when the feed, the graph or the themes change.
   // Slow inputs are waited on briefly; the index fills in on a later query.
   let jump = { key: null, index: [] };
+  // Feeds: built at most once a minute per URL, then served by ETag.
+  const feedCache = new Map(); // path + query -> { at, feed }
+  const originOf = (req) => `${req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'}://${/^[\w.:[\]-]+$/.test(req.headers.host || '') ? req.headers.host : 'localhost'}`;
+  async function buildFeed(url, [, kind, topic, handle], origin) {
+    if (topic) return topicKeys().includes(topic) ? topicFeed(store, topic, origin) : { error: [404, 'No topic with that name.'] };
+    if (handle) {
+      const posts = recentPosts(getDb(), handle);
+      return posts.length ? accountFeed(posts, posts[0].handle, origin) : { error: [404, 'No recent posts from that account.'] };
+    }
+    if (kind === 'breaking') return breakingFeed(store, breakingHistory({ days: 7 }), origin);
+    if (kind === 'search') {
+      const q = (url.searchParams.get('q') || '').trim();
+      if (!q || q.length > MAX_QUERY) return { error: [400, `Add a search with ?q= (at most ${MAX_QUERY} characters).`] };
+      return searchFeed(universal(q, { sort: 'date', perPage: 40 }), q, origin);
+    }
+    const f = parseFollows(url.searchParams);
+    if (!f.topics.length && !f.names.length && !f.accounts.length && !f.outlets.length) return { error: [400, 'Add follows with t=, n=, a= or o=.'] };
+    return followsFeed(await forYou(store, f, { graph: await soon(entityGraph(30)) }), f, origin);
+  }
+  async function serveFeed(req, res, url, m) {
+    if (m[1] === 'search' || m[1] === 'foryou') {
+      if (limited(req, res)) return;
+      if (url.search.length > 6000) return json(req, res, 414, { error: 'That feed address is too long.' });
+    }
+    const key = url.pathname + url.search;
+    let hit = feedCache.get(key);
+    if (!hit || Date.now() - hit.at > 60e3) {
+      const feed = await buildFeed(url, m, originOf(req));
+      if (feed.error) return json(req, res, feed.error[0], { error: feed.error[1] });
+      if (feedCache.size > 500) feedCache.delete(feedCache.keys().next().value);
+      hit = { at: Date.now(), feed, etag: etagOf(feed) };
+      feedCache.set(key, hit);
+    }
+    const asJson = m[4] === 'json';
+    const headers = { etag: `${hit.etag.slice(0, -1)}${asJson ? 'j' : 'x'}"`, 'cache-control': 'public, max-age=300', 'access-control-allow-origin': '*' };
+    if (req.headers['if-none-match'] === headers.etag) return res.writeHead(304, headers).end();
+    const self = `${originOf(req)}${key}`;
+    if (asJson) return json(req, res, 200, renderJsonFeed(hit.feed, self), { ...headers, 'content-type': 'application/feed+json; charset=utf-8' });
+    const body = new Packed(renderRss(hit.feed, self), 4);
+    const enc = pickEncoding(req);
+    res.writeHead(200, { 'content-type': 'application/rss+xml; charset=utf-8', vary: 'Accept-Encoding', ...(enc ? { 'content-encoding': enc } : {}), ...headers });
+    res.end(req.method === 'HEAD' ? undefined : body.get(enc));
+  }
+
   const soon = (p, ms = 250) => Promise.race([p.catch(() => null), new Promise((r) => setTimeout(r, ms, null).unref())]);
   async function jumpIndex() {
     const [graph, em, ac] = await Promise.all([soon(entityGraph(30)), soon(emergingThemes(store)), soon(accountsDirectory())]);
@@ -408,6 +454,10 @@ export function createApp({ store, spider }) {
       return Promise.all([soon(entityGraph(30)), soon(accountsDirectory(), 1500)])
         .then(([graph, accounts]) => json(req, res, 200, followSuggestions(store, { graph, accounts }), { 'cache-control': 'public, max-age=120' }));
     }
+    // The API described, and feeds for a topic, account, search, follows or breaking.
+    if (p === '/api' || p === '/api/') return json(req, res, 200, apiIndex(originOf(req)), { 'cache-control': 'public, max-age=3600', 'access-control-allow-origin': '*' });
+    const feed = /^\/feeds\/(topic\/([a-z0-9-]{2,40})|account\/(\w{1,15})|search|foryou|breaking)\.(xml|json)$/.exec(p);
+    if (feed) return serveFeed(req, res, url, feed).catch((err) => json(req, res, 503, { error: `That feed is unavailable: ${err.message}` }));
     if (p === '/api/push/key') return json(req, res, 200, { publicKey: vapidKeys().publicKey }, { 'cache-control': 'public, max-age=3600' });
     if (p === '/api/spider') return json(req, res, 200, spider.status(), { 'cache-control': 'public, max-age=10' });
     if (p === '/api/status') return json(req, res, 200, { ...store.status(), alerts: { ...alertStatus }, version: store.snapshot.version, generatedAt: store.snapshot.generatedAt });

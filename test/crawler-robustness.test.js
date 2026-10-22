@@ -749,6 +749,9 @@ test('when the queue runs low, AI sitemaps are backfilled with older articles at
   const sm = 'https://backfill-ai.example/sitemap.xml';
   settings.update({ 'crawler.hubs': [...settings.get('crawler.hubs'), 'https://backfill-ai.example/'] }, { role: 'owner', actor: 't' });
   spider.enqueue(sm, { kind: 'sitemap' });
+  // It has a record: one of its entries was indexed.
+  q("INSERT INTO crawl_log (at, url, host, kind, outcome, via) VALUES (?, 'https://backfill-ai.example/2026/10/an-earlier-post', 'backfill-ai.example', 'article', 'indexed', ?)").run(Date.now(), sm);
+  upsertDoc({ url: 'https://backfill-ai.example/2026/10/an-earlier-post', type: 'article', title: 'An earlier AI post', site: 'backfill-ai.example', fetched_at: Date.now(), published_at: Date.now(), body: 'AI. '.repeat(50) });
   q("UPDATE frontier SET status = 'done' WHERE kind = 'article' AND status = 'queued'").run(); // an empty queue
   assert.ok(spider.maybeBackfill() >= 1);
   assert.ok(spider.backfilling.has(sm));
@@ -792,4 +795,13 @@ test('links to PDFs and other files are never queued', async () => {
   assert.equal(isFileUrl('https://example.com/2026/ai-report'), false);
   assert.equal(spider.enqueue('https://arxiv.org/pdf/2610.99999'), false);
   assert.equal(spider.enqueue('https://files.example/whitepaper.pdf'), false);
+});
+
+test('a sitemap listing only learned dead ends is retired', () => {
+  spider.learnDeadEnd('transl.example/fr', 'language');
+  const sm = 'https://transl.example/post-sitemap-9.xml';
+  spider.enqueue(sm, { kind: 'sitemap' });
+  const xml = `<urlset>${Array.from({ length: 25 }, (_, i) => `<url><loc>https://transl.example/fr/article-ia-${i}</loc></url>`).join('')}</urlset>`;
+  assert.equal(spider.handleSitemap(row(sm, 'sitemap'), xml), null);
+  assert.equal(frontier(sm).status, 'skipped');
 });

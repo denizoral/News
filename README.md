@@ -111,7 +111,10 @@ the oldest images first.
   - When the queue runs low (or is all on a few slow sites like arXiv), it
     backfills: sitemaps of the most productive starting sites and AI
     publishers are read again for articles up to 60 days old, queued below
-    fresh news, each sitemap at most once a month (Settings → Discovery).
+    fresh news, each sitemap at most once a month (Settings → Discovery). It
+    picks the sitemaps whose own entries were indexed most (as dated
+    articles), so a site's translation-only or product-page sitemaps aren't
+    chosen, and a sitemap that lists only learned dead ends is retired.
   - Links to files (PDFs, archives, media, images, arXiv's `/pdf/`) are never
     queued, and a page that turns out to be a file isn't downloaded.
   - It follows links freely inside starting sites, and one hop out to other

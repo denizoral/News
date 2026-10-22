@@ -817,10 +817,12 @@ export class Spider extends EventEmitter {
 
   async process(row, h) {
     if ((row.kind === 'article' || row.kind === 'page') && this.isCappedToday(row.url)) {
+      // The whole section's queue waits, in one go (one log line, not one per page).
       const tomorrow = (Math.floor(Date.now() / 86400e3) + 1) * 86400e3 + Math.random() * 3600e3;
-      q("UPDATE frontier SET status = 'queued', next_at = ? WHERE url = ?").run(tomorrow, row.url);
+      const { prefix } = sectionOf(row.url);
+      const n = q("UPDATE frontier SET status = 'queued', next_at = ? WHERE (url = ? OR (host = ? AND url LIKE ? AND status = 'queued' AND kind IN ('article', 'page')))").run(tomorrow, row.url, row.host, `${prefix}/%`).changes;
       this.stats.deferred++;
-      this.log(row, { outcome: 'deferred', reason: 'This section reached its undated-page limit today; tried again tomorrow' });
+      this.log(row, { outcome: 'deferred', reason: `This section reached its undated-page limit today; it and ${n - 1} more queued pages there wait for tomorrow` });
       return;
     }
     const rule = this.rule(h.host);
@@ -887,6 +889,7 @@ export class Spider extends EventEmitter {
     }
     if (row.kind === 'sitemap' || xmlKind === 'sitemap') {
       const n = this.handleSitemap(row, body);
+      if (n === null) return this.log(row, { outcome: 'skipped', http, bytes, reason: 'Retired: it lists only learned dead ends' });
       this.log(row, { outcome: 'sitemap', http, bytes, reason: `${n} new URLs` });
       return this.done(row, { ...meta, fresh: n });
     }
@@ -935,6 +938,12 @@ export class Spider extends EventEmitter {
       return 0;
     }
     if (backfill) this.noteBackfilled(row.url);
+    // A sitemap that lists nothing but learned dead ends and listings (a site's
+    // translations) is retired: rechecking it can never find anything.
+    if (parsed.urls.length >= 20 && parsed.urls.every((u) => this.isDeadEnd(u.url) || isListingUrl(u.url))) {
+      q("UPDATE frontier SET status = 'skipped', error = 'Lists only learned dead ends (translations, empty sections)' WHERE url = ?").run(row.url);
+      return null; // retired: the caller must not requeue it
+    }
     let n = 0;
     tx(() => {
       for (const sm of parsed.sitemaps) {
@@ -971,16 +980,19 @@ export class Spider extends EventEmitter {
     // long Crawl-delay).
     const ready = q("SELECT COUNT(*) AS n, COUNT(DISTINCT host) AS hosts FROM frontier WHERE status = 'queued' AND kind = 'article' AND next_at <= ?").get(now);
     if (ready.n >= 200 && ready.hosts >= 2 * this.cfg.concurrency) return 0;
-    // The best candidates: sitemaps of the most productive sites that don't
-    // refuse the crawler. News sitemaps only list the last two days, so they
-    // have nothing older to give.
-    const productivity = new Map(q('SELECT site, COUNT(*) AS n FROM docs WHERE fetched_at > ? GROUP BY site').all(now - 30 * 86400e3).map((r) => [r.site, r.n]));
+    // The best candidates: sitemaps whose own entries were indexed most in the
+    // last 30 days (a site's translation-only sitemaps produce nothing), on
+    // sites that don't refuse the crawler. News sitemaps only list the last
+    // two days, so they have nothing older to give.
+    // Counted in dated articles: product and directory pages are undated.
+    const productivity = new Map(q(`SELECT c.via AS url, COUNT(*) AS n FROM crawl_log c JOIN frontier f ON f.url = c.via JOIN docs d ON d.url = c.url
+      WHERE c.at > ? AND c.outcome = 'indexed' AND f.kind = 'sitemap' AND d.published_at IS NOT NULL GROUP BY c.via`).all(now - 30 * 86400e3).map((r) => [r.url, r.n]));
     const picks = q("SELECT url, host FROM frontier WHERE kind = 'sitemap' AND status = 'queued'").all()
       .filter((r) => {
         const host = bare(r.host);
-        return (this.trusted.has(host) || isAiHost(host)) && !/news/i.test(new URL(r.url).pathname) && !this.wasBackfilled(r.url) && !this.refuses(r.url) && !this.isDeadEnd(r.url);
+        return productivity.get(r.url) && (this.trusted.has(host) || isAiHost(host)) && !/news/i.test(new URL(r.url).pathname) && !this.wasBackfilled(r.url) && !this.refuses(r.url) && !this.isDeadEnd(r.url);
       })
-      .sort((a, b) => (productivity.get(bare(b.host)) || 0) - (productivity.get(bare(a.host)) || 0))
+      .sort((a, b) => productivity.get(b.url) - productivity.get(a.url))
       // One per site: the point is to give idle fetchers other sites to work on.
       .filter((r, i, all) => all.findIndex((x) => bare(x.host) === bare(r.host)) === i)
       .slice(0, 3);

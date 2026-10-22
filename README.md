@@ -91,7 +91,10 @@ the oldest images first.
     entries without a title are judged by their URL slug.
   - It reads the RSS/Atom and JSON Feed feeds that pages advertise, every 20
     minutes. Only site-wide and AI-topic feeds are followed, not per-post
-    comment feeds.
+    comment feeds, and a site's main feed only when the site covers AI (a
+    starting site, a known AI publisher, or 3+ pages indexed in 30 days): a
+    local paper found through one AI story gets its AI feed followed, if it has
+    one, not its whole news feed.
   - It reads [GDELT](https://www.gdeltproject.org/), which lists news articles
     from outlets worldwide every 15 minutes, free and without a key: every 30
     minutes it downloads the latest batch (about 3 MB) and queues the articles

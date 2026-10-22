@@ -31,7 +31,9 @@ export function allowedByPatterns(u, { includePatterns = [], excludePatterns = [
 
 // A feed worth following: the site's main feed, or one about AI. Skips
 // per-article comment feeds (/some-long-post-slug/feed) and off-topic sections.
-export function isUsefulFeed(feedUrl, pageUrl) {
+// With `topicOnly` (a general-news site that isn't a starting site) only an
+// AI feed will do: a local paper's main feed is almost all other news.
+export function isUsefulFeed(feedUrl, pageUrl, { topicOnly = false } = {}) {
   let u;
   try {
     u = new URL(feedUrl);
@@ -44,7 +46,7 @@ export function isUsefulFeed(feedUrl, pageUrl) {
   const content = segs.filter((s) => !/^(feed|feeds|rss|atom|index\.xml|rss\.xml|feed\.xml|atom\.xml|xml|all)$/i.test(s));
   if (content.some((s) => s.split('-').length >= 4)) return false; // a post's own feed
   if (pageUrl && feedUrl.startsWith(pageUrl.replace(/\/$/, '') + '/') && looksLikePost(pageUrl)) return false;
-  if (content.length <= 1 && !content.some((s) => s.length > 30)) return true; // site-wide: /feed, /blog/rss, /news/feed.xml
+  if (!topicOnly && content.length <= 1 && !content.some((s) => s.length > 30)) return true; // site-wide: /feed, /blog/rss, /news/feed.xml
   return isAiSlug(content.join('/'));
 }
 

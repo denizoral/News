@@ -209,8 +209,17 @@ export class Spider extends EventEmitter {
     const hubs = [...this.cfg.hubs, ...this.autoHubs().map((a) => a.url)];
     tx(() => {
       // Feeds queued under older rules that the current rules wouldn't follow.
-      for (const r of q("SELECT url FROM frontier WHERE kind = 'feed' AND status = 'queued'").all()) {
+      for (const r of q("SELECT url, host, idle_streak FROM frontier WHERE kind = 'feed' AND status = 'queued'").all()) {
         if (!isUsefulFeed(r.url)) q("UPDATE frontier SET status = 'skipped', error = 'Not a site-wide or AI feed' WHERE url = ?").run(r.url);
+        // A general-news site's main feed that keeps finding nothing (a local
+        // paper found through one AI story).
+        else if (r.idle_streak >= 3 && !this.coversAi(bare(r.host)) && !isUsefulFeed(r.url, null, { topicOnly: true })) {
+          q("UPDATE frontier SET status = 'skipped', error = 'Main feed of a general-news site, idle' WHERE url = ?").run(r.url);
+        }
+      }
+      // Ones retired by the first version of that rule from sites that do cover AI.
+      for (const r of q("SELECT url, host FROM frontier WHERE status = 'skipped' AND error = 'Main feed of a general-news site, idle'").all()) {
+        if (this.coversAi(bare(r.host))) q("UPDATE frontier SET status = 'queued', error = NULL WHERE url = ?").run(r.url);
       }
       for (const r of q("SELECT url FROM frontier WHERE kind = 'sitemap' AND status = 'queued'").all()) {
         if (!isWantedSitemap(r.url, { languages: this.cfg.languages })) q("UPDATE frontier SET status = 'skipped', error = 'Archive or other-language sitemap' WHERE url = ?").run(r.url);
@@ -945,6 +954,14 @@ export class Spider extends EventEmitter {
     return n;
   }
 
+  // A site whose main feed is worth following: a starting site, a known AI
+  // publisher, or one with 3+ pages indexed in the last 30 days (governance.ai
+  // posts rarely but only about AI; a local paper found through one story doesn't).
+  coversAi(host) {
+    if (this.trusted.has(host) || isAiHost(host)) return true;
+    return q('SELECT COUNT(*) AS n FROM docs WHERE site = ? AND fetched_at > ?').get(host, Date.now() - 30 * 86400e3).n >= 3;
+  }
+
   // A starting site that advertises no feed often still has one at a usual
   // address. Tried once per site: the guesses stay in the frontier afterwards.
   guessFeeds(row, page, h) {
@@ -971,8 +988,9 @@ export class Spider extends EventEmitter {
     const host = bare(hostOf(page.url));
     if (!this.trusted.has(host) && !isAiHost(host) && !this.isRelevantText(`${page.title} ${page.description}`)) return 0;
     const have = q("SELECT COUNT(*) AS n FROM frontier WHERE kind = 'feed' AND (host = ? OR host = ?)").get(host, `www.${host}`).n;
+    const topicOnly = !this.coversAi(host);
     let n = 0;
-    for (const f of page.feeds.filter((x) => isUsefulFeed(x, page.url)).slice(0, Math.max(0, this.cfg.feedsPerSite - have))) {
+    for (const f of page.feeds.filter((x) => isUsefulFeed(x, page.url, { topicOnly })).slice(0, Math.max(0, this.cfg.feedsPerSite - have))) {
       if (this.enqueue(f, { kind: 'feed', priority: 8.5, depth: 0, via: row.url })) n++;
     }
     return n;

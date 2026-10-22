@@ -78,7 +78,7 @@ test('feeds queue their recent, relevant entries', () => {
 
 test('feed discovery is capped per site', () => {
   settings.update({ 'crawler.feedsPerSite': 2 }, { role: 'owner', actor: 't' });
-  const page = { url: 'https://many.example/ai', title: 'AI news', description: 'Latest on large language models', feeds: ['https://many.example/a.xml', 'https://many.example/b.xml', 'https://many.example/c.xml'] };
+  const page = { url: 'https://many.example/ai', title: 'AI news', description: 'Latest on large language models', feeds: ['https://many.example/ai/a.xml', 'https://many.example/ai/b.xml', 'https://many.example/ai/c.xml'] };
   assert.equal(spider.discoverFeeds(row('https://many.example/ai'), page), 2);
   assert.equal(spider.discoverFeeds(row('https://many.example/ai'), page), 0, 'already at the cap');
   settings.update({ 'crawler.feedsPerSite': 3 }, { role: 'owner', actor: 't' });
@@ -725,4 +725,22 @@ test('stories refused before their feed copy was used are backfilled from it', (
   q('DELETE FROM docs WHERE url = ?').run(u);
   assert.equal(spider.backfillFromFeeds() >= 1, true);
   assert.ok(q('SELECT 1 FROM docs WHERE url = ?').get(u));
+});
+
+test('on general-news sites only AI feeds are followed', async () => {
+  const { isUsefulFeed } = await import('../src/spider/policy.js');
+  assert.equal(isUsefulFeed('https://localpaper.example/feed', null, { topicOnly: true }), false);
+  assert.equal(isUsefulFeed('https://localpaper.example/technology/artificial-intelligence/feed', null, { topicOnly: true }), true);
+  assert.equal(isUsefulFeed('https://localpaper.example/feed'), true, 'starting sites still get their main feed');
+  const page = { url: 'https://localpaper.example/2026/10/22/city-tests-ai-traffic-lights', title: 'City tests AI traffic lights', description: '', feeds: ['https://localpaper.example/feed', 'https://localpaper.example/tech/ai/feed'] };
+  spider.discoverFeeds(row(page.url), page);
+  assert.equal(frontier('https://localpaper.example/feed'), undefined);
+  assert.ok(frontier('https://localpaper.example/tech/ai/feed'));
+});
+
+test('sites that keep producing AI articles keep their main feed', () => {
+  for (let i = 0; i < 3; i++) upsertDoc({ url: `https://aifocus.example/post-${i}`, type: 'article', title: `AI policy ${i}`, site: 'aifocus.example', fetched_at: Date.now(), body: 'AI governance. '.repeat(50) });
+  const page = { url: 'https://aifocus.example/post-9', title: 'AI governance research', description: '', feeds: ['https://aifocus.example/feed'] };
+  spider.discoverFeeds(row(page.url), page);
+  assert.ok(frontier('https://aifocus.example/feed'));
 });

@@ -208,7 +208,7 @@ export function nameMatcher(nodes) {
 // The scan behind a window, kept in the worker for the detail calls.
 const scans = new Map(); // days -> { at, scan }
 
-function scanWindow(db, days, now) {
+export function scanWindow(db, days, now) {
   const hit = scans.get(days);
   if (hit && now - hit.at < TTL_MS) return hit.scan;
   const since = now - days * DAY;

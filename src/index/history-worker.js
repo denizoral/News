@@ -1,4 +1,4 @@
-// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, any-day pages, outlets, quotes, storylines, predictions, catch-up, the entity graph, X accounts, For you) off the main thread
+// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, any-day pages, outlets, quotes, storylines, predictions, catch-up, the news map, head to head, the entity graph, X accounts, For you) off the main thread
 // with its own read-only connection (see offload.js).
 
 import { parentPort, workerData } from 'node:worker_threads';
@@ -22,6 +22,8 @@ import { computePerson, computeQuotes, quoteIndex } from './quotes.js';
 import { computeStorylines, storyDays } from './storylines.js';
 import { computeForecasts, forecastIndex } from './forecasts.js';
 import { computeCatchup } from './catchup.js';
+import { computeNewsMap } from './newsmap.js';
+import { computeVersus } from './versus.js';
 
 const db = new DatabaseSync(workerData.file, { readOnly: true });
 db.exec('PRAGMA busy_timeout = 5000; PRAGMA cache_size = -32000;');
@@ -57,6 +59,8 @@ const JOBS = {
   },
   storyDays: () => storyDays(db),
   storylines: ({ chapters }) => computeStorylines(vectorIndex(db), { chapters }),
+  newsmap: ({ days }) => computeNewsMap(db, { days }),
+  versus: ({ a, b, days }) => computeVersus(db, { a, b, days }),
   forecasts: ({ theme, year, who }) => computeForecasts(forecastIndex(db), { theme, year, who }),
   catchup: ({ since }) => computeCatchup(db, { since }),
 };

@@ -27,6 +27,8 @@ import { personKey, personQuery, quotesQuery } from './index/quotes.js';
 import { storylineById, storylineList, storylineOf, storylinesData } from './index/storylines.js';
 import { forecastsQuery, THEMES as FORECAST_THEMES } from './index/forecasts.js';
 import { catchupQuery, windowOf, withLive } from './index/catchup.js';
+import { MAP_WINDOWS, newsMapQuery } from './index/newsmap.js';
+import { VERSUS_WINDOWS, versusQuery } from './index/versus.js';
 import { statusHistory, startVitals, noteRequest } from './status.js';
 import { storyPage } from './index/storypage.js';
 import { emergingThemes } from './index/emerging.js';
@@ -511,6 +513,26 @@ export function createApp({ store, spider }) {
       return Promise.all([catchupQuery(since), readyMoves(store), lines])
         .then(([d, moves, storylines]) => json(req, res, 200, withLive(d, { breaking: breakingHistory({ days: 7 }), moves, releases: store.releases || [], storylines }), { 'cache-control': 'public, max-age=120' }))
         .catch((err) => json(req, res, 503, { error: `Catch-up is unavailable: ${err.message}` }));
+    }
+    // Stories laid out by meaning for the last 1, 3 or 7 days.
+    if (p === '/api/map') {
+      if (limited(req, res)) return;
+      const days = Number(url.searchParams.get('days')) || 3;
+      if (!MAP_WINDOWS.includes(days)) return json(req, res, 400, { error: `days must be one of ${MAP_WINDOWS.join(', ')}.` });
+      return newsMapQuery(days)
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=600' }))
+        .catch((err) => json(req, res, 503, { error: `The map is unavailable: ${err.message}` }));
+    }
+    // Two names from the graph side by side.
+    if (p === '/api/versus') {
+      if (limited(req, res)) return;
+      const days = Number(url.searchParams.get('days')) || 30;
+      if (!VERSUS_WINDOWS.includes(days)) return json(req, res, 400, { error: `days must be one of ${VERSUS_WINDOWS.join(', ')}.` });
+      const key = (k, d) => (url.searchParams.get(k) || d).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 60);
+      const [a, b] = [key('a', 'openai'), key('b', 'anthropic')];
+      return versusQuery({ a, b, days })
+        .then((d) => json(req, res, d.missing ? 404 : 200, d.missing ? { error: a === b ? 'Pick two different names.' : 'One of those names isn’t in this window.', ...d } : d, { 'cache-control': 'public, max-age=600' }))
+        .catch((err) => json(req, res, 503, { error: `Head to head is unavailable: ${err.message}` }));
     }
     if (p === '/api/outlets') {
       if (limited(req, res)) return;

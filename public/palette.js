@@ -23,6 +23,8 @@ const PAGES = [
   ['Storylines', '#storylines', 'Stories that keep coming back, day after day'],
   ['Predictions', '#predictions', 'What people and companies say will happen, and by when'],
   ['Catch up', '#catchup', 'Everything since your last visit'],
+  ['News map', '#map', 'Every story laid out by meaning'],
+  ['Head to head', '#vs', 'Two labs, people or products side by side'],
   ['Who said what', '#quotes', 'Who is being quoted about AI, and the lines every outlet carried'],
   ['Any day', '#day', 'The front page of any day in the last year'],
   ['Outlets', '#outlets', 'Who covers AI and what each outlet covers most'],

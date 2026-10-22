@@ -15,6 +15,8 @@ import { createQuotes } from './quotes.js';
 import { createStorylines } from './storylines.js';
 import { createPredictions } from './predictions.js';
 import { createCatchup } from './catchup.js';
+import { createNewsMap } from './newsmap.js';
+import { createVersus } from './versus.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -185,6 +187,8 @@ let quotesUi = null;
 let storylinesUi = null;
 let predictionsUi = null;
 let catchupUi = null;
+let mapUi = null;
+let versusUi = null;
 
 // ---------- Data ----------
 
@@ -1407,7 +1411,7 @@ function graphPanel(g, sel) {
     return `<section class="g-detail"><p class="kicker">Together</p><h2>${name(d.a)} <span class="g-x">×</span> ${name(d.b)}</h2>
       <p class="g-sum"><b>${d.n}</b> articles in ${days} days mention both${e ? `, ${e.lift}× more often than chance` : ''}.</p>
       ${graphBars(d.series, d.since)}${gHeadlines(d.items)}
-      <p class="g-also"><a href="#graph/${esc(d.a.key)}">All of ${esc(d.a.label)}</a> · <a href="#graph/${esc(d.b.key)}">All of ${esc(d.b.label)}</a></p></section>`;
+      <p class="g-also"><a href="#graph/${esc(d.a.key)}">All of ${esc(d.a.label)}</a> · <a href="#graph/${esc(d.b.key)}">All of ${esc(d.b.label)}</a> · <a href="#vs?a=${esc(d.a.key)}&amp;b=${esc(d.b.key)}${days !== 30 ? `&amp;days=${days}` : ''}">Head to head →</a></p></section>`;
   }
   const nd = byKey.get(d.a.key);
   const change = nd?.prev != null && nd.prev >= 3 ? Math.round((nd.n / nd.prev - 1) * 100) : null;
@@ -2071,6 +2075,8 @@ function render() {
   if (state.view === 'storylines') storylinesUi.render();
   if (state.view === 'predictions') predictionsUi.render();
   if (state.view === 'catchup') catchupUi.render();
+  if (state.view === 'map') mapUi.render();
+  if (state.view === 'versus') versusUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2086,7 +2092,7 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash);
+  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash) || mapUi.route(location.hash) || versusUi.route(location.hash);
   if (acct) {
     const was = state.view;
     state.view = acct;
@@ -2229,6 +2235,15 @@ $('#predictionsView').addEventListener('pointerleave', (e) => predictionsUi.hove
 $('#predictionsView').addEventListener('click', (e) => predictionsUi.onClick(e));
 $('#catchupView').addEventListener('pointermove', (e) => catchupUi.hover(e));
 $('#catchupView').addEventListener('pointerleave', (e) => catchupUi.hover(e), true);
+for (const t of ['pointermove', 'pointerdown', 'pointerup', 'pointercancel']) $('#mapView').addEventListener(t, (e) => mapUi.onPointer(e));
+$('#mapView').addEventListener('pointerleave', (e) => mapUi.onPointer(e), true);
+$('#mapView').addEventListener('wheel', (e) => mapUi.onWheel(e), { passive: false });
+$('#mapView').addEventListener('click', (e) => mapUi.onClick(e));
+$('#mapView').addEventListener('keydown', (e) => mapUi.onKey(e));
+$('#mapView').addEventListener('input', (e) => mapUi.onInput(e));
+$('#versusView').addEventListener('pointermove', (e) => versusUi.hover(e));
+$('#versusView').addEventListener('pointerleave', (e) => versusUi.hover(e), true);
+$('#versusView').addEventListener('change', (e) => versusUi.onChange(e));
 $('#storylinesView').addEventListener('pointerleave', (e) => storylinesUi.hover(e), true);
 $('#askView').addEventListener('pointerover', (e) => askUi.hover(e));
 $('#askView').addEventListener('focusin', (e) => askUi.hover(e));
@@ -2351,6 +2366,8 @@ quotesUi = createQuotes({ $, esc, setHtml, state, reducedMotion });
 storylinesUi = createStorylines({ $, esc, setHtml, state, reducedMotion });
 predictionsUi = createPredictions({ $, esc, setHtml, state, reducedMotion });
 catchupUi = createCatchup({ $, esc, setHtml, state, reducedMotion, store });
+mapUi = createNewsMap({ $, esc, setHtml, state, reducedMotion });
+versusUi = createVersus({ $, esc, setHtml, state, reducedMotion });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -4,8 +4,8 @@
 // Everything is network-first, so a deploy is live on the next load; the
 // cache only answers when the network can't.
 
-const CACHE = 'fw-v2';
-const SHELL = ['./', 'index.html', 'app.js', 'search.js', 'breaking.js', 'palette.js', 'foryou.js', 'accounts.js', 'styles.css', 'favicon.svg', 'manifest.webmanifest'];
+const CACHE = 'fw-v3';
+const SHELL = ['./', 'index.html', 'app.js', 'search.js', 'breaking.js', 'palette.js', 'foryou.js', 'accounts.js', 'models.js', 'styles.css', 'favicon.svg', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

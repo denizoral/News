@@ -11,6 +11,7 @@ const PAGES = [
   ['This week', '#week', 'The weekly digest'],
   ['Connections', '#graph', 'Who is in the news together'],
   ['Releases', '#releases', 'Recent models'],
+  ['Compare models', '#models', 'Price, context, coverage and reported scores side by side'],
   ['Built with AI', '#builds', 'Projects people shipped'],
   ['Markets', '#markets', 'Polymarket odds on AI'],
   ['Breaking', '#breaking', 'Stories breaking now, and alerts'],
@@ -244,6 +245,7 @@ export function createPalette({ $, $$, esc, time, setHtml, store, state, reduced
     saved: '.sv-list > li > div > a',
     foryou: '.fy-list > li h3 a',
     accounts: '.ac-list > li .ac-name',
+    models: '.md-table tbody th a',
     breaking: '.bk-card h2 a, .bk-list > li > div > a',
     week: '.wk-top li a',
   };

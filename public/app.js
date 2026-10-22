@@ -3,6 +3,7 @@ import { createBreaking } from './breaking.js';
 import { createPalette } from './palette.js';
 import { createForYou } from './foryou.js';
 import { createAccounts } from './accounts.js';
+import { createModels } from './models.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -161,6 +162,7 @@ let breakingUi = null;
 let paletteUi = null;
 let foryouUi = null;
 let accountsUi = null;
+let modelsUi = null;
 
 // ---------- Data ----------
 
@@ -2014,7 +2016,7 @@ function render() {
   applySite(state.data?.site);
   if ((state.view === 'builds' && state.sections?.builds === false) || (state.view === 'markets' && state.sections?.markets === false)) state.view = 'news';
   for (const v of $$('.view')) v.hidden = v.dataset.view !== state.view;
-  const tab = state.view === 'accounts' || state.view === 'account' ? 'x' : state.view;
+  const tab = state.view === 'accounts' || state.view === 'account' ? 'x' : state.view === 'models' ? 'releases' : state.view;
   $$('.tabs a').forEach((a) => (a.dataset.view === tab ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   if (!state.data) return;
   if (state.view === 'news') renderNews();
@@ -2033,6 +2035,7 @@ function render() {
   if (state.view === 'foryou') foryouUi.renderPage();
   if (state.view === 'accounts') accountsUi.renderDirectory();
   if (state.view === 'account') accountsUi.renderAccount();
+  if (state.view === 'models') modelsUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2048,7 +2051,7 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  const acct = accountsUi.route(location.hash);
+  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash);
   if (acct) {
     const was = state.view;
     state.view = acct;
@@ -2100,7 +2103,7 @@ function route() {
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button, a');
   if (!t) return;
-  if (breakingUi.onClick(t) || paletteUi.onClick(t) || foryouUi.onClick(t) || accountsUi.onClick(t)) return;
+  if (breakingUi.onClick(t) || paletteUi.onClick(t) || foryouUi.onClick(t) || accountsUi.onClick(t) || (state.view === 'models' && modelsUi.onClick(t))) return;
   const d = t.dataset;
   if (d.xopen) { state.xHandle = d.xopen; if (location.hash === '#x') loadX({ animate: true }); return; }
   if (d.entity) {
@@ -2160,6 +2163,8 @@ document.addEventListener('click', (e) => {
 $('#graphView').addEventListener('pointerover', graphHover);
 $('#accountView').addEventListener('pointermove', (e) => accountsUi.hover(e));
 $('#accountView').addEventListener('pointerleave', (e) => accountsUi.hover(e), true);
+$('#modelsView').addEventListener('pointermove', (e) => modelsUi.hover(e));
+$('#modelsView').addEventListener('pointerleave', (e) => modelsUi.hover(e), true);
 document.addEventListener('change', (e) => accountsUi.onChange(e.target));
 $('#breakingView').addEventListener('pointermove', (e) => breakingUi.hover(e));
 $('#breakingView').addEventListener('pointerleave', (e) => breakingUi.hover(e), true);
@@ -2265,6 +2270,7 @@ foryouUi = createForYou({
   savedSids: () => (store.get('fw.saved', []) || []).map((x) => x?.sid).filter(Boolean),
 });
 accountsUi = createAccounts({ $, esc, time, setHtml, store, state, reducedMotion, followBtn: (...a) => foryouUi.btn(...a) });
+modelsUi = createModels({ $, esc, setHtml, store, state, reducedMotion, logo: releaseLogo });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

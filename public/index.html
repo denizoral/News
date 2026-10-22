@@ -159,7 +159,7 @@
     <!-- Releases -->
     <section class="view" data-view="releases" aria-label="Recent AI releases" hidden>
       <div class="view-head">
-        <h1>Recent AI releases</h1>
+        <div class="head-row"><h1>Recent AI releases</h1><nav class="md-switch" aria-label="Releases"><a href="#releases" aria-current="page">List</a><a href="#models">Compare</a></nav></div>
         <p>Models launched in the last 90 days. API models as they appear on OpenRouter, open weights as they land on Hugging Face.</p>
       </div>
       <div class="filters" role="group" aria-label="Filter releases">
@@ -217,6 +217,9 @@
     </section>
     <section class="view" data-view="account" aria-label="X account" hidden>
       <div id="accountView"></div>
+    </section>
+    <section class="view" data-view="models" aria-label="Compare models" hidden>
+      <div id="modelsView"></div>
     </section>
     <!-- Reading list -->
     <section class="view" data-view="saved" aria-label="Saved stories" hidden>

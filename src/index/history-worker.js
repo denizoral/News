@@ -1,4 +1,4 @@
-// Runs history queries (topic pages, the weekly digest, release coverage, vector search, market moves, the entity graph, X accounts, For you) off the main thread
+// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, vector search, market moves, the entity graph, X accounts, For you) off the main thread
 // with its own read-only connection (see offload.js).
 
 import { parentPort, workerData } from 'node:worker_threads';
@@ -9,6 +9,7 @@ import { similarDocs, vectorIndex } from './semantic.js';
 import { computeAccount, computeAccounts, compareAccounts } from './accounts.js';
 import { tasteScores } from './foryou.js';
 import { computeReleaseCoverage } from './releases.js';
+import { computeModels } from './models.js';
 import { computeEmerging } from './emerging.js';
 import { computeMoves } from './moves.js';
 import { computeGraph, graphDetail } from './graph.js';
@@ -21,6 +22,7 @@ const JOBS = {
   digest: () => computeDigest(db),
   similar: (job) => similarDocs(db, job),
   releases: ({ releases }) => computeReleaseCoverage(db, releases),
+  models: ({ releases }) => computeModels(db, releases),
   emerging: ({ stories }) => computeEmerging(db, stories),
   moves: ({ markets, vectors }) => computeMoves(db, markets, vectors),
   graph: ({ days }) => computeGraph(db, { days }),

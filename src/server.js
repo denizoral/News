@@ -17,6 +17,7 @@ import { marketHistory, backfillMarket, movers } from './pipeline/odds.js';
 import { topicHistory, topicKeys, warmTopics } from './index/topics.js';
 import { weeklyDigest, digestRss } from './index/digest.js';
 import { releasesCoverage, coverageCounts } from './index/releases.js';
+import { modelsTable } from './index/models.js';
 import { storyPage } from './index/storypage.js';
 import { emergingThemes } from './index/emerging.js';
 import { marketMoves, explainedMoves, readyMoves } from './index/moves.js';
@@ -339,6 +340,14 @@ export function createApp({ store, spider }) {
         .then((all) => json(req, res, 200, p === '/api/release' ? { id, ...(all[id] || { n: 0, outlets: 0, first: null, items: [], series: [] }) } : coverageCounts(all), { 'cache-control': 'public, max-age=300' }))
         .catch((err) => json(req, res, 503, { error: `Release coverage is unavailable: ${err.message}` }));
     }
+    // Model comparison: every release with price, context, size, coverage and
+    // reported benchmark scores.
+    if (p === '/api/models') {
+      if (limited(req, res)) return;
+      return modelsTable(store.releases || [])
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=300' }))
+        .catch((err) => json(req, res, 503, { error: `Model comparison is unavailable: ${err.message}` }));
+    }
     if (p === '/api/digest' || p === '/digest.xml') {
       if (limited(req, res)) return;
       return weeklyDigest()
@@ -499,6 +508,7 @@ function main() {
     startEmbedder(); // independent of the first crawl (Reddit alone takes minutes)
     keepVectorsWarm();
     releasesCoverage(store.releases || []).catch(() => {}); // from the saved list; refreshed when it changes
+    setTimeout(() => modelsTable(store.releases || []).catch(() => {}), 20e3).unref();
     setTimeout(() => marketMoves(store).catch(() => {}), 30e3).unref();
     setTimeout(() => entityGraph(30).catch(() => {}), 45e3).unref();
     setTimeout(() => accountsDirectory().catch(() => {}), 60e3).unref();

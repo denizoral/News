@@ -7,6 +7,7 @@ import { computeTopic } from './topics.js';
 import { computeDigest } from './digest.js';
 import { similarDocs } from './semantic.js';
 import { computeReleaseCoverage } from './releases.js';
+import { computeEmerging } from './emerging.js';
 
 const db = new DatabaseSync(workerData.file, { readOnly: true });
 db.exec('PRAGMA busy_timeout = 5000; PRAGMA cache_size = -32000;');
@@ -16,6 +17,7 @@ const JOBS = {
   digest: () => computeDigest(db),
   similar: (job) => similarDocs(db, job),
   releases: ({ releases }) => computeReleaseCoverage(db, releases),
+  emerging: ({ stories }) => computeEmerging(db, stories),
 };
 
 parentPort.on('message', ({ id, job }) => {

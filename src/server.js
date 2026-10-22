@@ -18,6 +18,7 @@ import { topicHistory, topicKeys, warmTopics } from './index/topics.js';
 import { weeklyDigest, digestRss } from './index/digest.js';
 import { releasesCoverage, coverageCounts } from './index/releases.js';
 import { storyPage } from './index/storypage.js';
+import { emergingThemes } from './index/emerging.js';
 import { semanticSearch, relatedTo, keepVectorsWarm } from './index/semantic.js';
 import { startEmbedder } from './index/vectors.js';
 import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
@@ -250,6 +251,18 @@ export function createApp({ store, spider }) {
       return topicHistory(key)
         .then((data) => json(req, res, 200, data, { 'cache-control': 'public, max-age=300' }))
         .catch((err) => json(req, res, 503, { error: `Topic history is unavailable: ${err.message}` }));
+    }
+    if (p === '/api/emerging') {
+      if (limited(req, res)) return;
+      const id = url.searchParams.get('id');
+      return emergingThemes(store)
+        .then((d) => {
+          if (!id) return json(req, res, 200, { ...d, themes: d.themes.map(({ stories, ...t }) => ({ ...t, stories: stories.slice(0, 3) })) }, { 'cache-control': 'public, max-age=120' });
+          // A theme is keyed by its lead story; it may have regrouped since.
+          const t = d.themes.find((x) => x.id === id) || d.themes.find((x) => x.stories.some((s) => s.sid === id));
+          return t ? json(req, res, 200, { ...t, generatedAt: d.generatedAt, window: d.window }, { 'cache-control': 'public, max-age=120' }) : json(req, res, 404, { error: 'That theme is no longer rising.' });
+        })
+        .catch((err) => json(req, res, 503, { error: `Emerging themes are unavailable: ${err.message}` }));
     }
     if (p === '/api/story') {
       if (limited(req, res)) return;

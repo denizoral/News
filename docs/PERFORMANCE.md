@@ -5,6 +5,40 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-22 (10:49 run)
+
+**Spider: 304s were crashes.** Since conditional GET (22cea59), `get()`
+hands back 304 responses instead of throwing them. The spider then streamed
+the missing body: "Cannot read properties of null (reading
+Symbol.asyncIterator)".
+- **Scale:** 3,210 such errors in six hours (about 530 an hour, the biggest
+  error class by far). Each counted towards resting the site.
+- **Fix:** 304s now log as `not-modified` and keep the site healthy, and
+  `readBody` treats a missing body as empty. Zero of these errors since the
+  restart.
+
+**Trends (`computeTrends`, ~203k docs, 5.2 GB database).**
+
+| Query (range) | Before | After |
+| --- | ---: | ---: |
+| openai, anthropic, google deepmind (1 year), cold | 36.2 s | 0.47 s |
+| gemini, llama, mistral, qwen (1 year), cold | — | 0.74 s |
+| agents, "reasoning model" (2 years), cold | 25.4 s | 0.87 s |
+| nvidia (90 days), cold | 19.0 s | 0.39 s |
+| same as first, warm | 1.1 s | 0.30 s |
+
+- **What was slow:** counting matches per day needs only each document's
+  date, but the FTS join read the full rows, bodies included, from a 5 GB
+  table.
+- **Fix:** `docs_when (id, published_at, first_seen, hidden, type)` covers the
+  join, and `docs_at` (on the date expression) covers the per-day totals.
+  Peak headlines rank ids through the narrow index and read only the few
+  rows kept.
+- **Over HTTP:** 1.7 s for the first request after a restart, 13 ms cached.
+
+**Status page.** `/api/health?hours=24` takes 86 ms (`docs_seen` index for
+arrivals per hour). API timing costs one `performance.now()` per request.
+
 ## 2026-10-22 (08:49 run)
 
 **Search sorted by date (`search()`, live index of ~203k docs, one process,

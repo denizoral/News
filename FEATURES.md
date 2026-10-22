@@ -2,6 +2,66 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-22 · Trends (#trends)
+
+**Backend.**
+- **`src/index/trends.js`:** for one to four terms (words or "phrases"),
+  how many stored stories mention each per day (30 or 90 days) or per week
+  (1 or 2 years), divided by everything stored in that bucket. That gives
+  mentions per 1,000 stories, so a line only rises when the share does, not
+  when we crawl more. Markets and hidden documents don't count.
+- **Peaks:** the three highest buckets per term, at least four apart and with
+  three mentions or more. Each comes with the best-matching headline, in
+  English first, since the archive also holds machine-translated copies.
+- **Change:** the last four complete buckets against the four before.
+- **Cost:** runs in the history worker, cached 15 minutes. Two narrow date
+  indexes keep it off the 5 GB table: a cold one-year comparison of three
+  labs went from 36 s to 0.5 s (see PERFORMANCE.md).
+- **`GET /api/trends?q=a,b&range=1y`** and
+  **`GET /api/trends/moment?q=&from=&to=`**: the best stories for one term in
+  one period, one per headline.
+
+**UI.** `#trends?q=…&r=…`, reached from the footer, the ⌘K palette, a "How
+often it comes up →" link on search results and a link on every topic page.
+- **Input:** a comma-separated box, removable chips per term in the series
+  colour, and 30 days / 90 days / 1 year / 2 years. Presets when empty.
+- **Summary cards:** total mentions, change and peak date per term.
+- **Line chart:** up to four validated colours with a legend and direct labels
+  at the line ends. Lines draw in one after another. Hover shows a crosshair
+  and every term's value.
+- **Peaks and moments:** numbered peak markers pop in after the lines and
+  are listed with their headlines. Clicking a marker, a listed peak or any
+  point opens what each term's coverage said that day or week.
+- **Table:** every bucket as a table, behind "Show as a table".
+
+## 2026-10-22 · Status (#status)
+
+**Backend.**
+- **`src/status.js`:** a row per aggregator source run (`source_runs`).
+- **Vitals:** every five minutes (`vitals`), the event-loop delay at the 99th
+  percentile, memory, API response time at the 95th percentile, the
+  embedding and labeler queues, and X accounts cached. Both tables keep 30
+  days.
+- **`GET /api/health?hours=24|48|168`:** per source, hourly runs, failures,
+  median time and items added; uptime; p50/p95; the last error.
+- **More in the same call:** documents arriving per hour, spider fetches per
+  hour by outcome, the vitals, and when each tracked X account last posted.
+  It takes about 85 ms and is cached for a minute.
+- **History:** a week of past runs was backfilled from the journal.
+
+**UI.** `#status`, linked from the footer and the palette.
+- **Headline:** "Everything is working", or which sources are failing or
+  flaky, with a status icon and a word, never colour alone.
+- **Tiles:** sources working, documents arriving, API p95 and X accounts
+  posting.
+- **Uptime strips:** one cell per hour per source (all ok, some failed, all
+  failed, no runs), with a tooltip per hour, median time, last run and the
+  last error behind a click.
+- **Charts:** documents per hour and spider fetches per hour by outcome
+  (stacked, validated palette, bars grow in), plus four vitals line charts
+  with a crosshair.
+- **X accounts:** quietest first, flagged after three days without a post.
+
 ## 2026-10-22 · Compare models (#models)
 
 **Backend.**

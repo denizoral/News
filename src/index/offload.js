@@ -14,7 +14,7 @@ const waiting = new Map(); // job id -> { resolve, reject, lane }
 // own and never queues behind a multi-second topic or digest job. Jobs that
 // read the vectors (accounts, For you) share that lane and its one copy.
 const workers = new Map();
-const VECTOR_JOBS = new Set(['similar', 'account', 'accounts', 'compare', 'taste']);
+const VECTOR_JOBS = new Set(['similar', 'askPassages', 'account', 'accounts', 'compare', 'taste']);
 const laneOf = (job) => (VECTOR_JOBS.has(job.kind) ? 'vectors' : 'history');
 
 function getWorker(lane) {

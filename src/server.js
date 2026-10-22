@@ -19,6 +19,8 @@ import { weeklyDigest, digestRss } from './index/digest.js';
 import { releasesCoverage, coverageCounts } from './index/releases.js';
 import { modelsTable } from './index/models.js';
 import { trendsQuery, trendMomentQuery, parseTerms } from './index/trends.js';
+import { ask } from './index/ask.js';
+import { dealsQuery, companyDealsQuery, RANGES as DEAL_RANGES } from './index/deals.js';
 import { statusHistory, startVitals, noteRequest } from './status.js';
 import { storyPage } from './index/storypage.js';
 import { emergingThemes } from './index/emerging.js';
@@ -414,6 +416,32 @@ export function createApp({ store, spider }) {
       return trendMomentQuery(url.searchParams.get('q'), from, to)
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
         .catch((err) => json(req, res, 503, { error: err.message }));
+    }
+    // Ask the Wire: an answer made of sentences from stored coverage, with sources.
+    if (p === '/api/ask') {
+      if (limited(req, res)) return;
+      const question = (url.searchParams.get('q') || '').trim();
+      if (question.length < 3 || question.length > 200) return json(req, res, 400, { error: 'Ask a question of 3 to 200 characters in q.' });
+      return ask(question)
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=900' }))
+        .catch((err) => json(req, res, 503, { error: `Answers are unavailable: ${err.message}` }));
+    }
+    // Deals: funding rounds, valuations and acquisitions read from headlines.
+    if (p === '/api/deals') {
+      if (limited(req, res)) return;
+      const range = url.searchParams.get('range') || '1y';
+      if (!DEAL_RANGES[range]) return json(req, res, 400, { error: `range must be one of ${Object.keys(DEAL_RANGES).join(', ')}.` });
+      return dealsQuery(range)
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=600' }))
+        .catch((err) => json(req, res, 503, { error: `Deals are unavailable: ${err.message}` }));
+    }
+    if (p === '/api/deals/company') {
+      if (limited(req, res)) return;
+      const key = (url.searchParams.get('key') || '').toLowerCase();
+      if (!/^[\p{L}\p{N}-]{1,60}$/u.test(key)) return json(req, res, 400, { error: 'Give a company key, e.g. key=anthropic.' });
+      return companyDealsQuery(key)
+        .then((d) => (d ? json(req, res, 200, d, { 'cache-control': 'public, max-age=600' }) : json(req, res, 404, { error: 'No deals on record for that company.' })))
+        .catch((err) => json(req, res, 503, { error: `Deals are unavailable: ${err.message}` }));
     }
     // Status page: source runs, arrivals, spider outcomes, vitals and X accounts per hour.
     if (p === '/api/health') {

@@ -1,4 +1,4 @@
-// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, vector search, market moves, the entity graph, X accounts, For you) off the main thread
+// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, the entity graph, X accounts, For you) off the main thread
 // with its own read-only connection (see offload.js).
 
 import { parentPort, workerData } from 'node:worker_threads';
@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { computeTopic } from './topics.js';
 import { computeDigest } from './digest.js';
 import { similarDocs, vectorIndex } from './semantic.js';
+import { askPassages } from './ask.js';
 import { computeAccount, computeAccounts, compareAccounts } from './accounts.js';
 import { tasteScores } from './foryou.js';
 import { computeReleaseCoverage } from './releases.js';
@@ -14,6 +15,7 @@ import { computeEmerging } from './emerging.js';
 import { computeMoves } from './moves.js';
 import { computeGraph, graphDetail } from './graph.js';
 import { computeTrends, trendMoment } from './trends.js';
+import { computeDeals, companyDeals } from './deals.js';
 
 const db = new DatabaseSync(workerData.file, { readOnly: true });
 db.exec('PRAGMA busy_timeout = 5000; PRAGMA cache_size = -32000;');
@@ -34,6 +36,9 @@ const JOBS = {
   taste: (job) => tasteScores(db, job),
   trends: ({ q, range }) => computeTrends(db, { q, range }),
   trendMoment: (job) => trendMoment(db, job),
+  askPassages: (job) => askPassages(db, { ...job, similar: (o) => similarDocs(db, o) }),
+  deals: ({ range }) => computeDeals(db, { range }),
+  companyDeals: ({ key }) => companyDeals(db, { key }),
 };
 
 parentPort.on('message', ({ id, job }) => {

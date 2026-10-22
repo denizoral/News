@@ -5,6 +5,29 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-22 (14:49 run)
+
+**Outlet profiles.** For `WHERE site = ? AND type = 'article' AND hidden = 0
+AND published_at >= ?`, SQLite chose `docs_type_pub`, reading a year of every
+outlet's articles. With `+type`/`+published_at` it switched to
+`docs_moderation (hidden=?)`, a full-table walk. Only with `+hidden` too does it
+use `docs_site`:
+
+| Profile (three queries) | Before | After |
+|---|---:|---:|
+| theverge.com | 1.47 s (24 s under start-up load) | 86 ms |
+| techcrunch.com | 1.49 s (9.4 s under load) | 59 ms |
+| unite.ai (56k articles) | 1.54 s | 0.75 s |
+
+**New endpoints** (cold, then cached, gzipped):
+
+| Endpoint | Cold | Cached | Size |
+|---|---:|---:|---:|
+| /api/days | 0.36 s | – | 1.8 KB |
+| /api/day (busy day, Oct 21) | 0.86 s | 53 ms | 17.6 KB |
+| /api/day (May 4) | 0.21 s | – | 3.9 KB |
+| /api/outlets | 0.99 s (0.4 s scan) | – | 5.8 KB |
+
 ## 2026-10-22 (12:49 run)
 
 **Deals.** The first version filtered by `d.published_at BETWEEN …`. On two

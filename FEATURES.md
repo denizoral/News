@@ -2,6 +2,67 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-22 · Any day (#day)
+
+**Backend.** `src/index/day.js` rebuilds the front page of any past day from
+the archive.
+- **Stories:** the day's English AI articles and posts (spidered pages as well
+  as feed items, since older days have few feed items) are clustered with the
+  front page's `clusterItems` and ranked by distinct sources, then outlets,
+  then engagement. Each story leads with its most central headline (the one
+  sharing the most words with the others), so a marketing blog's rewrite
+  doesn't stand in for the story.
+- **Around them:** the most-liked X posts; deals announced that day (the
+  Deals parser); companies and themes whose share of articles is ≥1.5× their
+  share in the four weeks before; releases that day; and the markets whose
+  odds moved most within the day (odds history starts Oct 14, 2026).
+- **`GET /api/day?d=YYYY-MM-DD`** and **`GET /api/days`** (items per day over
+  371 days for the calendar). A past day is cached for 6 hours, today for 10
+  minutes. Days take 0.2–0.9 s cold and ~50 ms cached.
+
+**UI.** `#day` (yesterday) and `#day/<date>`:
+- A year calendar: one square per day, shaded in five quantile steps of one
+  hue (so a year of crawl growth doesn't wash out early months), with a
+  legend, month and weekday labels and a hover tooltip. Every square is a
+  link. On phones it scrolls sideways inside its card, opening on the latest
+  weeks.
+- Previous/next day links, a date picker, and ← / → keys.
+- The day: four tiles, a numbered front page (lead image when the lead has
+  one, summaries on the top three, topic chips, "N more reports"
+  disclosure), and a side column with "Far more than usual" lift bars, deals,
+  releases, markets that moved (from → to, points) and most-liked X posts.
+- **Motion:** calendar squares pop in column by column; a new day slides in
+  from the side you moved toward; bars grow. Off under reduced motion.
+- **Reach it:** footer, ⌘K ("Any day", or type a date like "March 10"), and
+  every day in This week links to its page.
+
+## 2026-10-22 · Outlets (#outlets, #outlet/<site>)
+
+**Backend.** `src/index/outlets.js` profiles every outlet with 20 or more AI
+articles in 90 days (116 today). One scan of the window (~60k rows, ~0.4 s)
+feeds the directory and every profile and is kept for 30 minutes.
+- **Beat:** the companies and themes an outlet names more than all outlets do
+  (share against all-outlet share, ≥1.25×).
+- **Similar beat:** cosine of the outlets' residual mixes (share minus the
+  all-outlet share, chi-scaled), so outlets aren't "alike" just for both
+  covering OpenAI. The Verge → Engadget, CNET; Tom's Hardware → TechPowerUp,
+  StorageReview.
+- **Also:** a year of weekly volume, AI articles by hour (left out for feeds
+  that only give dates) and weekday, median length, top writers, the most
+  covered names and the latest headlines. Repos, model cards, papers and
+  social sites aren't outlets.
+- **`GET /api/outlets`** and **`GET /api/outlet?site=`** (404 below the bar).
+
+**UI.**
+- `#outlets`: a directory with a 13-week sparkline, articles per week, share
+  about AI and beat chips per outlet, a live filter (by name or beat: "Nvidia"
+  finds the chip press) and three sorts.
+- `#outlet/<site>`: tiles, the beat as bars with an all-outlets tick on each,
+  weekly volume and hour-of-day bar charts with hover tooltips, weekday bars,
+  most-covered grid, similar outlets, writers (each a site search) and latest
+  headlines. Follow puts the outlet into For you.
+- **Motion:** rows rise in staggered and bars grow. Off under reduced motion.
+
 ## 2026-10-22 · Ask the Wire (#ask)
 
 **Backend.** `src/index/ask.js` answers a question with up to five sentences

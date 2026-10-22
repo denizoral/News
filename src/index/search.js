@@ -116,8 +116,8 @@ function shape(r, now) {
   };
 }
 
-// Snippets are the costly part of a query (~300 ms for 400 candidates), so in
-// relevance mode they're built only for the page actually returned.
+// Snippets are the costly part of a query (~300 ms for 400 candidates), so
+// they're built only for the page actually returned.
 const SNIPPETS = `snippet(docs_fts, 2, char(2), char(3), '…', 28) AS snip_body,
         snippet(docs_fts, 1, char(2), char(3), '…', 28) AS snip_desc`;
 
@@ -145,13 +145,17 @@ export function search(input, opts = {}) {
       .all(expr, ...ff.args);
     const type = p.type || TYPE_ALIASES[opts.type];
     const total = facets.filter((x) => !type || x.type === type).reduce((a, b) => a + b.n, 0);
-    const order = sort === 'date' ? 'COALESCE(d.published_at, d.first_seen) DESC' : 'rank';
-    const limit = sort === 'date' ? perPage : 400;
-    const offset = sort === 'date' ? (page - 1) * perPage : 0;
-    const rows = q(`${SELECT}, bm25(docs_fts, 10.0, 4.0, 1.0, 2.0, 2.0) AS rank,
-        ${sort === 'date' ? SNIPPETS : 'NULL AS snip_body, NULL AS snip_desc'}
+    if (sort === 'date') {
+      // The page first, by date alone; columns, inlinks and snippets only for
+      // its rows (scoring every match first took ~1 s on common words).
+      const rows = q(`${SELECT}, 0 AS rank FROM docs d LEFT JOIN inlinks i ON i.url = d.url
+        WHERE d.id IN (SELECT d.id FROM docs_fts JOIN docs d ON d.id = docs_fts.rowid WHERE ${where} ORDER BY COALESCE(d.published_at, d.first_seen) DESC LIMIT ? OFFSET ?)
+        ORDER BY COALESCE(d.published_at, d.first_seen) DESC`).all(...args, perPage, (page - 1) * perPage);
+      return { rows, total, facets };
+    }
+    const rows = q(`${SELECT}, bm25(docs_fts, 10.0, 4.0, 1.0, 2.0, 2.0) AS rank, NULL AS snip_body, NULL AS snip_desc
       FROM docs_fts JOIN docs d ON d.id = docs_fts.rowid LEFT JOIN inlinks i ON i.url = d.url
-      WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`).all(...args, limit, offset);
+      WHERE ${where} ORDER BY rank LIMIT 400`).all(...args);
     return { rows, total, facets };
   };
 
@@ -188,13 +192,14 @@ export function search(input, opts = {}) {
       return true;
     });
     results = results.slice((page - 1) * perPage, page * perPage);
-    if (results.length) {
-      const ids = results.map((r) => r.id);
-      const snips = new Map(q(`SELECT rowid AS id, ${SNIPPETS} FROM docs_fts WHERE docs_fts MATCH ? AND rowid IN (${ids.map(() => '?').join(',')})`)
-        .all(match, ...ids).map((x) => [x.id, x]));
-      const raw = new Map(res.rows.map((r) => [r.id, r]));
-      results = results.map((r) => ({ ...r, snippet: shape({ ...raw.get(r.id), ...snips.get(r.id) }, now).snippet }));
-    }
+  }
+  // Snippets only for the page returned.
+  if (results.length) {
+    const ids = results.map((r) => r.id);
+    const snips = new Map(q(`SELECT rowid AS id, ${SNIPPETS} FROM docs_fts WHERE docs_fts MATCH ? AND rowid IN (${ids.map(() => '?').join(',')})`)
+      .all(match, ...ids).map((x) => [x.id, x]));
+    const raw = new Map(res.rows.map((r) => [r.id, r]));
+    results = results.map((r) => ({ ...r, snippet: shape({ ...raw.get(r.id), ...snips.get(r.id) }, now).snippet }));
   }
 
   return {

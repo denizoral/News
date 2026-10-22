@@ -146,7 +146,7 @@ export function computeVersus(db, { a, b, days = 30, now = Date.now() }) {
     const d = companyDeals(db, { key: companyKey(n.label), now });
     if (!d) return null;
     const v = d.valuations[d.valuations.length - 1];
-    return { raised: d.raised, valuation: v?.valuation || null, valuedAt: v?.at || null, recent: d.deals.slice(-3).reverse().map(({ title, url, at, amount, kind, round, talks }) => ({ title, url, at, amount, kind, round, talks })) };
+    return { raised: d.raised, valuation: v?.valuation || null, valuedAt: v?.at || null, recent: d.deals.slice(-3).reverse().map(({ first, at, amount, valuation, kind, round, talks, outlets }) => ({ title: first?.title, url: first?.url, at, amount, valuation, kind, round, talks, outlets })) };
   };
 
   const seenWith = (docs, self, other) => {

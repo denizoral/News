@@ -3,16 +3,18 @@
 // window the way the front page is) is the mean embedding of its items;
 // t-SNE squeezes those 384 dimensions into two, starting from the first two
 // principal components so the same data always gives the same picture.
-// Regions are groups of stories close in embedding space (the same greedy
-// grouping emerging themes use, looser), named by the phrase their headlines
-// share, placed at the median of their stories, and marked growing when
-// their last quarter of the window holds more than its share of stories.
+// Regions are patches of the map itself: Ward clustering of the 2-D layout
+// into a dozen or so compact groups (t-SNE keeps neighbours together, so a
+// patch is about one thing, and it's a patch you can see and fly into).
+// Each is named by the phrase its headlines share, placed at the median of
+// its stories, and marked growing when its last quarter of the window holds
+// more than the map's share of stories.
 //
 // ~600 stories take ~1 s in the history worker, cached.
 
 import { clusterItems } from '../pipeline/cluster.js';
 import { centralHeadline, dayItems, outletsOf } from './day.js';
-import { groupVectors, themeName } from './emerging.js';
+import { themeName } from './emerging.js';
 import { cachedJob } from './offload.js';
 
 const DIM = 384;
@@ -154,6 +156,56 @@ export function normalise(pts) {
   return pts.map(([x, y]) => [+clamp(0.5 + (x - cx) / span).toFixed(3), +clamp(0.5 + (y - cy) / span).toFixed(3)]);
 }
 
+// Ward's agglomerative clustering of 2-D points down to k clusters
+// (Lance-Williams updates on squared distances). Returns a label per point.
+export function ward(pts, k) {
+  const n = pts.length;
+  if (n <= k) return pts.map((_, i) => i);
+  const D = new Float64Array(n * n);
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    const d = (pts[i][0] - pts[j][0]) ** 2 + (pts[i][1] - pts[j][1]) ** 2;
+    D[i * n + j] = D[j * n + i] = d;
+  }
+  const size = new Array(n).fill(1);
+  const alive = new Uint8Array(n).fill(1);
+  const parent = pts.map((_, i) => i);
+  // Each live cluster's nearest neighbour, refreshed only when it changes.
+  const nn = new Int32Array(n);
+  const nd = new Float64Array(n);
+  const refresh = (i) => {
+    let b = -1;
+    let bd = Infinity;
+    for (let j = 0; j < n; j++) if (j !== i && alive[j] && D[i * n + j] < bd) [b, bd] = [j, D[i * n + j]];
+    nn[i] = b;
+    nd[i] = bd;
+  };
+  for (let i = 0; i < n; i++) refresh(i);
+  for (let left = n; left > k; left--) {
+    let a = -1;
+    for (let i = 0; i < n; i++) if (alive[i] && (a < 0 || nd[i] < nd[a])) a = i;
+    const b = nn[a];
+    for (let j = 0; j < n; j++) {
+      if (!alive[j] || j === a || j === b) continue;
+      const t = size[a] + size[b] + size[j];
+      const d = ((size[a] + size[j]) * D[a * n + j] + (size[b] + size[j]) * D[b * n + j] - size[j] * D[a * n + b]) / t;
+      D[a * n + j] = D[j * n + a] = d;
+    }
+    size[a] += size[b];
+    alive[b] = 0;
+    parent[b] = a;
+    for (let i = 0; i < n; i++) if (alive[i] && (i === a || nn[i] === a || nn[i] === b)) refresh(i);
+    // Distances to a only fell for some; anyone now closer to a takes it.
+    for (let j = 0; j < n; j++) if (alive[j] && j !== a && D[a * n + j] < nd[j]) [nn[j], nd[j]] = [a, D[a * n + j]];
+  }
+  const root = (i) => { while (parent[i] !== i) i = parent[i]; return i; };
+  const ids = new Map();
+  return pts.map((_, i) => {
+    const r = root(i);
+    if (!ids.has(r)) ids.set(r, ids.size);
+    return ids.get(r);
+  });
+}
+
 function meanVector(bufs) {
   const acc = new Float32Array(DIM);
   for (const v of bufs) {
@@ -172,7 +224,7 @@ const median = (a) => {
   return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
 };
 
-export function computeNewsMap(db, { days = 3, now = Date.now(), maxPoints = MAX_POINTS[days] || 500 } = {}) {
+export function computeNewsMap(db, { days = 3, now = Date.now(), maxPoints = MAX_POINTS[days] || 500, layout = {} } = {}) {
   const since = now - days * DAY;
   const items = dayItems(db, since, now + 5 * 60e3);
   const vecOf = db.prepare('SELECT v FROM doc_vecs WHERE doc_id = ?');
@@ -204,18 +256,21 @@ export function computeNewsMap(db, { days = 3, now = Date.now(), maxPoints = MAX
       items: group.length,
     });
   }
-  const pts = normalise(tsne(stories.map((s) => s.v)));
+  const pts = normalise(tsne(stories.map((s) => s.v), layout));
   // Regions: looser groups than emerging themes, biggest stories first.
   const allTitles = stories.map((s) => s.title);
   const late = now - (days * DAY) / 4;
   const lateShare = Math.max(0.02, stories.filter((s) => s.at >= late).length / Math.max(1, stories.length));
-  const groups = groupVectors(stories.map((s, i) => ({ v: s.v, i })), { join: 0.7 })
-    .filter((g) => g.members.length >= Math.max(4, Math.round(stories.length / 80)))
-    .sort((a, b) => b.members.length - a.members.length)
-    .slice(0, 16);
+  const labels = ward(pts, Math.min(16, Math.max(2, Math.round(stories.length / 36))));
+  const byLabel = new Map();
+  labels.forEach((l, i) => byLabel.set(l, [...(byLabel.get(l) || []), i]));
+  // Biggest stories first within each region; small leftovers stay unnamed.
+  const groups = [...byLabel.values()]
+    .map((idx) => idx.sort((a, b) => stories[b].outlets - stories[a].outlets))
+    .filter((idx) => idx.length >= Math.max(4, Math.round(stories.length / 80)))
+    .sort((a, b) => b.length - a.length);
   const region = new Array(stories.length).fill(-1);
-  const regions = groups.map((g, r) => {
-    const idx = g.members.map((m) => m.i);
+  const regions = groups.map((idx, r) => {
     for (const i of idx) region[i] = r;
     const recent = idx.filter((i) => stories[i].at >= late).length;
     const name = themeName(idx.map((i) => stories[i].title), allTitles);

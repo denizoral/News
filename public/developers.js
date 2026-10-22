@@ -121,7 +121,8 @@ export function createDevelopers({ $, esc, time, setHtml, store, state, reducedM
       .replace('{sid}', encodeURIComponent(story?.sid || ''))
       .replace('{id}', encodeURIComponent(story?.id || ''))
       .replace('{release}', encodeURIComponent(sn.releases?.[0]?.id || ''))
-      .replace('{market}', encodeURIComponent(sn.markets?.[0]?.id || ''));
+      .replace('{market}', encodeURIComponent(sn.markets?.[0]?.id || ''))
+      .replace('{yesterday}', new Date(Date.now() - 86400e3).toISOString().slice(0, 10));
   }
 
   // Pretty JSON with token classes; long arrays and strings are cut.

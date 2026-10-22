@@ -21,6 +21,8 @@ import { modelsTable } from './index/models.js';
 import { trendsQuery, trendMomentQuery, parseTerms } from './index/trends.js';
 import { ask } from './index/ask.js';
 import { dealsQuery, companyDealsQuery, RANGES as DEAL_RANGES } from './index/deals.js';
+import { dayQuery, calendarQuery, withMarkets, withReleases, isDay, dayOf } from './index/day.js';
+import { outletsQuery, outletQuery, siteKey } from './index/outlets.js';
 import { statusHistory, startVitals, noteRequest } from './status.js';
 import { storyPage } from './index/storypage.js';
 import { emergingThemes } from './index/emerging.js';
@@ -442,6 +444,35 @@ export function createApp({ store, spider }) {
       return companyDealsQuery(key)
         .then((d) => (d ? json(req, res, 200, d, { 'cache-control': 'public, max-age=600' }) : json(req, res, 404, { error: 'No deals on record for that company.' })))
         .catch((err) => json(req, res, 503, { error: `Deals are unavailable: ${err.message}` }));
+    }
+    // Any day rebuilt from the archive, and the calendar of days.
+    if (p === '/api/days') {
+      if (limited(req, res)) return;
+      return calendarQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=600' }))
+        .catch((err) => json(req, res, 503, { error: `The calendar is unavailable: ${err.message}` }));
+    }
+    if (p === '/api/day') {
+      if (limited(req, res)) return;
+      const day = url.searchParams.get('d') || '';
+      if (!isDay(day) || day > dayOf(Date.now()) || day < '2000-01-01') return json(req, res, 400, { error: 'Give a past day as d=YYYY-MM-DD (UTC).' });
+      return dayQuery(day)
+        .then((d) => json(req, res, 200, withReleases(withMarkets(d, store.markets || []), store.releases || []), { 'cache-control': `public, max-age=${d.partial ? 300 : 3600}` }))
+        .catch((err) => json(req, res, 503, { error: `That day is unavailable: ${err.message}` }));
+    }
+    if (p === '/api/outlets') {
+      if (limited(req, res)) return;
+      return outletsQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=900' }))
+        .catch((err) => json(req, res, 503, { error: `Outlets are unavailable: ${err.message}` }));
+    }
+    if (p === '/api/outlet') {
+      if (limited(req, res)) return;
+      const site = siteKey(url.searchParams.get('site'));
+      if (!/^[a-z0-9.-]{3,80}$/.test(site)) return json(req, res, 400, { error: 'Give a site as site=example.com.' });
+      return outletQuery(site)
+        .then((d) => (d ? json(req, res, 200, d, { 'cache-control': 'public, max-age=900' }) : json(req, res, 404, { error: 'No profile for that site: it needs 20 AI articles in the last 90 days.' })))
+        .catch((err) => json(req, res, 503, { error: `Outlets are unavailable: ${err.message}` }));
     }
     // Status page: source runs, arrivals, spider outcomes, vitals and X accounts per hour.
     if (p === '/api/health') {

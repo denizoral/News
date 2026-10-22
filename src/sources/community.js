@@ -3,6 +3,7 @@ import { SUBREDDITS, BLUESKY_ACCOUNTS } from '../config.js';
 import { clip, stripHtml, decodeEntities } from '../pipeline/text.js';
 import { isAiRelated, looksLikeBuild } from '../pipeline/classify.js';
 import { parseFeed } from './rss.js';
+import { q } from '../db.js';
 
 // Hacker News via Algolia: recent AI stories with any traction, plus front page.
 export async function fetchHackerNews() {
@@ -89,12 +90,41 @@ let redditJsonBlockedUntil = 0;
 // Reddit reports its quota on every response (x-ratelimit-remaining, -reset in
 // seconds). Firing the next request while it reads 0 is what earned the 429s,
 // so anonymous requests go one at a time and wait out the reset when spent.
+// The wait is saved, so a restart (deploys, the maintenance loop) doesn't
+// spend a request Reddit already refused: every restart used to open with a
+// 429 and a two-minute cooldown.
 let redditNextAt = 0;
+let redditLoaded = false;
+const REDDIT_KV = 'reddit.nextAt';
+function saveRedditWait() {
+  try {
+    q('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v').run(REDDIT_KV, String(redditNextAt));
+  } catch {}
+}
+export function loadRedditWait() {
+  redditLoaded = true;
+  try {
+    redditNextAt = Math.max(redditNextAt, Number(q('SELECT v FROM kv WHERE k = ?').get(REDDIT_KV)?.v) || 0);
+  } catch {}
+  return redditNextAt;
+}
 export async function redditGet(url, opts = {}) {
+  if (!redditLoaded) loadRedditWait();
   const wait = redditNextAt - Date.now();
   if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 65e3)));
-  const res = await get(url, opts);
+  let res;
+  try {
+    res = await get(url, opts);
+  } catch (err) {
+    if (err.status === 429) {
+      redditNextAt = Date.now() + Math.min(err.retryAfterSec ?? 120, 900) * 1000;
+      saveRedditWait();
+    }
+    throw err;
+  }
+  const before = redditNextAt;
   noteRedditQuota(res.headers);
+  if (redditNextAt !== before) saveRedditWait();
   return res;
 }
 export function noteRedditQuota(headers, now = Date.now()) {

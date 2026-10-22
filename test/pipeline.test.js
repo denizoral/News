@@ -181,3 +181,11 @@ test('releases merge across OpenRouter and Hugging Face lab names', async () => 
   assert.equal(out[0].id, 'or:z-ai/glm-5.3-flash', 'the API listing wins');
   assert.equal(out[0].date, 1000);
 });
+
+test('Reddit quota wait survives a restart', async () => {
+  const { resetDb, q } = await import('../src/db.js');
+  resetDb();
+  q("INSERT INTO kv (k, v) VALUES ('reddit.nextAt', ?)").run(String(Date.now() + 60e3));
+  const { loadRedditWait } = await import('../src/sources/community.js');
+  assert.ok(loadRedditWait() > Date.now() + 50e3);
+});

@@ -20,6 +20,7 @@ import { releasesCoverage, coverageCounts } from './index/releases.js';
 import { storyPage } from './index/storypage.js';
 import { emergingThemes } from './index/emerging.js';
 import { marketMoves, explainedMoves, readyMoves } from './index/moves.js';
+import { entityGraph, entityDetail, WINDOWS } from './index/graph.js';
 import { semanticSearch, relatedTo, keepVectorsWarm } from './index/semantic.js';
 import { startEmbedder } from './index/vectors.js';
 import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
@@ -273,6 +274,18 @@ export function createApp({ store, spider }) {
         .then((d) => json(req, res, 200, id ? { ...d, moves: d.moves.filter((m) => m.market === id) } : { ...d, moves: explainedMoves(d).slice(0, 24) }, { 'cache-control': 'public, max-age=120' }))
         .catch((err) => json(req, res, 503, { error: `Market moves are unavailable: ${err.message}` }));
     }
+    // The co-mention network for 7, 30 or 90 days, or the headlines behind
+    // one name or one link.
+    if (p === '/api/graph' || p === '/api/graph/detail') {
+      if (limited(req, res)) return;
+      const days = Number(url.searchParams.get('days')) || 30;
+      if (!WINDOWS.includes(days)) return json(req, res, 400, { error: `days must be one of ${WINDOWS.join(', ')}.` });
+      const key = (k) => (url.searchParams.get(k) || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 60);
+      if (p === '/api/graph/detail' && !key('a')) return json(req, res, 400, { error: 'Name a node with ?a=.' });
+      return (p === '/api/graph' ? entityGraph(days) : entityDetail(days, key('a'), key('b') || null))
+        .then((d) => (d ? json(req, res, 200, d, { 'cache-control': 'public, max-age=300' }) : json(req, res, 404, { error: 'No such name in this window.' })))
+        .catch((err) => json(req, res, 503, { error: `The graph is unavailable: ${err.message}` }));
+    }
     if (p === '/api/story') {
       if (limited(req, res)) return;
       const id = (url.searchParams.get('id') || '').slice(0, 2000);
@@ -400,6 +413,7 @@ function main() {
     keepVectorsWarm();
     releasesCoverage(store.releases || []).catch(() => {}); // from the saved list; refreshed when it changes
     setTimeout(() => marketMoves(store).catch(() => {}), 30e3).unref();
+    setTimeout(() => entityGraph(30).catch(() => {}), 45e3).unref();
     crawlAll(store)
       .then(() => {
         store.save();

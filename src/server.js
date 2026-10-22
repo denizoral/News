@@ -42,6 +42,8 @@ import { breakingHistory } from './pipeline/breaking.js';
 import { subscribe, unsubscribe, pushBreaking, alertStatus, subscriberCount } from './pipeline/alerts.js';
 import { vapidKeys } from './pipeline/webpush.js';
 import { buildIndex, jumpSearch, savedStatus } from './index/jump.js';
+import { accountsDirectory, accountProfile, accountCompare } from './index/accounts.js';
+import { forYou, parseFollows, followSuggestions } from './index/foryou.js';
 
 const PROD = process.env.NODE_ENV === 'production';
 const PUBLIC = path.resolve('public');
@@ -203,11 +205,11 @@ export function createApp({ store, spider }) {
   let jump = { key: null, index: [] };
   const soon = (p, ms = 250) => Promise.race([p.catch(() => null), new Promise((r) => setTimeout(r, ms, null).unref())]);
   async function jumpIndex() {
-    const [graph, em] = await Promise.all([soon(entityGraph(30)), soon(emergingThemes(store))]);
-    const key = `${store.snapshot.version}|${graph?.generatedAt || 0}|${em?.generatedAt || 0}`;
+    const [graph, em, ac] = await Promise.all([soon(entityGraph(30)), soon(emergingThemes(store)), soon(accountsDirectory())]);
+    const key = `${store.snapshot.version}|${graph?.generatedAt || 0}|${em?.generatedAt || 0}|${ac?.generatedAt || 0}`;
     if (jump.key !== key) {
       const sn = store.snapshot;
-      jump = { key, index: buildIndex({ stories: sn.stories, releases: sn.releases, markets: store.markets, posts: sn.social, graph, themes: em?.themes || [], breaking: sn.breaking }) };
+      jump = { key, index: buildIndex({ stories: sn.stories, releases: sn.releases, markets: store.markets, posts: sn.social, accounts: ac?.accounts || [], graph, themes: em?.themes || [], breaking: sn.breaking }) };
     }
     return jump.index;
   }
@@ -367,6 +369,36 @@ export function createApp({ store, spider }) {
       const sids = [...new Set((url.searchParams.get('ids') || '').split(',').filter((x) => /^[\w-]{6,16}$/.test(x)))].slice(0, 100);
       return json(req, res, 200, { stories: savedStatus(store, sids) }, { 'cache-control': 'no-cache' });
     }
+    // X accounts: the directory, one account, or two side by side.
+    if (p === '/api/accounts') {
+      if (limited(req, res)) return;
+      return accountsDirectory()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=120' }))
+        .catch((err) => json(req, res, 503, { error: `Accounts are unavailable: ${err.message}` }));
+    }
+    if (p === '/api/account') {
+      if (limited(req, res)) return;
+      const h = url.searchParams.get('handle') || '';
+      const vs = url.searchParams.get('vs') || '';
+      if (!/^\w{1,15}$/.test(h) || (vs && !/^\w{1,15}$/.test(vs))) return json(req, res, 400, { error: 'Name an X handle with ?handle=.' });
+      return (vs ? accountCompare(h, vs) : accountProfile(h))
+        .then((d) => (d ? json(req, res, 200, d, { 'cache-control': 'public, max-age=120' }) : json(req, res, 404, { error: 'No posts from that account in the last 30 days.' })))
+        .catch((err) => json(req, res, 503, { error: `The account is unavailable: ${err.message}` }));
+    }
+    // For you: the live feed ranked for follows sent in the query string.
+    if (p === '/api/foryou') {
+      if (limited(req, res)) return;
+      if (url.search.length > 6000) return json(req, res, 414, { error: 'Too many follows.' });
+      return soon(entityGraph(30))
+        .then((graph) => forYou(store, parseFollows(url.searchParams), { graph }))
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'private, max-age=30' }))
+        .catch((err) => json(req, res, 503, { error: `For you is unavailable: ${err.message}` }));
+    }
+    if (p === '/api/follow/suggest') {
+      if (limited(req, res)) return;
+      return Promise.all([soon(entityGraph(30)), soon(accountsDirectory(), 1500)])
+        .then(([graph, accounts]) => json(req, res, 200, followSuggestions(store, { graph, accounts }), { 'cache-control': 'public, max-age=120' }));
+    }
     if (p === '/api/push/key') return json(req, res, 200, { publicKey: vapidKeys().publicKey }, { 'cache-control': 'public, max-age=3600' });
     if (p === '/api/spider') return json(req, res, 200, spider.status(), { 'cache-control': 'public, max-age=10' });
     if (p === '/api/status') return json(req, res, 200, { ...store.status(), alerts: { ...alertStatus }, version: store.snapshot.version, generatedAt: store.snapshot.generatedAt });
@@ -469,6 +501,7 @@ function main() {
     releasesCoverage(store.releases || []).catch(() => {}); // from the saved list; refreshed when it changes
     setTimeout(() => marketMoves(store).catch(() => {}), 30e3).unref();
     setTimeout(() => entityGraph(30).catch(() => {}), 45e3).unref();
+    setTimeout(() => accountsDirectory().catch(() => {}), 60e3).unref();
     subscriberCount();
     store.on('breaking', (started) => pushBreaking(started, store.breaking).catch((err) => console.warn('[alerts]', err.message)));
     crawlAll(store)

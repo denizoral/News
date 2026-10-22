@@ -19,19 +19,21 @@ const money = (v = 0) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1).replace(/\.0$/, ''
 // Kind priors: a topic page or a name is usually what a short query means.
 const PRIOR = { topic: 3, name: 2.6, account: 2.4, release: 2.2, theme: 2, story: 1.4, market: 1.2 };
 
-export function buildIndex({ stories = [], releases = [], markets = [], posts = [], graph = null, themes = [], breaking = [] } = {}) {
+export function buildIndex({ stories = [], releases = [], markets = [], posts = [], accounts: known = [], graph = null, themes = [], breaking = [] } = {}) {
   const out = [];
   const add = (e) => out.push({ ...e, w: words(`${e.label} ${e.also || ''}`) });
   for (const key of topicKeys()) add({ type: 'topic', label: topicLabel(key), href: `#topic/${key}`, sub: 'Topic page: its share of coverage', size: 0 });
   for (const n of graph?.nodes || []) add({ type: 'name', label: n.label, href: `#graph/${n.key}`, sub: `Connections: ${n.n} articles in ${graph.days || 30} days`, size: Math.log10(1 + n.n) });
   const accounts = new Map();
+  // Every account with an account page, and anyone else in the live posts.
+  for (const a of known) accounts.set(a.handle, { handle: a.handle, name: a.name || a.handle, avatar: a.avatar || null, n: a.posts || 0 });
   for (const p of posts) {
     if (!p.handle) continue;
     const a = accounts.get(p.handle) || { handle: p.handle, name: p.author || p.handle, avatar: p.avatar || null, n: 0 };
-    a.n++;
+    if (!known.length) a.n++;
     accounts.set(p.handle, a);
   }
-  for (const a of accounts.values()) add({ type: 'account', label: a.name, also: `@${a.handle} ${a.handle}`, handle: a.handle, href: `#x`, sub: `@${a.handle}`, avatar: a.avatar, size: Math.log10(1 + a.n) });
+  for (const a of accounts.values()) add({ type: 'account', label: a.name, also: `@${a.handle} ${a.handle}`, handle: a.handle, href: `#account/${a.handle}`, sub: `@${a.handle} · account page`, avatar: a.avatar, size: Math.log10(1 + a.n) });
   for (const r of releases) add({ type: 'release', label: r.name, also: `${r.provider || ''} ${r.org || ''}`, href: r.story?.sid ? `#story/${r.story.sid}` : r.url, external: !r.story?.sid, sub: [r.provider, r.open ? 'open weights' : null].filter(Boolean).join(' · '), date: r.date, size: r.notable ? 1 : 0 });
   for (const t of themes) add({ type: 'theme', label: [].concat(t.name || t.headline || []).join(' · '), href: `#theme/${t.id}`, sub: t.headline ? `Emerging · ${t.headline}` : 'Emerging', size: 0.5 });
   const hot = new Set(breaking.map((b) => b.sid));

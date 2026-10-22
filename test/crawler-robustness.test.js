@@ -511,3 +511,9 @@ test('a Polymarket outage keeps the last good markets', async () => {
   assert.equal(store.sourceStatus.polymarket.stale, true);
   assert.equal(store.sourceStatus.polymarket.count, 1);
 });
+
+test('a 304 (no body) reads as empty, not as a failure', async () => {
+  const { readText } = await import('../src/spider/body.js');
+  const r = await readText(new Response(null, { status: 304, headers: { etag: '"a"' } }), 1024);
+  assert.deepEqual(r, { text: '', bytes: 0, truncated: false });
+});

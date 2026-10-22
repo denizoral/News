@@ -8,6 +8,7 @@ export async function readBody(res, limit) {
   const chunks = [];
   let size = 0;
   let truncated = false;
+  if (!res.body) return { buf: Buffer.alloc(0), truncated }; // 204, 304, HEAD
   for await (const chunk of res.body) {
     if (size + chunk.length > limit) {
       chunks.push(chunk.subarray(0, limit - size));

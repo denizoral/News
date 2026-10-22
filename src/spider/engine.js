@@ -685,17 +685,13 @@ export class Spider extends EventEmitter {
     h.next_allowed_at = Date.now() + Math.max(this.cfg.hostDelayMs, robotsDelay, rule?.minDelayMs || 0);
     h.fetched_today++;
 
-    let res;
-    try {
-      res = await get(row.url, { timeout: this.cfg.timeoutMs, retries: 0, headers: this.requestHeaders(row), publicOnly: true, maxRedirects: this.cfg.maxRedirects, cooldown: false });
-    } catch (err) {
-      if (err.status === 304) {
-        this.hostOk(h);
-        if (row.kind === 'hub') this.guessFeeds(row, { feeds: [] }, h);
-        this.log(row, { outcome: 'not-modified', http: 304 });
-        return this.done(row, { httpStatus: 304, fresh: 0 });
-      }
-      throw err;
+    const res = await get(row.url, { timeout: this.cfg.timeoutMs, retries: 0, headers: this.requestHeaders(row), publicOnly: true, maxRedirects: this.cfg.maxRedirects, cooldown: false });
+    // get() hands back a 304 to a conditional request (it has no body).
+    if (res.status === 304) {
+      this.hostOk(h);
+      if (row.kind === 'hub') this.guessFeeds(row, { feeds: [] }, h);
+      this.log(row, { outcome: 'not-modified', http: 304 });
+      return this.done(row, { httpStatus: 304, fresh: 0 });
     }
     const type = res.headers.get('content-type') || '';
     const { text: body, bytes, truncated } = await readText(res, this.cfg.maxPageBytes);

@@ -29,6 +29,8 @@ import { forecastsQuery, THEMES as FORECAST_THEMES } from './index/forecasts.js'
 import { catchupQuery, windowOf, withLive } from './index/catchup.js';
 import { MAP_WINDOWS, newsMapQuery } from './index/newsmap.js';
 import { VERSUS_WINDOWS, versusQuery } from './index/versus.js';
+import { rumorsQuery } from './index/rumors.js';
+import { newNamesQuery } from './index/newnames.js';
 import { statusHistory, startVitals, noteRequest } from './status.js';
 import { storyPage } from './index/storypage.js';
 import { emergingThemes } from './index/emerging.js';
@@ -533,6 +535,20 @@ export function createApp({ store, spider }) {
       return versusQuery({ a, b, days })
         .then((d) => json(req, res, d.missing ? 404 : 200, d.missing ? { error: a === b ? 'Pick two different names.' : 'One of those names isn’t in this window.', ...d } : d, { 'cache-control': 'public, max-age=600' }))
         .catch((err) => json(req, res, 503, { error: `Head to head is unavailable: ${err.message}` }));
+    }
+    // Reported before announced: hedged claims and whether they came true.
+    if (p === '/api/rumors') {
+      if (limited(req, res)) return;
+      return rumorsQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=900' }))
+        .catch((err) => json(req, res, 503, { error: `The rumor tracker is unavailable: ${err.message}` }));
+    }
+    // Models, products and projects that entered the news in the last 60 days.
+    if (p === '/api/new-names') {
+      if (limited(req, res)) return;
+      return newNamesQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `New names are unavailable: ${err.message}` }));
     }
     if (p === '/api/outlets') {
       if (limited(req, res)) return;

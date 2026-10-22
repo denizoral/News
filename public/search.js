@@ -156,7 +156,8 @@ export function createSearch({ esc, ago, time, fav, pct, compact }) {
     if (d.loosened) notes.push('No page has every word, so these match some of them.');
     if (d.parsed?.site) notes.push(`Only results from ${esc(d.parsed.site)}.`);
     if (d.error) notes.push(esc(d.error));
-    $('#searchHead').innerHTML = `<h1>${s.q ? esc(s.q) : 'Everything in the index'}</h1><p>${count} <span class="took">(${d.tookMs} ms)</span>${notes.length ? ` ${notes.join(' ')}` : ''}</p>`;
+    const trend = s.q && s.mode !== 'meaning' && s.q.length <= 60 && !/\w+:/.test(s.q) ? ` <a class="tr-link" href="#trends?q=${encodeURIComponent(s.q.replace(/,/g, ' '))}">How often it comes up →</a>` : '';
+    $('#searchHead').innerHTML = `<h1>${s.q ? esc(s.q) : 'Everything in the index'}</h1><p>${count} <span class="took">(${d.tookMs} ms)</span>${notes.length ? ` ${notes.join(' ')}` : ''}${trend}</p>`;
     const facets = s.data.facets || {};
     const all = Object.values(facets).reduce((a, b) => a + b, 0);
     $('#searchTabs').innerHTML = TABS.filter(([k]) => s.mode !== 'meaning' || MEANING_TABS.has(k)).map(([k, label, t]) => {

@@ -5,6 +5,8 @@ import { createForYou } from './foryou.js';
 import { createAccounts } from './accounts.js';
 import { createModels } from './models.js';
 import { createDevelopers, feedBtn } from './developers.js';
+import { createTrends } from './trends.js';
+import { createStatus } from './status.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -165,6 +167,8 @@ let foryouUi = null;
 let accountsUi = null;
 let modelsUi = null;
 let devUi = null;
+let trendsUi = null;
+let statusUi = null;
 
 // ---------- Data ----------
 
@@ -1543,6 +1547,7 @@ function renderTopic() {
       <a class="back" href="#news">← News</a>
       <p class="kicker">Topic</p>
       <div class="head-row"><h1>${esc(label)}</h1>${feedBtn(`/feeds/topic/${encodeURIComponent(key)}.xml`)}${foryouUi.btn('topic', key, label)}</div>
+      <a class="tr-link" href="${trendsUi.href([label])}">Mentions since 2024 in Trends →</a>
       <p class="topic-sum">${summary}</p>
     </header>
     ${chart ? `<section class="topic-card"><h2>Share of all coverage <small>last 30 days, every stored story</small></h2>${chart}</section>` : ''}
@@ -2039,6 +2044,8 @@ function render() {
   if (state.view === 'account') accountsUi.renderAccount();
   if (state.view === 'models') modelsUi.render();
   if (state.view === 'developers') devUi.render();
+  if (state.view === 'trends') trendsUi.render();
+  if (state.view === 'status') statusUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2054,7 +2061,7 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash);
+  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash);
   if (acct) {
     const was = state.view;
     state.view = acct;
@@ -2107,6 +2114,7 @@ document.addEventListener('click', (e) => {
   const t = e.target.closest('button, a');
   if (!t) return;
   if (devUi.onClick(t, e)) return;
+  if (state.view === 'trends' && trendsUi.onClick(t, e)) return;
   if (breakingUi.onClick(t) || paletteUi.onClick(t) || foryouUi.onClick(t) || accountsUi.onClick(t) || (state.view === 'models' && modelsUi.onClick(t))) return;
   const d = t.dataset;
   if (d.xopen) { state.xHandle = d.xopen; if (location.hash === '#x') loadX({ animate: true }); return; }
@@ -2168,6 +2176,12 @@ $('#graphView').addEventListener('pointerover', graphHover);
 $('#accountView').addEventListener('pointermove', (e) => accountsUi.hover(e));
 $('#accountView').addEventListener('pointerleave', (e) => accountsUi.hover(e), true);
 $('#modelsView').addEventListener('pointermove', (e) => modelsUi.hover(e));
+$('#trendsView').addEventListener('pointermove', (e) => trendsUi.hover(e));
+$('#trendsView').addEventListener('pointerleave', (e) => trendsUi.hover(e), true);
+$('#trendsView').addEventListener('click', (e) => trendsUi.onPlotClick(e));
+$('#statusView').addEventListener('pointermove', (e) => statusUi.hover(e));
+$('#statusView').addEventListener('pointerleave', (e) => statusUi.hover(e), true);
+document.addEventListener('submit', (e) => trendsUi.onSubmit(e));
 $('#modelsView').addEventListener('pointerleave', (e) => modelsUi.hover(e), true);
 document.addEventListener('change', (e) => devUi.onChange(e.target) || accountsUi.onChange(e.target));
 $('#breakingView').addEventListener('pointermove', (e) => breakingUi.hover(e));
@@ -2206,7 +2220,7 @@ $('#q').addEventListener('input', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (paletteUi.onKey(e)) return;
+  if (paletteUi.onKey(e) || trendsUi.onKey(e)) return;
   const typing = /input|textarea/i.test(document.activeElement?.tagName);
   if (e.key === '/' && !typing) { e.preventDefault(); $('#q').focus(); return; }
   if (e.key === 'Escape' && typing && document.activeElement === $('#q')) { if (state.mode === 'static') { $('#q').value = ''; state.q = ''; render(); } $('#q').blur(); }
@@ -2276,6 +2290,8 @@ foryouUi = createForYou({
 accountsUi = createAccounts({ $, esc, time, setHtml, store, state, reducedMotion, followBtn: (...a) => foryouUi.btn(...a) });
 devUi = createDevelopers({ $, esc, time, setHtml, store, state, reducedMotion, toast: (m) => paletteUi.toast(m) });
 modelsUi = createModels({ $, esc, setHtml, store, state, reducedMotion, logo: releaseLogo });
+trendsUi = createTrends({ $, esc, setHtml, state, reducedMotion });
+statusUi = createStatus({ $, esc, setHtml, state, reducedMotion, labels: SOURCE_LABELS });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

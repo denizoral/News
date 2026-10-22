@@ -227,6 +227,26 @@ CREATE INDEX IF NOT EXISTS crawl_log_at ON crawl_log(at DESC);
 CREATE INDEX IF NOT EXISTS crawl_log_host ON crawl_log(host, at DESC);
 CREATE INDEX IF NOT EXISTS crawl_log_outcome ON crawl_log(outcome, at DESC);
 
+-- One row per aggregator source run, and process vitals every five minutes,
+-- for the status page (src/status.js). Thirty days.
+CREATE TABLE IF NOT EXISTS source_runs (
+  at INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  ok INTEGER NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  added INTEGER NOT NULL DEFAULT 0,
+  ms INTEGER NOT NULL DEFAULT 0,
+  error TEXT
+);
+CREATE INDEX IF NOT EXISTS source_runs_at ON source_runs(at);
+CREATE TABLE IF NOT EXISTS vitals (
+  key TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  v REAL NOT NULL,
+  PRIMARY KEY (key, at)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS vitals_at ON vitals(at);
+
 -- Runtime settings edited from the admin dashboard (JSON values).
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
@@ -308,6 +328,13 @@ function migrate(d) {
   d.exec('CREATE INDEX IF NOT EXISTS docs_moderated ON docs(url) WHERE hidden = 1 OR pinned = 1 OR locked = 1');
   // Recently crawled articles per site, for the spider's hub discovery (4.7 s through the hidden index).
   d.exec('CREATE INDEX IF NOT EXISTS docs_fetched ON docs(fetched_at, type, hidden, site)');
+  // Narrow copies of each doc's dates, so Trends counts matches per day without
+  // reading 5 GB of rows (a cold "openai, anthropic" year took 36 s): by id for
+  // FTS joins, by date for the per-day totals.
+  d.exec('CREATE INDEX IF NOT EXISTS docs_when ON docs(id, published_at, first_seen, hidden, type)');
+  d.exec('CREATE INDEX IF NOT EXISTS docs_at ON docs(COALESCE(published_at, first_seen), hidden, type)');
+  // What arrived per hour, for the status page.
+  d.exec('CREATE INDEX IF NOT EXISTS docs_seen ON docs(first_seen)');
   d.exec('PRAGMA foreign_keys = ON');
 }
 

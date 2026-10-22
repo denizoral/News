@@ -7,6 +7,10 @@
   <meta name="description" content="The latest AI news from labs, press, X, Reddit and Hacker News in one place, with live Polymarket odds and a feed of things people built with AI." />
   <meta name="color-scheme" content="light dark" />
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <meta name="theme-color" content="#eef1f4" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0b1626" media="(prefers-color-scheme: dark)" />
   <link rel="alternate" type="application/rss+xml" title="The week in AI" href="digest.xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -40,6 +44,9 @@
           <kbd>/</kbd>
           <ul class="suggest" id="suggest" role="listbox" aria-label="Suggestions" hidden></ul>
         </form>
+        <button class="cmd" id="cmdBtn" type="button" aria-label="Jump to anything (Ctrl K)" title="Jump to anything"><kbd>⌘K</kbd></button>
+        <a class="saved-btn" id="savedBtn" href="#saved" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h10v15l-5-3.6-5 3.6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg><span>0</span></a>
+        <a class="bell" id="bell" href="#breaking" aria-label="Breaking news and alerts" title="Breaking news and alerts"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5a5 5 0 0 0-5 5v3.2L3.5 13.5h13L15 10.7V7.5a5 5 0 0 0-5-5ZM8 15.5a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg><i aria-hidden="true"></i></a>
         <span class="live" id="live" role="status" aria-live="polite"><i></i><span>Connecting</span></span>
         <button class="theme" id="theme" type="button" aria-label="Toggle dark mode">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2a8 8 0 1 0 8 8 6 6 0 0 1-8-8Z" fill="currentColor"/></svg>
@@ -48,6 +55,7 @@
     </div>
   </header>
 
+  <div class="breaking-bar" id="breakingBar" role="region" aria-label="Breaking news" hidden></div>
   <button class="new-pill" id="newPill" type="button" hidden></button>
 
   <main id="main">
@@ -194,6 +202,14 @@
     <section class="view" data-view="theme" aria-label="Emerging theme" hidden>
       <div id="themeView"></div>
     </section>
+    <!-- Breaking -->
+    <section class="view" data-view="breaking" aria-label="Breaking" hidden>
+      <div id="breakingView"></div>
+    </section>
+    <!-- Reading list -->
+    <section class="view" data-view="saved" aria-label="Saved stories" hidden>
+      <div id="savedView"></div>
+    </section>
     <!-- Story page -->
     <section class="view" data-view="story" aria-label="Story" hidden>
       <div id="storyView"></div>
@@ -218,6 +234,33 @@
     <button type="button" class="close" data-close aria-label="Close">×</button>
     <div id="imgDialogBody"></div>
   </dialog>
+
+  <dialog class="palette" id="palette" aria-label="Jump to anything">
+    <div class="pal-box">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m13 13 4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="palInput" type="text" placeholder="Jump to a topic, name, account, release or story" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="palList" aria-autocomplete="list" />
+      <kbd>esc</kbd>
+    </div>
+    <ul class="pal-list" id="palList" role="listbox" aria-label="Results"></ul>
+    <p class="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>?</kbd> all shortcuts</span></p>
+  </dialog>
+
+  <dialog class="keys" id="keysDialog" aria-labelledby="keysTitle">
+    <button type="button" class="close" data-close aria-label="Close">×</button>
+    <h2 id="keysTitle">Keyboard shortcuts</h2>
+    <dl>
+      <dt><kbd>⌘</kbd><kbd>K</kbd> or <kbd>Ctrl</kbd><kbd>K</kbd></dt><dd>Jump to anything</dd>
+      <dt><kbd>/</kbd></dt><dd>Search everything</dd>
+      <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next and previous story in a list</dd>
+      <dt><kbd>↵</kbd></dt><dd>Open the focused story</dd>
+      <dt><kbd>s</kbd></dt><dd>Save the focused story (or this story page)</dd>
+      <dt><kbd>b</kbd></dt><dd>Breaking news and alerts</dd>
+      <dt><kbd>g</kbd></dt><dd>Back to the front page</dd>
+      <dt><kbd>?</kbd></dt><dd>This list</dd>
+    </dl>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <footer class="foot">
     <p id="footStatus"></p>

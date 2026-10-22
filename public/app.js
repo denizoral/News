@@ -1,4 +1,6 @@
 import { createSearch, spiderLine } from './search.js';
+import { createBreaking } from './breaking.js';
+import { createPalette } from './palette.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -153,6 +155,8 @@ function setHtml(el, html) {
 // ---------- Search engine ----------
 // Created after the helpers below are defined (function declarations hoist).
 let searchUi = null;
+let breakingUi = null;
+let paletteUi = null;
 
 // ---------- Data ----------
 
@@ -1845,7 +1849,7 @@ function renderStory() {
         <h1><a href="${esc(lead?.url || d?.url || live?.url)}" target="_blank" rel="noopener">${esc(title)}</a></h1>
         ${summary && summary !== title && !isUrlOnly(summary) ? `<p class="story-dek">${esc(summary)}</p>` : ''}
         <p class="topic-sum">${meta}</p>
-        <button class="chip story-share" type="button" data-share="${esc(sid)}">Copy link</button>
+        <div class="story-acts"><button class="chip story-share" type="button" data-share="${esc(sid)}">Copy link</button><button class="chip story-save" type="button" data-save="${esc(sid)}" aria-pressed="${paletteUi.isSaved(sid)}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h10v15l-5-3.6-5 3.6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>${paletteUi.isSaved(sid) ? 'Saved' : 'Save'}</button></div>
       </div>
       ${image ? `<img class="story-hero" src="${esc(image)}" alt="" loading="lazy" data-fallback="remove">` : ''}
     </header>
@@ -2019,6 +2023,9 @@ function render() {
   if (state.view === 'story') renderStory();
   if (state.view === 'theme') renderTheme();
   if (state.view === 'graph') renderGraph();
+  if (state.view === 'breaking') breakingUi.renderPage();
+  if (state.view === 'saved') paletteUi.renderSaved();
+  breakingUi.renderBanner();
   renderFoot();
   updateLive();
   animateOdds();
@@ -2062,9 +2069,9 @@ function route() {
     const go = () => { render(); window.scrollTo({ top: 0 }); };
     return state.data ? transition(go) : go();
   }
-  state.view = ['news', 'x', 'tech', 'week', 'releases', 'builds', 'markets'].includes(v) ? v : 'news';
+  state.view = ['news', 'x', 'tech', 'week', 'releases', 'builds', 'markets', 'breaking', 'saved'].includes(v) ? v : 'news';
   const name = state.data?.site?.name || 'Frontier Wire';
-  document.title = { news: name, x: `On X · ${name}`, tech: `Tech · ${name}`, week: `This week · ${name}`, releases: `AI releases · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}` }[state.view];
+  document.title = { news: name, x: `On X · ${name}`, tech: `Tech · ${name}`, week: `This week · ${name}`, releases: `AI releases · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}`, breaking: `Breaking · ${name}`, saved: `Saved · ${name}` }[state.view];
   const changed = $(`.view[data-view="${state.view}"]`)?.hidden;
   const go = () => {
     render();
@@ -2078,6 +2085,7 @@ function route() {
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button, a');
   if (!t) return;
+  if (breakingUi.onClick(t) || paletteUi.onClick(t)) return;
   const d = t.dataset;
   if (d.entity) {
     state.entity = state.entity === d.entity ? null : d.entity;
@@ -2134,6 +2142,9 @@ document.addEventListener('click', (e) => {
 });
 
 $('#graphView').addEventListener('pointerover', graphHover);
+$('#breakingView').addEventListener('pointermove', (e) => breakingUi.hover(e));
+$('#breakingView').addEventListener('pointerleave', (e) => breakingUi.hover(e), true);
+$('#keysDialog').addEventListener('click', (e) => { if (e.target.closest('[data-close]') || e.target.id === 'keysDialog') $('#keysDialog').close(); });
 $('#graphView').addEventListener('pointerleave', graphHover);
 $('#marketList').addEventListener('pointermove', chartHover);
 $('#topicView').addEventListener('pointermove', topicHover);
@@ -2167,17 +2178,10 @@ $('#q').addEventListener('input', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
+  if (paletteUi.onKey(e)) return;
   const typing = /input|textarea/i.test(document.activeElement?.tagName);
   if (e.key === '/' && !typing) { e.preventDefault(); $('#q').focus(); return; }
-  if (e.key === 'Escape' && typing) { if (state.mode === 'static') { $('#q').value = ''; state.q = ''; render(); } $('#q').blur(); return; }
-  if (typing || state.view !== 'news') return;
-  if (e.key === 'j' || e.key === 'k') {
-    const links = $$('.story h3 a, .lead h1 a');
-    const i = links.indexOf(document.activeElement);
-    const next = links[e.key === 'j' ? Math.min(links.length - 1, i + 1) : Math.max(0, i - 1)];
-    next?.focus();
-    next?.closest('.story')?.scrollIntoView({ block: 'center' });
-  }
+  if (e.key === 'Escape' && typing && document.activeElement === $('#q')) { if (state.mode === 'static') { $('#q').value = ''; state.q = ''; render(); } $('#q').blur(); }
 });
 
 // Theme: follows the system unless the reader picks one.
@@ -2218,6 +2222,27 @@ $('#searchForm').addEventListener('submit', (e) => e.preventDefault());
 
 // Boot
 searchUi = createSearch({ esc, ago, time, fav, pct, compact });
+breakingUi = createBreaking({ $, esc, ago, time, setHtml, store, state, reducedMotion });
+// The story on the open story page, as the reading list keeps it.
+const currentStory = () => {
+  const live = (state.data?.stories || []).concat(state.data?.tech || []).find((s) => s.sid === state.storyId);
+  const d = state.storyCache.get(state.storyId)?.data;
+  return { title: d?.title || live?.title || 'Story', url: d?.url || live?.url || null, source: live?.lead?.source || null, sources: live?.sources?.length || 1 };
+};
+paletteUi = createPalette({
+  $, $$, esc, time, setHtml, store, state, reducedMotion,
+  actions: {
+    search: (q) => { location.hash = `#search?q=${encodeURIComponent(q)}`; },
+    theme: () => $('#theme').click(),
+    account: (handle) => { state.xHandle = handle; if (location.hash === '#x') loadX({ animate: true }); else location.hash = '#x'; },
+    currentStory,
+    saveCurrent: () => state.storyId && paletteUi.onClick({ dataset: { save: state.storyId } }),
+    rerender: () => render(),
+  },
+});
+// Offline copy and push alerts. Browsers only allow service workers on
+// HTTPS and localhost.
+if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});
 async function updateSpiderLine() {
   if (state.mode !== 'api') return;
   $('#footSpider').textContent = await spiderLine(compact);

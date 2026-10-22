@@ -2,3 +2,10 @@ node_modules/
 data/
 .env
 public/data/
+# Android: build output, local SDK paths, Firebase config and signing keys
+android/**/build/
+android/.gradle/
+android/local.properties
+android/**/google-services.json
+*.keystore
+*.jks

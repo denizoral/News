@@ -99,7 +99,7 @@ function issueSession(res, req, user, { mfaOk }) {
   const ttl = mfaOk ? ABSOLUTE_MS : PENDING_MS;
   q('INSERT INTO admin_sessions (id_hash, user_id, csrf, mfa_ok, created_at, last_seen, expires_at, ip, ua) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(sha256(token), user.id, crypto.randomBytes(24).toString('base64url'), mfaOk ? 1 : 0, now, now, now + ttl, clientIp(req), String(req.headers['user-agent'] || '').slice(0, 300));
-  res.setHeader('Set-Cookie', serializeCookie(COOKIE, token, { maxAge: ttl / 1000, secure: SECURE_COOKIE }));
+  if (!isApp(req)) res.setHeader('Set-Cookie', serializeCookie(COOKIE, token, { maxAge: ttl / 1000, secure: SECURE_COOKIE }));
   return token;
 }
 
@@ -127,8 +127,18 @@ export function revokeSessionByPrefix(userId, prefix) {
 }
 
 // Resolve the session for a request. Returns null when there's none or it expired.
+// The admin app sends its session token as `Authorization: Bearer …`; the
+// dashboard uses the cookie. A browser never attaches a bearer token on its
+// own, so bearer requests need no CSRF token.
+export const APP_CLIENT = 'wire-admin-app';
+const isApp = (req) => req.headers['x-client'] === APP_CLIENT;
+function tokenOf(req) {
+  const m = /^Bearer\s+([A-Za-z0-9_-]{20,100})$/.exec(String(req.headers.authorization || ''));
+  return m ? { token: m[1], bearer: true } : { token: parseCookies(req)[COOKIE], bearer: false };
+}
+
 export function authenticate(req) {
-  const token = parseCookies(req)[COOKIE];
+  const { token, bearer } = tokenOf(req);
   if (!token || token.length > 100) return null;
   const idHash = sha256(token);
   const s = q('SELECT * FROM admin_sessions WHERE id_hash = ?').get(idHash);
@@ -142,7 +152,7 @@ export function authenticate(req) {
     return null;
   }
   if (now - s.last_seen > 30e3) q('UPDATE admin_sessions SET last_seen = ? WHERE id_hash = ?').run(now, idHash);
-  return { session: s, idHash, user, token };
+  return { session: s, idHash, user, token, bearer };
 }
 
 // Gate for every admin API call.
@@ -164,6 +174,10 @@ export function requireAuth(req, { permission = 'dashboard:read', stage = 'full'
 
 // Double-submit token plus Origin check. Called for every non-GET request.
 export function checkCsrf(req, a) {
+  if (a?.bearer) return;
+  // The app signing in: no Origin, and a custom header no other site can
+  // send without a CORS preflight (which this server never grants).
+  if (!a && !req.headers.origin && isApp(req) && !parseCookies(req)[COOKIE]) return;
   const origin = req.headers.origin || '';
   const allowed = allowedOrigins(req);
   if (!origin || !allowed.includes(origin)) throw new HttpError(403, 'This request came from another site and was blocked.');
@@ -227,11 +241,11 @@ async function doLogin(req, res, { username, password }) {
   userLimiter.reset(`u:${username.toLowerCase()}`);
 
   // Replace any session this browser already had (prevents session fixation).
-  destroyByToken(parseCookies(req)[COOKIE]);
+  destroyByToken(tokenOf(req).token);
   const mfaOk = !user.totp_enabled;
-  issueSession(res, req, user, { mfaOk });
+  const token = issueSession(res, req, user, { mfaOk });
   if (mfaOk) q('UPDATE admin_users SET last_login_at = ? WHERE id = ?').run(Date.now(), user.id);
-  return { user, next: user.totp_enabled ? 'mfa' : REQUIRE_2FA ? 'enroll' : user.must_change_password ? 'password' : null };
+  return { user, token: isApp(req) ? token : undefined, next: user.totp_enabled ? 'mfa' : REQUIRE_2FA ? 'enroll' : user.must_change_password ? 'password' : null };
 }
 
 export function secondFactor(req, res, { code, recoveryCode }) {
@@ -258,13 +272,13 @@ export function secondFactor(req, res, { code, recoveryCode }) {
   if (!ok) throw new HttpError(401, "That code didn't work. Codes change every 30 seconds.", { next: 'mfa', audit: { action: 'login.mfa_failed', target: user.username, userId: user.id } });
   // Upgrade to a full session with a fresh token.
   q('DELETE FROM admin_sessions WHERE id_hash = ?').run(a.idHash);
-  issueSession(res, req, user, { mfaOk: true });
+  const token = issueSession(res, req, user, { mfaOk: true });
   q('UPDATE admin_users SET last_login_at = ? WHERE id = ?').run(Date.now(), user.id);
-  return { user, method: ok };
+  return { user, method: ok, token: isApp(req) ? token : undefined };
 }
 
 export function logout(req, res) {
-  destroyByToken(parseCookies(req)[COOKIE]);
+  destroyByToken(tokenOf(req).token);
   clearCookie(res);
 }
 

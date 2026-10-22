@@ -47,6 +47,9 @@ import { universal, searchImages, suggest, getDoc } from './index/search.js';
 import { startRetention } from './index/retention.js';
 import { createAdminRouter } from './admin/routes.js';
 import { pruneSessions } from './admin/auth.js';
+import { accountRoute, isAccountPath } from './accounts/routes.js';
+import { pruneUserSessions } from './accounts/users.js';
+import { pushBreakingMobile, pushFollows, pushChangelog, pushSourceHealth, prunePushes, deviceCount } from './push/mobile.js';
 import { contentEvents } from './admin/content.js';
 import { RateLimiter } from './security/ratelimit.js';
 import { clientIp, securityHeaders, readJson } from './security/httpkit.js';
@@ -290,6 +293,8 @@ export function createApp({ store, spider }) {
 
     securityHeaders(res);
     if (req.method === 'POST' && (url.pathname === '/api/push/subscribe' || url.pathname === '/api/push/unsubscribe')) return pushRoute(req, res, url.pathname);
+    // Reader accounts and app devices (the Android app).
+    if (isAccountPath(url.pathname)) return accountRoute(req, res, url);
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { allow: 'GET, HEAD', 'content-type': 'text/plain' });
       return res.end('Method not allowed');
@@ -746,6 +751,15 @@ function main() {
     setTimeout(() => accountsDirectory().catch(() => {}), 60e3).unref();
     subscriberCount();
     store.on('breaking', (started) => pushBreaking(started, store.breaking).catch((err) => console.warn('[alerts]', err.message)));
+    // The Android apps: breaking and followed stories, changelog and source health.
+    deviceCount();
+    store.on('breaking', (started) => pushBreakingMobile(started, store.snapshot.stories || []).catch((err) => console.warn('[push]', err.message)));
+    store.on('update', (snap) => {
+      pushFollows(snap.stories || []).catch((err) => console.warn('[push]', err.message));
+      pushSourceHealth(snap.status?.sources || {}).catch((err) => console.warn('[push]', err.message));
+    });
+    setTimeout(() => pushChangelog().catch((err) => console.warn('[push]', err.message)), 15e3).unref();
+    setInterval(() => { pruneUserSessions(); prunePushes(); }, 6 * 3600e3).unref();
     crawlAll(store)
       .then(() => {
         store.save();

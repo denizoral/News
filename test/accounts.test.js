@@ -1,133 +1,194 @@
+// Reader accounts, the admin app's bearer sign-in, Google ID tokens, Firebase
+// sending and the push rules. Boots the real server against an in-memory DB.
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDb, getDb, q } from '../src/db.js';
-import { upsertDoc } from '../src/index/documents.js';
-import { DIM, quantize, VectorIndex } from '../src/index/vectors.js';
-import { computeAccount, computeAccounts, compareAccounts } from '../src/index/accounts.js';
-import { parseFollows, matchFollows, nameIndex, forYou, tasteScores } from '../src/index/foryou.js';
+import crypto from 'node:crypto';
+import { resetDb, q } from '../src/db.js';
+import { settings } from '../src/settings.js';
+import { _setKeyForTests } from '../src/security/secretbox.js';
+import { totpAt, base32Encode } from '../src/security/totp.js';
+import { createUser } from '../src/admin/auth.js';
+import { Store } from '../src/store.js';
+import { Spider } from '../src/spider/engine.js';
+import { createApp } from '../src/server.js';
+import { verifyGoogleIdToken, resetGoogleKeys } from '../src/accounts/google.js';
+import { sendFcm, resetFcm } from '../src/push/fcm.js';
+import { followMatch, inQuiet, pushFollows, pushBreakingMobile, pushChangelog, readChangelog, registerDevice } from '../src/push/mobile.js';
+import { cleanPrefs } from '../src/accounts/users.js';
 
-const MIN = 60e3;
-const HOUR = 60 * MIN;
-const now = Date.parse('2026-10-22T12:00:00Z');
+resetDb();
+_setKeyForTests(crypto.randomBytes(32));
+settings.load();
+const server = createApp({ store: new Store(), spider: new Spider() });
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const base = `http://127.0.0.1:${server.address().port}`;
+test.after(() => server.close());
 
-// A unit vector mostly along `dir`, a little along `dir + 1` (so `mix`
-// moves it away from a pure one).
-function vec(dir, mix = 0) {
-  const v = new Array(DIM).fill(0);
-  v[dir] = 1;
-  v[dir + 1] = mix;
-  const n = Math.hypot(1, mix);
-  return v.map((x) => x / n);
-}
+const call = async (method, path, body, headers = {}) => {
+  const res = await fetch(base + path, { method, headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined });
+  return { status: res.status, data: await res.json().catch(() => null), headers: res.headers };
+};
+const bearer = (t) => ({ authorization: `Bearer ${t}` });
+const DEVICE = (n) => `dev${n}:${'x'.repeat(60)}`;
 
-function doc(d, v) {
-  const { id } = upsertDoc(d);
-  q('INSERT INTO doc_vecs (doc_id, v) VALUES (?, ?)').run(id, quantize(v));
-  return id;
-}
-const post = (handle, n, at, text, v, extra = {}) => doc({ url: `https://x.com/${handle}/status/${n}`, type: 'post', title: text, description: text, site: 'x.com', author: handle, published_at: at, meta: { platform: 'x', handle, ...extra } }, v);
-const article = (slug, at, source, v, site = 'news.example') => doc({ url: `https://${site}/${slug}`, type: 'article', title: `${source} on ${slug}`, site, source, published_at: at }, v);
+test('reader accounts: sign up, sign in, prefs, password change ends old sessions, delete', async () => {
+  const weak = await call('POST', '/api/account/signup', { email: 'a@example.com', password: 'short' });
+  assert.equal(weak.status, 400);
+  const up = await call('POST', '/api/account/signup', { email: 'A@Example.com', password: 'correct horse battery', name: 'Ada' });
+  assert.equal(up.status, 200);
+  assert.match(up.data.token, /^fwu_/);
+  assert.equal(up.data.user.email, 'a@example.com');
+  assert.equal((await call('POST', '/api/account/signup', { email: 'a@example.com', password: 'correct horse battery' })).status, 409);
+  // Bearer only: no cookies are ever set.
+  assert.equal(up.headers.get('set-cookie'), null);
 
-function fixture() {
+  const bad = await call('POST', '/api/account/login', { email: 'a@example.com', password: 'wrong password here' });
+  const none = await call('POST', '/api/account/login', { email: 'nobody@example.com', password: 'wrong password here' });
+  assert.equal(bad.status, 401);
+  assert.equal(bad.data.error, none.data.error, 'unknown emails fail the same way');
+  const inn = await call('POST', '/api/account/login', { email: 'a@example.com', password: 'correct horse battery' });
+  assert.equal(inn.status, 200);
+  const t = inn.data.token;
+
+  assert.equal((await call('GET', '/api/account')).status, 401);
+  assert.equal((await call('GET', '/api/account', null, bearer(t))).data.user.name, 'Ada');
+  const p = await call('PUT', '/api/account/prefs', { follows: { names: [{ key: 'OpenAI', label: 'OpenAI' }, { key: 'openai' }], topics: [{ key: 'chips' }] }, alerts: { minOutlets: 5, quiet: { from: 22, to: 7, tz: 60 }, bogus: 1 } }, bearer(t));
+  assert.deepEqual(p.data.prefs.follows.names, [{ key: 'openai', label: 'OpenAI' }]);
+  assert.equal(p.data.prefs.alerts.minOutlets, 5);
+  assert.deepEqual(p.data.prefs.alerts.quiet, { from: 22, to: 7, tz: 60 });
+  assert.equal(p.data.prefs.alerts.bogus, undefined);
+  // Not JSON: refused (a form post from another site can't get this far).
+  const form = await fetch(`${base}/api/account/prefs`, { method: 'PUT', headers: { ...bearer(t), 'content-type': 'text/plain' }, body: '{}' });
+  assert.equal(form.status, 415);
+
+  const pw = await call('POST', '/api/account/password', { current: 'correct horse battery', next: 'another long passphrase' }, bearer(t));
+  assert.equal(pw.status, 200);
+  assert.equal((await call('GET', '/api/account', null, bearer(up.data.token))).status, 401, 'older sessions end');
+  assert.equal((await call('GET', '/api/account', null, bearer(pw.data.token))).status, 200);
+  assert.equal((await call('POST', '/api/account/delete', { password: 'another long passphrase' }, bearer(pw.data.token))).status, 200);
+  assert.equal(q('SELECT COUNT(*) AS n FROM users').get().n, 0);
+});
+
+test('devices: anonymous and signed-in installs register, bad tokens are refused', async () => {
+  assert.equal((await call('POST', '/api/devices', { token: 'nope' })).status, 400);
+  assert.equal((await call('POST', '/api/devices', { token: DEVICE(1) })).status, 200);
+  const up = await call('POST', '/api/account/signup', { email: 'd@example.com', password: 'correct horse battery' });
+  await call('POST', '/api/devices', { token: DEVICE(2) }, bearer(up.data.token));
+  assert.equal(q('SELECT user_id FROM devices WHERE token = ?').get(DEVICE(2)).user_id, up.data.user.id);
+  assert.equal(q('SELECT user_id FROM devices WHERE token = ?').get(DEVICE(1)).user_id, null);
+  assert.equal((await call('POST', '/api/devices/remove', { token: DEVICE(1) })).data.ok, true);
+});
+
+test('admin app: password and TOTP give a bearer token, which needs no CSRF and reaches the changelog', async () => {
+  const u = await createUser({ username: 'owner1', password: 'a very long admin pass', role: 'owner' });
+  const secret = base32Encode(crypto.randomBytes(20));
+  const { seal } = await import('../src/security/secretbox.js');
+  q('UPDATE admin_users SET totp_secret = ?, totp_enabled = 1 WHERE id = ?').run(seal(secret), u.id);
+  const app = { 'x-client': 'wire-admin-app' };
+  // Without the app header and without an Origin, a sign-in is refused.
+  assert.equal((await call('POST', '/api/admin/login', { username: 'owner1', password: 'a very long admin pass' })).status, 403);
+  const l = await call('POST', '/api/admin/login', { username: 'owner1', password: 'a very long admin pass' }, app);
+  assert.equal(l.status, 200);
+  assert.equal(l.data.next, 'mfa');
+  assert.ok(l.data.token);
+  assert.equal(l.headers.get('set-cookie'), null, 'the app gets no cookie');
+  assert.equal((await call('GET', '/api/admin/changelog', null, bearer(l.data.token))).status, 401, 'half-signed-in');
+  const m = await call('POST', '/api/admin/login/mfa', { code: totpAt(secret, Math.floor(Date.now() / 30e3)) }, { ...app, ...bearer(l.data.token) });
+  assert.equal(m.status, 200);
+  const full = bearer(m.data.token);
+  const c = await call('GET', '/api/admin/changelog', null, full);
+  assert.equal(c.status, 200);
+  assert.ok(c.data.entries.length > 5 && c.data.entries[0].date && c.data.entries[0].title);
+  // A state-changing call with the bearer token and no CSRF header works.
+  assert.equal((await call('POST', '/api/admin/devices', { token: DEVICE(9) }, full)).status, 200);
+  assert.equal(q('SELECT admin_user_id FROM devices WHERE token = ?').get(DEVICE(9)).admin_user_id, u.id);
+  assert.equal((await call('GET', '/api/admin/readers', null, full)).data.devices.admin, 1);
+});
+
+test('Google ID tokens: signature, audience, expiry and a verified email', async () => {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'RS256', use: 'sig' };
+  const fetcher = async () => new Response(JSON.stringify({ keys: [jwk] }), { headers: { 'cache-control': 'max-age=600' } });
+  const sign = (claims, key = privateKey) => {
+    const enc = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    const h = enc({ alg: 'RS256', kid: 'k1' });
+    const b = enc(claims);
+    return `${h}.${b}.${crypto.sign('RSA-SHA256', Buffer.from(`${h}.${b}`), key).toString('base64url')}`;
+  };
+  const now = Date.now();
+  const good = { iss: 'https://accounts.google.com', aud: 'web-client', sub: '123', email: 'g@example.com', email_verified: true, exp: now / 1000 + 600, iat: now / 1000 };
+  resetGoogleKeys();
+  const c = await verifyGoogleIdToken(sign(good), { audiences: ['web-client'], fetcher });
+  assert.deepEqual(c, { sub: '123', email: 'g@example.com', name: '' });
+  await assert.rejects(verifyGoogleIdToken(sign({ ...good, aud: 'other' }), { audiences: ['web-client'], fetcher }), /expired or isn’t for this app/);
+  await assert.rejects(verifyGoogleIdToken(sign({ ...good, exp: now / 1000 - 3600 }), { audiences: ['web-client'], fetcher }), /expired/);
+  await assert.rejects(verifyGoogleIdToken(sign({ ...good, email_verified: false }), { audiences: ['web-client'], fetcher }), /verified/);
+  const other = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey;
+  await assert.rejects(verifyGoogleIdToken(sign(good, other), { audiences: ['web-client'], fetcher }), /isn’t valid/);
+  await assert.rejects(verifyGoogleIdToken(sign(good), { audiences: [], fetcher }), /isn’t set up/);
+});
+
+test('Firebase: signs a token request, sends, and reports uninstalled apps', async () => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  resetFcm({ project_id: 'proj', client_email: 'svc@proj.iam.gserviceaccount.com', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) });
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push({ url, init });
+    if (url.includes('oauth2')) return new Response(JSON.stringify({ access_token: 'at', expires_in: 3600 }));
+    const msg = JSON.parse(init.body).message;
+    if (msg.token === 'gone') return new Response(JSON.stringify({ error: { status: 'NOT_FOUND', details: [{ errorCode: 'UNREGISTERED' }] } }), { status: 404 });
+    return new Response('{}');
+  };
+  assert.equal(await sendFcm('tok', { title: 'Breaking', body: 'Hi', data: { sid: 'abc', n: 3 }, channel: 'breaking', collapse: 'story-abc' }, { fetcher }), 'ok');
+  assert.equal(await sendFcm('gone', { title: 'x', body: 'y' }, { fetcher }), 'gone');
+  assert.equal(calls.filter((c) => c.url.includes('oauth2')).length, 1, 'the access token is reused');
+  const sent = JSON.parse(calls[1].init.body).message;
+  assert.equal(sent.android.priority, 'high');
+  assert.deepEqual(sent.data, { sid: 'abc', n: '3' });
+  assert.match(calls[1].url, /projects\/proj\/messages:send$/);
+  resetFcm(undefined);
+});
+
+test('push rules: follows, outlet threshold, once per story, quiet hours, breaking for everyone', async () => {
   resetDb();
-  const p1 = now - 3 * 24 * HOUR;
-  post('scoopy', 1, p1, 'OpenAI to release GPT-7 next week, sources say', vec(0));
-  article('gpt7-verge', p1 + 40 * MIN, 'The Verge', vec(0, 0.2));
-  article('gpt7-reuters', p1 + 2 * HOUR, 'Reuters', vec(0, 0.3));
-  article('gpt7-reddit', p1 + 10 * MIN, 'r/OpenAI', vec(0, 0.1), 'reddit.com'); // a relay, not the press
-
-  const p2 = now - 2 * 24 * HOUR;
-  post('scoopy', 2, p2, 'OpenAI confirms the outage is over', vec(10));
-  article('outage', p2 - HOUR, 'CNBC', vec(10, 0.2)); // already covered
-
-  const p3 = p2 + HOUR;
-  post('scoopy', 3, p3, 'Our new OpenAI paper on agents', vec(20), { linkUrl: 'https://lab.example/paper' });
-  article('paper', p3 - 5 * MIN, 'Lab blog', vec(20, 0.1), 'lab.example'); // its own link
-  article('paper-coverage', p3 + 30 * MIN, 'Wired', vec(20, 0.2));
-
-  const p4 = now - 30 * HOUR;
-  post('scoopy', 4, p4, 'Something about Anthropic', vec(30));
-  article('late', p4 + 20 * HOUR, 'Blog', vec(30, 0.2)); // one outlet, a day later: not a lead
-
-  post('other', 1, now - 5 * HOUR, 'OpenAI DevDay recap', vec(40));
-  return new VectorIndex(getDb());
-}
-
-test('accounts: ahead of the press, not when covered first, own links and relays ignored', () => {
-  const idx = fixture();
-  idx.refresh();
-  const a = computeAccount(getDb(), idx, 'scoopy', { now });
-  assert.equal(a.stats.posts, 4);
-  assert.equal(a.stats.ahead, 2);
-  const [first, second] = a.ahead;
-  assert.match(first.text, /GPT-7/);
-  assert.equal(first.ahead.leadMin, 40, 'Reddit was earlier but relays links');
-  assert.equal(first.ahead.followers, 2);
-  assert.equal(first.ahead.first.source, 'The Verge');
-  assert.match(second.text, /paper/);
-  assert.equal(second.ahead.leadMin, 30);
-  assert.equal(a.grid.flat().reduce((s, n) => s + n, 0), 4);
-  assert.equal(a.daily.length, 30);
-  assert.equal(a.entities[0].key, 'openai');
-  assert.match(a.best[0].text, /GPT-7/, 'the widest lead is the best post');
-  assert.equal(computeAccount(getDb(), idx, 'nobody', { now }), null);
+  const prefs = cleanPrefs({ follows: { names: [{ key: 'nvidia', label: 'Nvidia' }], accounts: [{ key: 'sama' }] }, alerts: { minOutlets: 2 } });
+  const r = q("INSERT INTO users (email, created_at, prefs) VALUES ('p@example.com', 1, ?)").run(JSON.stringify(prefs));
+  registerDevice({ token: DEVICE(3), app: 'wire', userId: Number(r.lastInsertRowid) });
+  registerDevice({ token: DEVICE(4), app: 'wire' }); // anonymous: breaking only
+  const now = Date.now();
+  const src = (host) => ({ platform: 'web', host, name: host });
+  const stories = [
+    { sid: 's1', title: 'Nvidia ships a chip', entities: ['nvidia'], publishedAt: now - 3600e3, sources: [src('a.com')] },
+    { sid: 's2', title: 'Nvidia earnings', entities: ['nvidia'], publishedAt: now - 3600e3, sources: [src('a.com'), src('b.com'), src('c.com')] },
+    { sid: 's3', title: 'Something else', entities: ['apple'], publishedAt: now - 3600e3, sources: [src('a.com'), src('b.com')] },
+  ];
+  assert.equal(followMatch({ sources: [{ platform: 'x', name: '@sama' }] }, prefs.follows), '@sama');
+  const sent = [];
+  const send = async (token, msg) => { sent.push([token, msg]); return 'ok'; };
+  assert.equal(await pushFollows(stories, { now, send, enabled: true }), 1);
+  assert.deepEqual(sent.map(([t, m]) => [t, m.data.sid, m.title]), [[DEVICE(3), 's2', 'Nvidia']]);
+  assert.equal(await pushFollows(stories, { now: now + 20 * 60e3, send, enabled: true }), 0, 'never the same story twice; s1 is below the outlet threshold');
+  assert.equal(await pushBreakingMobile([{ sid: 's3', title: 'Something else', peak: 9 }], stories, { now, send, enabled: true }), 2);
+  assert.equal(await pushBreakingMobile([{ sid: 's3', title: 'Something else', peak: 9 }], stories, { now, send, enabled: true }), 0);
+  assert.equal(await pushFollows(stories, { now, send, enabled: false }), 0, 'off without Firebase');
+  assert.equal(inQuiet({ from: 22, to: 7, tz: 0 }, Date.parse('2026-10-22T23:30:00Z')), true);
+  assert.equal(inQuiet({ from: 22, to: 7, tz: 120 }, Date.parse('2026-10-22T19:30:00Z')), false);
+  assert.equal(inQuiet({ from: 22, to: 7, tz: 120 }, Date.parse('2026-10-22T20:30:00Z')), true);
 });
 
-test('accounts: directory ranks by leads; compare finds shared names', () => {
-  const idx = fixture();
-  idx.refresh();
-  const d = computeAccounts(getDb(), idx, { now });
-  assert.deepEqual(d.accounts.map((x) => x.handle), ['scoopy']);
-  assert.equal(d.accounts[0].ahead, 2);
-  assert.equal(d.accounts[0].spark.reduce((s, n) => s + n, 0), 4);
-  const c = compareAccounts(getDb(), idx, 'scoopy', 'other', { now });
-  assert.equal(c.b.stats.posts, 1);
-  assert.deepEqual(c.shared.map((s) => s.key), ['openai']);
-});
-
-test('for you: follows parse defensively', () => {
-  const f = parseFollows(new URLSearchParams('t=openai,notatopic,anthropic&n=claude-duet,<bad>&a=sama,way_too_long_handle_x&o=Reuters,The Verge&s=abc123defg,x'));
-  assert.deepEqual(f.topics, ['openai', 'anthropic']);
-  assert.deepEqual(f.names, ['claude-duet']);
-  assert.deepEqual(f.accounts, ['sama']);
-  assert.deepEqual(f.outlets, ['Reuters', 'The Verge']);
-  assert.deepEqual(f.saved, ['abc123defg']);
-});
-
-const story = (sid, title, extra = {}) => ({ sid, id: sid, title, url: `https://news.example/${sid}`, summary: '', score: 10, entities: [], sources: [{ name: 'Reuters', platform: 'web', url: `https://news.example/${sid}` }], lead: { source: 'Reuters' }, ...extra });
-
-test('for you: matches say why; saved stories are left out; taste brings in close ones', async () => {
+test('changelog: FEATURES.md entries reach admin devices once', async () => {
+  const entries = readChangelog();
+  assert.ok(entries.some((e) => e.title === 'Rumor mill' && e.route === '#rumors'));
   resetDb();
-  const names = nameIndex({ nodes: [{ key: 'claude-duet', label: 'Claude Duet' }, { key: 'nvidia', label: 'Nvidia', topic: 'nvidia' }] });
-  const s1 = story('s000000001', 'Anthropic ships Claude Duet', { entities: ['anthropic'], sources: [{ name: '@sama', platform: 'x', url: 'https://x.com/sama/status/1' }, { name: 'Reuters', platform: 'web' }] });
-  const f = parseFollows({ t: 'anthropic', n: 'claude-duet', a: 'SAMA', o: 'reuters', s: 's000000003' });
-  assert.deepEqual(matchFollows(s1, f, { names }).map((w) => w.kind), ['topic', 'name', 'account', 'outlet']);
-
-  const store = { snapshot: { version: 7, breaking: [], social: [{ platform: 'x', handle: 'sama', title: 'hello', url: 'https://x.com/sama/status/9', publishedAt: now }], stories: [
-    s1,
-    story('s000000002', 'Unrelated chip story', { sources: [{ name: 'Bloomberg', platform: 'web' }] }),
-    story('s000000003', 'A saved story', { entities: ['anthropic'] }),
-    story('s000000004', 'Close in meaning', { sources: [{ name: 'Bloomberg', platform: 'web' }] }),
-  ] } };
-  const jobs = [];
-  const taste = async (job) => { jobs.push(job); return { seeds: 2, scores: { s000000002: 0.4, s000000004: 0.81 } }; };
-  const r = await forYou(store, f, { graph: { nodes: [{ key: 'claude-duet', label: 'Claude Duet' }] }, taste });
-  assert.deepEqual(r.stories.map((s) => s.sid), ['s000000001', 's000000004']);
-  assert.equal(r.stories[0].why.length, 3, 'at most three reasons');
-  assert.equal(r.stories[1].why[0].kind, 'taste');
-  assert.equal(r.posts.length, 1);
-  assert.ok(jobs[0].seeds.includes('https://news.example/s000000003'), 'the saved story seeds the taste');
-});
-
-test('for you: the taste vector is the mean of the seeds', () => {
-  resetDb();
-  doc({ url: 'https://a.example/1', type: 'article', title: 'seed one', published_at: now }, vec(0, 0.1));
-  doc({ url: 'https://a.example/2', type: 'article', title: 'seed two', published_at: now }, vec(0, 0.3));
-  doc({ url: 'https://a.example/3', type: 'article', title: 'close', published_at: now }, vec(0, 0.2));
-  doc({ url: 'https://a.example/4', type: 'article', title: 'far', published_at: now }, vec(50));
-  const r = tasteScores(getDb(), { seeds: ['https://a.example/1', 'https://a.example/2', 'https://missing.example/'], candidates: [{ sid: 'c', urls: ['https://a.example/3'] }, { sid: 'f', urls: ['https://a.example/4'] }, { sid: 'n', urls: ['https://none.example/'] }] });
-  assert.equal(r.seeds, 2);
-  assert.ok(r.scores.c > 0.95);
-  assert.ok(Math.abs(r.scores.f) < 0.05);
-  assert.equal(r.scores.n, undefined);
+  const u = await createUser({ username: 'owner2', password: 'a very long admin pass', role: 'owner' });
+  registerDevice({ token: DEVICE(5), app: 'admin', adminUserId: u.id });
+  const sent = [];
+  const send = async (t, m) => { sent.push(m); return 'ok'; };
+  const today = new Date().toISOString().slice(0, 10);
+  const list = [{ id: `${today}:x`, date: today, title: 'X', body: '**Backend.** Does a thing.' }];
+  assert.equal(await pushChangelog({ send, enabled: true, entries: list }), 1);
+  assert.equal(sent[0].title, 'Shipped: X');
+  assert.equal(sent[0].body, 'Backend. Does a thing.');
+  assert.equal(await pushChangelog({ send, enabled: true, entries: list }), 0);
 });

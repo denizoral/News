@@ -300,6 +300,57 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS audit_at ON audit_log(at DESC);
 CREATE INDEX IF NOT EXISTS audit_action ON audit_log(action, at DESC);
+
+-- Reader accounts (the apps and the site), separate from admin_users. A
+-- password, a Google account, or both. Only hashes of session tokens are kept.
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  name TEXT NOT NULL DEFAULT '',
+  pw_hash TEXT,
+  google_sub TEXT UNIQUE,
+  email_verified INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  last_login_at INTEGER,
+  failed_logins INTEGER NOT NULL DEFAULT 0,
+  locked_until INTEGER NOT NULL DEFAULT 0,
+  password_changed_at INTEGER NOT NULL DEFAULT 0,
+  disabled INTEGER NOT NULL DEFAULT 0,
+  prefs TEXT NOT NULL DEFAULT '{}'  -- JSON: follows and alert settings
+);
+CREATE TABLE IF NOT EXISTS user_sessions (
+  id_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  client TEXT,
+  ip TEXT
+);
+CREATE INDEX IF NOT EXISTS user_sessions_user ON user_sessions(user_id);
+
+-- Phones that get push notifications through Firebase. A device belongs to
+-- a reader account, an admin account, or neither (breaking news only).
+CREATE TABLE IF NOT EXISTS devices (
+  token TEXT PRIMARY KEY,
+  app TEXT NOT NULL,              -- wire | admin
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  admin_user_id INTEGER REFERENCES admin_users(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL DEFAULT 'android',
+  created_at INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  last_ok INTEGER,
+  fails INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS devices_user ON devices(user_id);
+-- What each device was already told, so a story never buzzes twice.
+CREATE TABLE IF NOT EXISTS pushes_sent (
+  token TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (token, ref)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS pushes_sent_at ON pushes_sent(at);
 `;
 
 let db = null;

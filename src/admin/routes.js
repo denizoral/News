@@ -19,6 +19,8 @@ import { audit, listAudit } from './audit.js';
 import { listContent, getContent, updateContent, removeContent, contentCounts, reviewIndex } from './content.js';
 import { runRetention, optimizeIndex } from '../index/retention.js';
 import { MEDIA_DIR } from '../spider/media.js';
+import { readChangelog, registerDevice, unregisterDevice, pushStatus } from '../push/mobile.js';
+import { fcmEnabled } from '../push/fcm.js';
 
 const UI_DIR = path.resolve('admin-ui');
 const UI_FILES = { '': 'index.html', 'app.js': 'app.js', 'styles.css': 'styles.css', 'favicon.svg': 'favicon.svg' };
@@ -48,16 +50,16 @@ export function createAdminRouter({ store, spider, runNow, sourceNames }) {
   });
 
   route('POST', '/login', { auth: false, limit: 4096 }, async ({ req, res, body }) => {
-    const { user, next } = await auth.login(req, res, body);
-    audit(req, { user, action: next === 'mfa' ? 'login.password_ok' : 'login.success' });
-    return { next };
+    const { user, next, token } = await auth.login(req, res, body);
+    audit(req, { user, action: next === 'mfa' ? 'login.password_ok' : 'login.success', detail: token ? { client: 'app' } : undefined });
+    return { next, token };
   });
 
   route('POST', '/login/mfa', { auth: false, limit: 4096 }, ({ req, res, body }) => {
-    const { user, method } = auth.secondFactor(req, res, body);
-    audit(req, { user, action: 'login.success', detail: { method } });
+    const { user, method, token } = auth.secondFactor(req, res, body);
+    audit(req, { user, action: 'login.success', detail: { method, ...(token ? { client: 'app' } : {}) } });
     if (method === 'recovery') audit(req, { user, action: 'account.recovery_code_used' });
-    return { ok: true };
+    return { ok: true, token };
   });
 
   route('POST', '/logout', { auth: false }, ({ req, res }) => {
@@ -69,6 +71,29 @@ export function createAdminRouter({ store, spider, runNow, sourceNames }) {
     auth.logout(req, res);
     return { ok: true };
   });
+
+  // ---------- admin app ----------
+
+  // What shipped: FEATURES.md, newest first.
+  route('GET', '/changelog', {}, ({ url }) => ({ entries: readChangelog(undefined, Math.min(200, Number(url.searchParams.get('limit')) || 60)) }));
+
+  // The admin app's phone, for changelog and source-health notifications.
+  route('POST', '/devices', { limit: 8192 }, ({ req, a, body }) => {
+    registerDevice({ token: body.token, app: 'admin', adminUserId: a.user.id, platform: body.platform });
+    audit(req, { user: a.user, action: 'device.register' });
+    return { ok: true, push: fcmEnabled() };
+  });
+  route('POST', '/devices/remove', { limit: 8192 }, ({ body }) => ({ ok: unregisterDevice(body.token) }));
+
+  // Reader accounts and app installs, for the dashboard.
+  route('GET', '/readers', {}, () => ({
+    accounts: q('SELECT COUNT(*) AS n FROM users').get().n,
+    google: q('SELECT COUNT(*) AS n FROM users WHERE google_sub IS NOT NULL').get().n,
+    newThisWeek: q('SELECT COUNT(*) AS n FROM users WHERE created_at > ?').get(Date.now() - 7 * 86400e3).n,
+    activeThisWeek: q('SELECT COUNT(DISTINCT user_id) AS n FROM user_sessions WHERE last_seen > ?').get(Date.now() - 7 * 86400e3).n,
+    devices: Object.fromEntries(q('SELECT app, COUNT(*) AS n FROM devices GROUP BY app').all().map((r) => [r.app, r.n])),
+    push: { enabled: fcmEnabled(), ...pushStatus },
+  }));
 
   // ---------- own account ----------
 

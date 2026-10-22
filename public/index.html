@@ -29,6 +29,7 @@
       <p class="tagline" id="tagline" hidden></p>
       <nav class="tabs" aria-label="Sections">
         <a href="#news" data-view="news">News</a>
+        <a href="#foryou" data-view="foryou">For you</a>
         <a href="#x" data-view="x" class="tab-x"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.8 3h3.1l-6.8 7.8L22 21h-6.2l-4.9-6.4L5.3 21H2.2l7.3-8.3L1.9 3h6.4l4.4 5.8L17.8 3Zm-1.1 16.2h1.7L7.4 4.7H5.6l11.1 14.5Z" fill="currentColor"/></svg><span>X</span></a>
         <a href="#tech" data-view="tech">Tech</a>
         <a href="#week" data-view="week">This week</a>
@@ -112,7 +113,7 @@
       <div class="view-head x-head">
         <div>
           <h1>On X</h1>
-          <p>Labs, researchers, leakers and prediction markets, as they post. Sorted by subject, newest first, updating live.</p>
+          <p>Labs, researchers, leakers and prediction markets, as they post. Sorted by subject, newest first, updating live. <a class="x-more" href="#accounts">Who’s first on X →</a></p>
         </div>
         <span class="x-status" id="xStatus" role="status" aria-live="polite"></span>
       </div>
@@ -205,6 +206,17 @@
     <!-- Breaking -->
     <section class="view" data-view="breaking" aria-label="Breaking" hidden>
       <div id="breakingView"></div>
+    </section>
+    <!-- For you -->
+    <section class="view" data-view="foryou" aria-label="For you" hidden>
+      <div id="foryouView"></div>
+    </section>
+    <!-- X accounts -->
+    <section class="view" data-view="accounts" aria-label="X accounts" hidden>
+      <div id="accountsView"></div>
+    </section>
+    <section class="view" data-view="account" aria-label="X account" hidden>
+      <div id="accountView"></div>
     </section>
     <!-- Reading list -->
     <section class="view" data-view="saved" aria-label="Saved stories" hidden>

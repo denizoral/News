@@ -1,6 +1,8 @@
 import { createSearch, spiderLine } from './search.js';
 import { createBreaking } from './breaking.js';
 import { createPalette } from './palette.js';
+import { createForYou } from './foryou.js';
+import { createAccounts } from './accounts.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -157,6 +159,8 @@ function setHtml(el, html) {
 let searchUi = null;
 let breakingUi = null;
 let paletteUi = null;
+let foryouUi = null;
+let accountsUi = null;
 
 // ---------- Data ----------
 
@@ -1006,7 +1010,7 @@ function drawX({ animate = false } = {}) {
     return `<li class="xpost${isNew ? ' is-new' : ''}" data-id="${esc(p.id)}">
       <img class="av" src="${esc(p.avatar || fav('x.com'))}" alt="" loading="lazy" width="40" height="40">
       <div class="body">
-        <div class="who"><b>${esc(p.author || p.handle)}</b><button type="button" class="handle" data-xhandle="${esc(p.handle)}">@${esc(p.handle)}</button>${p.cats?.[0] ? `<span class="tag tag-${esc(p.cats[0].toLowerCase())}">${esc(p.cats[0])}</span>` : ''}<a class="when" href="${esc(p.url)}" target="_blank" rel="noopener">${time(p.publishedAt)}</a></div>
+        <div class="who"><a class="who-name" href="#account/${encodeURIComponent(p.handle)}">${esc(p.author || p.handle)}</a><button type="button" class="handle" data-xhandle="${esc(p.handle)}">@${esc(p.handle)}</button>${p.cats?.[0] ? `<span class="tag tag-${esc(p.cats[0].toLowerCase())}">${esc(p.cats[0])}</span>` : ''}<a class="when" href="${esc(p.url)}" target="_blank" rel="noopener">${time(p.publishedAt)}</a></div>
         <p>${linkifyPost(p.text || '')}</p>
         ${p.image ? `<a class="x-img" href="${esc(p.url)}" target="_blank" rel="noopener"><img src="${esc(p.image)}" alt="" loading="lazy"></a>` : ''}
         <div class="x-foot">${link}${p.likes ? `<span class="num">♥ ${compact(p.likes)}</span>` : ''}${p.replies ? `<span class="num">${compact(p.replies)} replies</span>` : ''}<a class="open" href="${esc(p.url)}" target="_blank" rel="noopener">Open on X ↗</a></div>
@@ -1383,7 +1387,7 @@ function graphPanel(g, sel) {
   }
   const nd = byKey.get(d.a.key);
   const change = nd?.prev != null && nd.prev >= 3 ? Math.round((nd.n / nd.prev - 1) * 100) : null;
-  return `<section class="g-detail"><p class="kicker"><i class="g-dot t-${d.a.type}"></i>${esc(gTypeName(d.a.type))}</p><h2>${name(d.a)}</h2>
+  return `<section class="g-detail"><p class="kicker"><i class="g-dot t-${d.a.type}"></i>${esc(gTypeName(d.a.type))}</p><div class="head-row"><h2>${name(d.a)}</h2>${d.a.topic ? foryouUi.btn('topic', d.a.topic, d.a.label, { small: true }) : foryouUi.btn('name', d.a.key, d.a.label, { small: true })}</div>
     <p class="g-sum"><b>${d.n}</b> articles in ${days} days${change != null ? `, <span class="${change >= 0 ? 'up' : 'down'}">${change >= 0 ? '▲' : '▼'} ${Math.abs(change)}%</span> on the ${days} days before` : ''}.</p>
     ${graphBars(d.series, d.since)}
     ${d.with.length ? `<h3>Most often with</h3><ol class="g-links">${d.with.map((x) => `<li><a href="#graph/${esc(d.a.key)}+${esc(x.key)}"><i class="g-dot t-${x.type}"></i>${esc(x.label)}</a><small>${x.n}</small></li>`).join('')}</ol>` : ''}
@@ -1534,7 +1538,7 @@ function renderTopic() {
     <header class="topic-head">
       <a class="back" href="#news">← News</a>
       <p class="kicker">Topic</p>
-      <h1>${esc(label)}</h1>
+      <div class="head-row"><h1>${esc(label)}</h1>${foryouUi.btn('topic', key, label)}</div>
       <p class="topic-sum">${summary}</p>
     </header>
     ${chart ? `<section class="topic-card"><h2>Share of all coverage <small>last 30 days, every stored story</small></h2>${chart}</section>` : ''}
@@ -2010,7 +2014,8 @@ function render() {
   applySite(state.data?.site);
   if ((state.view === 'builds' && state.sections?.builds === false) || (state.view === 'markets' && state.sections?.markets === false)) state.view = 'news';
   for (const v of $$('.view')) v.hidden = v.dataset.view !== state.view;
-  $$('.tabs a').forEach((a) => (a.dataset.view === state.view ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+  const tab = state.view === 'accounts' || state.view === 'account' ? 'x' : state.view;
+  $$('.tabs a').forEach((a) => (a.dataset.view === tab ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   if (!state.data) return;
   if (state.view === 'news') renderNews();
   if (state.view === 'x') renderX();
@@ -2025,6 +2030,9 @@ function render() {
   if (state.view === 'graph') renderGraph();
   if (state.view === 'breaking') breakingUi.renderPage();
   if (state.view === 'saved') paletteUi.renderSaved();
+  if (state.view === 'foryou') foryouUi.renderPage();
+  if (state.view === 'accounts') accountsUi.renderDirectory();
+  if (state.view === 'account') accountsUi.renderAccount();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2040,6 +2048,13 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
+  const acct = accountsUi.route(location.hash);
+  if (acct) {
+    const was = state.view;
+    state.view = acct;
+    const go = () => { render(); window.scrollTo({ top: 0 }); };
+    return state.data && was !== acct ? transition(go) : go();
+  }
   const theme = /^theme\/([\w-]{6,16})$/.exec(v);
   if (theme) {
     state.themeId = theme[1];
@@ -2069,9 +2084,9 @@ function route() {
     const go = () => { render(); window.scrollTo({ top: 0 }); };
     return state.data ? transition(go) : go();
   }
-  state.view = ['news', 'x', 'tech', 'week', 'releases', 'builds', 'markets', 'breaking', 'saved'].includes(v) ? v : 'news';
+  state.view = ['news', 'foryou', 'x', 'tech', 'week', 'releases', 'builds', 'markets', 'breaking', 'saved'].includes(v) ? v : 'news';
   const name = state.data?.site?.name || 'Frontier Wire';
-  document.title = { news: name, x: `On X · ${name}`, tech: `Tech · ${name}`, week: `This week · ${name}`, releases: `AI releases · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}`, breaking: `Breaking · ${name}`, saved: `Saved · ${name}` }[state.view];
+  document.title = { news: name, x: `On X · ${name}`, tech: `Tech · ${name}`, week: `This week · ${name}`, releases: `AI releases · ${name}`, builds: `Built with AI · ${name}`, markets: `AI markets · ${name}`, breaking: `Breaking · ${name}`, saved: `Saved · ${name}`, foryou: `For you · ${name}` }[state.view];
   const changed = $(`.view[data-view="${state.view}"]`)?.hidden;
   const go = () => {
     render();
@@ -2085,8 +2100,9 @@ function route() {
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button, a');
   if (!t) return;
-  if (breakingUi.onClick(t) || paletteUi.onClick(t)) return;
+  if (breakingUi.onClick(t) || paletteUi.onClick(t) || foryouUi.onClick(t) || accountsUi.onClick(t)) return;
   const d = t.dataset;
+  if (d.xopen) { state.xHandle = d.xopen; if (location.hash === '#x') loadX({ animate: true }); return; }
   if (d.entity) {
     state.entity = state.entity === d.entity ? null : d.entity;
     state.limit = 60;
@@ -2142,6 +2158,9 @@ document.addEventListener('click', (e) => {
 });
 
 $('#graphView').addEventListener('pointerover', graphHover);
+$('#accountView').addEventListener('pointermove', (e) => accountsUi.hover(e));
+$('#accountView').addEventListener('pointerleave', (e) => accountsUi.hover(e), true);
+document.addEventListener('change', (e) => accountsUi.onChange(e.target));
 $('#breakingView').addEventListener('pointermove', (e) => breakingUi.hover(e));
 $('#breakingView').addEventListener('pointerleave', (e) => breakingUi.hover(e), true);
 $('#keysDialog').addEventListener('click', (e) => { if (e.target.closest('[data-close]') || e.target.id === 'keysDialog') $('#keysDialog').close(); });
@@ -2240,6 +2259,12 @@ paletteUi = createPalette({
     rerender: () => render(),
   },
 });
+foryouUi = createForYou({
+  $, $$, esc, time, setHtml, store, state, reducedMotion,
+  toast: (m) => paletteUi.toast(m),
+  savedSids: () => (store.get('fw.saved', []) || []).map((x) => x?.sid).filter(Boolean),
+});
+accountsUi = createAccounts({ $, esc, time, setHtml, store, state, reducedMotion, followBtn: (...a) => foryouUi.btn(...a) });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

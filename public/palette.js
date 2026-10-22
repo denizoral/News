@@ -4,7 +4,9 @@
 
 const PAGES = [
   ['News', '#news', 'Top stories now'],
+  ['For you', '#foryou', 'The live feed ranked for what you follow'],
   ['On X', '#x', 'Labs, researchers and markets as they post'],
+  ['X accounts', '#accounts', 'Who is first on X: every account, ranked'],
   ['Tech', '#tech', 'Tech beyond AI'],
   ['This week', '#week', 'The weekly digest'],
   ['Connections', '#graph', 'Who is in the news together'],
@@ -240,6 +242,8 @@ export function createPalette({ $, $$, esc, time, setHtml, store, state, reduced
     x: '#xFeed > li a.x-text, #xFeed > li .x-body a',
     search: '#searchResults > li a',
     saved: '.sv-list > li > div > a',
+    foryou: '.fy-list > li h3 a',
+    accounts: '.ac-list > li .ac-name',
     breaking: '.bk-card h2 a, .bk-list > li > div > a',
     week: '.wk-top li a',
   };
@@ -307,5 +311,5 @@ export function createPalette({ $, $$, esc, time, setHtml, store, state, reduced
 
   updateSavedBtn();
   navigator.serviceWorker?.ready.then(keepOffline).catch(() => {});
-  return { open, onKey, onClick, renderSaved, isSaved, updateSavedBtn };
+  return { open, onKey, onClick, renderSaved, isSaved, updateSavedBtn, toast };
 }

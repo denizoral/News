@@ -362,7 +362,7 @@ export class Spider extends EventEmitter {
       h = row
         ? { ...row, parsed: row.robots != null ? parseRobots(row.robots) : null }
         : { host, robots: null, robots_status: null, robots_fetched_at: 0, crawl_delay_ms: null, next_allowed_at: 0, fetched_today: 0, day: today(), pages: 0, errors: 0, parsed: null };
-      h.failStreak = 0;
+      h.failStreak = row?.fail_streak || 0;
       h.refuseStreak = row?.refuse_streak || 0;
       h.pausedUntil = row?.paused_until || 0;
       // Refusal rests used to hold the whole site; now they hold pages only.
@@ -377,12 +377,12 @@ export class Spider extends EventEmitter {
   }
 
   saveHost(h) {
-    q(`INSERT INTO hosts (host, robots, robots_status, robots_fetched_at, crawl_delay_ms, next_allowed_at, fetched_today, day, pages, errors, refuse_streak, paused_until)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(host) DO UPDATE SET robots = excluded.robots, robots_status = excluded.robots_status,
+    q(`INSERT INTO hosts (host, robots, robots_status, robots_fetched_at, crawl_delay_ms, next_allowed_at, fetched_today, day, pages, errors, refuse_streak, paused_until, fail_streak)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(host) DO UPDATE SET robots = excluded.robots, robots_status = excluded.robots_status,
        robots_fetched_at = excluded.robots_fetched_at, crawl_delay_ms = excluded.crawl_delay_ms, next_allowed_at = excluded.next_allowed_at,
        fetched_today = excluded.fetched_today, day = excluded.day, pages = excluded.pages, errors = excluded.errors,
-       refuse_streak = excluded.refuse_streak, paused_until = excluded.paused_until`).run(
-      h.host, h.robots, h.robots_status, h.robots_fetched_at, h.crawl_delay_ms, h.next_allowed_at, h.fetched_today, h.day, h.pages, h.errors, h.refuseStreak || 0, h.pausedUntil || 0);
+       refuse_streak = excluded.refuse_streak, paused_until = excluded.paused_until, fail_streak = excluded.fail_streak`).run(
+      h.host, h.robots, h.robots_status, h.robots_fetched_at, h.crawl_delay_ms, h.next_allowed_at, h.fetched_today, h.day, h.pages, h.errors, h.refuseStreak || 0, h.pausedUntil || 0, h.failStreak || 0);
   }
 
   // Server-side trouble on a host (timeouts, 5xx, connection errors) opens a

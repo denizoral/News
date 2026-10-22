@@ -805,3 +805,13 @@ test('a sitemap listing only learned dead ends is retired', () => {
   assert.equal(spider.handleSitemap(row(sm, 'sitemap'), xml), null);
   assert.equal(frontier(sm).status, 'skipped');
 });
+
+test('the failure breaker survives a restart too', () => {
+  settings.update({ 'crawler.hostFailureLimit': 3 }, { role: 'owner', actor: 't' });
+  const h = spider.host('flaky2.example');
+  for (let i = 0; i < 3; i++) spider.fail(row(`https://flaky2.example/p${i}-a-b-c-d`), h, new Error('connect ETIMEDOUT'));
+  const again = new Spider().host('flaky2.example');
+  assert.equal(again.failStreak, 3);
+  assert.ok(again.pausedUntil > Date.now());
+  settings.update({ 'crawler.hostFailureLimit': 8 }, { role: 'owner', actor: 't' });
+});

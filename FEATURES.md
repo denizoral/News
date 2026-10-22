@@ -2,6 +2,98 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-22 · Rumor mill (#rumors)
+
+**Backend.** `src/index/rumors.js`:
+- **Claims.** A hedged headline ("reportedly", "in talks", "sources say",
+  "weighs a sale", "nears a deal", "Report:") about a name from the entity
+  graph is a claim. Within a week, another hedged headline joins it when it:
+  - shares the name and most of its particulars, or
+  - names the same amount ("$15 billion" and "$15B" are one token), or
+  - names the same two names and the same move ("acquire" = "buy"), or
+  - is almost the same headline by embedding (cosine 0.84 or more).
+- **Settling a claim.** Later coverage settles it only when it:
+  - names the claim's subject (the first name in its headline),
+  - shares its particulars,
+  - is close in meaning (cosine 0.76 or more), and
+  - carries no hedge, forecast, "to file", "how to watch" or "what to expect".
+
+  "Announces / confirms / closes / launches" settles a claim on its own. A
+  plain statement of fact ("DeepSeek raises $15B") needs two outlets.
+  "Denies / no plans / talks collapse" makes it denied. Nothing for three
+  weeks means it went quiet. Roundups and newsletters neither start nor
+  settle claims.
+- **What it returns:** totals, the share that came true, the median head
+  start, a histogram of head starts, and outlets' track records (3+ claims
+  that played out).
+- **API:** `GET /api/rumors`, computed in the history worker and cached for 30
+  minutes.
+
+**UI.** `#rumors`, in the footer and ⌘K:
+- **Outcome tiles.** Four tiles (came true, denied, still open, went quiet)
+  with icons. Each filters the list.
+- **Claims.** A line under each claim runs from the first report to whatever
+  settled it, and the settling headline is quoted beneath. Open claims end in
+  a pulsing dot; quiet ones end in a hollow dot.
+- **Sidebar:**
+  - a "How far ahead" bar list;
+  - "Whose rumors hold up", a stacked bar per outlet (came true | denied |
+    went quiet) with a legend.
+
+**Motion.** Tiles and cards rise in. Lines draw from the first report and the
+end dot pops. Bars sweep out. All of it is off under `prefers-reduced-motion`.
+
+**Known limits.**
+- The archive only gets dense from September, so many older rumors "went
+  quiet" because the follow-up isn't stored, not because there wasn't one.
+- An unrelated headline about the same product can still settle a claim now
+  and then.
+
+## 2026-10-22 · New names (#new)
+
+**Backend.** `src/index/newnames.js`:
+- **Finding names.** A new name is a run of up to four capitalised or
+  numbered words in the last 60 days of headlines and descriptions. To count,
+  it must be carried by 4+ outlets and stay capitalised mid-sentence in
+  descriptions (so a Title Case headline's "Bans DeepSeek" doesn't count). It
+  must also barely appear before the window in the archive's headlines and
+  descriptions (FTS). Evergreen listicles get re-dated, so their bodies don't
+  count.
+- **Merging and filtering.** Generic dressing is dropped ("Duet AI",
+  "AI Startups"). A shorter name folds into the longer one it nearly always
+  comes with. Entity-graph vocabulary and outlet names are left out.
+- **What it is.** Taken from article bodies and descriptions: the appositive
+  ("Claude Duet, a proactive AI agent …"), "is a …" or "a new chip called …"
+  clause. Clauses are grouped by head noun, and the one most outlets agree on
+  wins, with its source and how many outlets agree.
+- **For each name:**
+  - **kind:** model, agent, tool, device, company, project, security or
+    policy;
+  - **owner:** the lab it's named after, or the one it's most often
+    mentioned with;
+  - **first report;**
+  - **daily mentions,** with a rising or fading trend.
+
+  People and unplaceable names without agreement are dropped.
+- **API:** `GET /api/new-names`, computed in the history worker and cached for
+  an hour.
+
+**UI.** `#new` ("What's that?"), in the footer and ⌘K:
+- **Arrivals strip.** One dot per name on the day it first appeared, sized by
+  coverage and piled when several arrived together. The biggest are labelled.
+  Clicking a dot (or Enter) scrolls to its card and flashes it.
+- **Filters.** Kind chips (they scroll sideways on phones) and a sort: newest,
+  most covered, rising.
+- **Cards** show:
+  - kind and owner, and the name, which links to search;
+  - the definition as a cited quote;
+  - a sparkline since first seen, with mentions, outlets and trend;
+  - the first report;
+  - latest coverage, behind a disclosure.
+
+**Motion.** Dots drop in left to right, cards rise in and sparklines draw.
+All of it is off under `prefers-reduced-motion`.
+
 ## 2026-10-22 · Head to head (#vs)
 
 Two labs, people, products or governments side by side.

@@ -5,6 +5,28 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-22 (22:49 run)
+
+**New names: FTS lookups.** Looking up article bodies for a name with the
+FTS match joined to `docs` and `ORDER BY published_at` made SQLite walk docs
+by date and probe the index per row: 10.4 s for "claude duet". Moving the
+match into an `id IN (SELECT rowid … MATCH …)` subquery: 6 ms. The "was it in
+the archive before?" count went the other way: the `IN` form counts every
+match (18 ms a name), while a join with `LIMIT 60` stops as soon as the answer
+is clear (1 ms). Also, one `RegExp` per candidate instead of one per
+description. The whole computation went from over 100 s on the first draft to
+3.5 s (60 days, about 20k articles, 230 candidates checked against the
+archive), cached for an hour in the history worker.
+
+**Rumor tracker.** 1.3 s over 90 days in the worker, plus 0.7–2 s to load the
+embedding index the first time (the settlement and merge checks compare
+headline vectors). Cached 30 minutes.
+
+| Endpoint | Cold | Warm | Payload (gzip) |
+|---|---|---|---|
+| `/api/rumors` | 5.8 s | 1.6 ms | 139 KB (35 KB) |
+| `/api/new-names` | 8.5 s (queued behind rumors) | 0.9 ms | 61 KB (22 KB) |
+
 ## 2026-10-22 (20:49 run)
 
 **News map layout.** Exact t-SNE (from the first two principal components, so

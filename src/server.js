@@ -25,6 +25,8 @@ import { dayQuery, calendarQuery, withMarkets, withReleases, isDay, dayOf } from
 import { outletsQuery, outletQuery, siteKey } from './index/outlets.js';
 import { personKey, personQuery, quotesQuery } from './index/quotes.js';
 import { storylineById, storylineList, storylineOf, storylinesData } from './index/storylines.js';
+import { forecastsQuery, THEMES as FORECAST_THEMES } from './index/forecasts.js';
+import { catchupQuery, windowOf, withLive } from './index/catchup.js';
 import { statusHistory, startVitals, noteRequest } from './status.js';
 import { storyPage } from './index/storypage.js';
 import { emergingThemes } from './index/emerging.js';
@@ -489,6 +491,26 @@ export function createApp({ store, spider }) {
           return s ? json(req, res, 200, { ...s, generatedAt: d.generatedAt }, { 'cache-control': 'public, max-age=600' }) : json(req, res, 404, { error: 'No storyline with that id (they are rebuilt every half hour).' });
         })
         .catch((err) => json(req, res, 503, { error: `Storylines are unavailable: ${err.message}` }));
+    }
+    if (p === '/api/predictions') {
+      if (limited(req, res)) return;
+      const theme = url.searchParams.get('theme') || '';
+      if (theme && theme !== 'other' && !FORECAST_THEMES.some((t) => t.key === theme)) return json(req, res, 400, { error: `Unknown theme; use one of ${FORECAST_THEMES.map((t) => t.key).join(', ')}, other.` });
+      const year = Number(url.searchParams.get('year')) || 0;
+      if (year && (year < 2020 || year > 2100)) return json(req, res, 400, { error: 'Give a year like year=2030.' });
+      const who = personKey(url.searchParams.get('who') || '').slice(0, 60);
+      return forecastsQuery({ theme, year, who })
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=600' }))
+        .catch((err) => json(req, res, 503, { error: `Predictions are unavailable: ${err.message}` }));
+    }
+    if (p === '/api/catchup') {
+      if (limited(req, res)) return;
+      const { since } = windowOf(url.searchParams.get('since'));
+      // Storylines are cold for a while after a restart; don't wait on them.
+      const lines = Promise.race([storylinesData().catch(() => null), new Promise((r) => setTimeout(r, 1500, null))]);
+      return Promise.all([catchupQuery(since), readyMoves(store), lines])
+        .then(([d, moves, storylines]) => json(req, res, 200, withLive(d, { breaking: breakingHistory({ days: 7 }), moves, releases: store.releases || [], storylines }), { 'cache-control': 'public, max-age=120' }))
+        .catch((err) => json(req, res, 503, { error: `Catch-up is unavailable: ${err.message}` }));
     }
     if (p === '/api/outlets') {
       if (limited(req, res)) return;

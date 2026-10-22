@@ -79,7 +79,7 @@ export function dayItems(db, from, to) {
 }
 
 // Share of headlines naming each company or theme, from titles + summaries.
-function entityShares(rows) {
+export function entityShares(rows) {
   const counts = new Map();
   for (const r of rows) for (const k of extractEntities(`${r.title} ${r.description || ''}`).keys()) counts.set(k, (counts.get(k) || 0) + 1);
   return { counts, n: rows.length };
@@ -100,7 +100,7 @@ export function standouts(today, before, { min = 4, limit = 8 } = {}) {
 }
 
 // Markets whose odds moved most within [from, to): first and last price.
-function marketMoves(db, from, to, limit = 10) {
+export function marketMoves(db, from, to, limit = 10) {
   const rows = db.prepare(`SELECT market, outcome, MIN(ts) AS t0, MAX(ts) AS t1 FROM odds WHERE ts >= ? AND ts < ? GROUP BY market, outcome`).all(from, to);
   const at = db.prepare('SELECT yes FROM odds WHERE market = ? AND outcome = ? AND ts = ?');
   const out = [];

@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.Wire" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+    <color name="paper">#0B1626</color>
+</resources>

@@ -136,10 +136,13 @@ the oldest images first.
 - **When a page refuses it:** feeds are published to be read elsewhere, so the
   crawler keeps what each feed says about a story (two weeks). If the article
   page answers 401/403/451 or keeps failing, the story is indexed from its
-  feed instead (at least 30 words, same relevance and language rules), and
+  feed instead (at least 15 words, same relevance and language rules), and
   stories from sites known to refuse the crawler are indexed straight from the
   feed. A thin page (a paywall, a script-rendered app) uses the feed's text
-  when that's longer. Pages robots.txt disallows are never indexed this way.
+  when that's longer. A starting page that refuses the crawler (or that
+  robots.txt blocks) gets its usual feed addresses tried, and a site resting
+  after refusals still has its feeds and sitemaps read; only a page success
+  ends the rest. Pages robots.txt disallows are never indexed this way.
 - **What it extracts:**
   - The article text, using Mozilla Readability, or the JSON-LD article body when
     the HTML is hard to parse.

@@ -43,7 +43,7 @@ const RECURRING = new Set(['hub', 'sitemap', 'feed']);
 // addresses are tried once and dropped if nothing is there.
 const GUESS = 'guess';
 const REFUSAL_LIMIT = 10;
-const FEED_MIN_WORDS = 30; // for stories indexed from a feed's summary
+const FEED_MIN_WORDS = 15; // for stories indexed from a feed's summary: a headline and a sentence or two
 const SITEMAP_GUESSES = ['/sitemap.xml', '/sitemap_index.xml', '/news-sitemap.xml'];
 const FEED_GUESSES = ['/feed', '/feed.xml', '/rss.xml', '/atom.xml', '/index.xml'];
 const MAX_BACKOFF = 8; // recurring URLs are checked at most 8x less often
@@ -168,8 +168,21 @@ export class Spider extends EventEmitter {
     return this._qc.n;
   }
 
+  // Stories whose page refused the crawler before their feed copy could be
+  // used (or before the word minimum was lowered) are indexed from the feed.
+  backfillFromFeeds() {
+    const rows = q(`SELECT f.url, f.host, f.kind, f.depth, f.via, f.http_status FROM frontier f JOIN feed_items i ON i.url = f.url
+      WHERE f.kind = 'article' AND f.status = 'error' AND (f.error LIKE 'HTTP 401%' OR f.error LIKE 'HTTP 403%' OR f.error LIKE 'HTTP 451%')
+        AND NOT EXISTS (SELECT 1 FROM docs d WHERE d.url = f.url) LIMIT 500`).all();
+    let n = 0;
+    for (const r of rows) if (this.indexFromFeed(r, 'the page refused the crawler')?.ok) n++;
+    if (n) console.log(`[spider] indexed ${n} refused stories from their feeds`);
+    return n;
+  }
+
   seed() {
     this.healDeadEnds();
+    try { this.backfillFromFeeds(); } catch (e) { console.warn('[spider] feed backfill failed', e.message); }
     const hubs = [...this.cfg.hubs, ...this.autoHubs().map((a) => a.url)];
     tx(() => {
       // Feeds queued under older rules that the current rules wouldn't follow.
@@ -318,6 +331,8 @@ export class Spider extends EventEmitter {
       h.failStreak = 0;
       h.refuseStreak = row?.refuse_streak || 0;
       h.pausedUntil = row?.paused_until || 0;
+      // Refusal rests used to hold the whole site; now they hold pages only.
+      if (h.refuseStreak >= REFUSAL_LIMIT && h.next_allowed_at >= h.pausedUntil - 1000) h.next_allowed_at = 0;
       this.hostCache.set(host, h);
     }
     if (h.day !== today()) {
@@ -361,13 +376,21 @@ export class Spider extends EventEmitter {
     const host = bare(h.host);
     if (h.refuseStreak >= 2 * REFUSAL_LIMIT && !this.trusted.has(host)) this.learnDeadEnd(`${host}/*`, 'refuses', { days: 14 });
     const minutes = Math.min(2880, 360 * 2 ** (h.refuseStreak - REFUSAL_LIMIT));
+    // Pages wait out the rest; the site's feeds and sitemaps don't (they are
+    // often served when pages aren't). See tick().
     h.pausedUntil = Date.now() + minutes * 60e3;
-    h.next_allowed_at = Math.max(h.next_allowed_at, h.pausedUntil);
     return minutes;
   }
 
-  hostOk(h) {
+  // A success closes the failure breaker. Only a page (not a feed or
+  // sitemap, which sites often serve while refusing pages) ends a refusal rest.
+  hostOk(h, kind = 'page') {
     h.failStreak = 0;
+    const refusing = h.refuseStreak >= REFUSAL_LIMIT;
+    if (kind === 'feed' || kind === 'sitemap') {
+      if (!refusing) h.pausedUntil = 0;
+      return;
+    }
     h.refuseStreak = 0;
     h.pausedUntil = 0;
   }
@@ -496,6 +519,13 @@ export class Spider extends EventEmitter {
       if (this.inflight.has(row.host)) continue;
       const h = this.host(row.host);
       if (h.next_allowed_at > now) continue;
+      // A site resting after refusals: only its feeds and sitemaps go ahead.
+      // Pages move to the end of the rest, so the feeds get the host's slots.
+      if (h.refuseStreak >= REFUSAL_LIMIT && h.pausedUntil > now && row.kind !== 'feed' && row.kind !== 'sitemap') {
+        this.cands.splice(this.cands.indexOf(row), 1);
+        q('UPDATE frontier SET next_at = ? WHERE url = ?').run(h.pausedUntil, row.url);
+        continue;
+      }
       const drop = (status, error) => {
         this.cands.splice(this.cands.indexOf(row), 1);
         q('UPDATE frontier SET status = ?, error = ? WHERE url = ?').run(status, error, row.url);
@@ -665,6 +695,9 @@ export class Spider extends EventEmitter {
     const attempts = row.attempts + 1;
     const serverSide = !permanent; // timeouts, connection errors, 5xx
     if (err.status === 404 || err.status === 410) this.noteLinkResult(row, false);
+    // A starting page that refuses the crawler often still serves its feed
+    // (openai.com/news answers 403, openai.com/news/rss.xml works).
+    if (row.kind === 'hub' && [401, 403].includes(err.status)) this.guessFeeds(row, { feeds: [] }, h);
     const refused = [401, 403, 404, 410].includes(err.status);
     const paused = serverSide ? this.hostFailed(h) : refused ? this.hostRefused(h) : 0;
     const retry = !permanent && attempts < this.cfg.maxAttempts;
@@ -750,6 +783,7 @@ export class Spider extends EventEmitter {
       this.stats.blocked++;
       const reason = robotsOk ? 'Blocked path in a site rule' : 'Disallowed by robots.txt';
       this.log(row, { outcome: 'blocked', reason });
+      if (row.kind === 'hub') this.guessFeeds(row, { feeds: [] }, h); // the feed may be allowed
       return this.done(row, { status: 'blocked', httpStatus: 0, error: reason });
     }
 
@@ -762,7 +796,7 @@ export class Spider extends EventEmitter {
       res = await get(row.url, { timeout: this.cfg.timeoutMs, retries: 0, headers: this.requestHeaders(row), publicOnly: true, maxRedirects: this.cfg.maxRedirects, cooldown: false });
     } catch (err) {
       if (err.status === 304) {
-        this.hostOk(h);
+        this.hostOk(h, row.kind);
         if (row.kind === 'hub') this.guessFeeds(row, { feeds: [] }, h);
         this.log(row, { outcome: 'not-modified', http: 304 });
         return this.done(row, { httpStatus: 304, fresh: 0 });
@@ -771,7 +805,7 @@ export class Spider extends EventEmitter {
     }
     const type = res.headers.get('content-type') || '';
     const { text: body, bytes, truncated } = await readText(res, this.cfg.maxPageBytes);
-    this.hostOk(h);
+    this.hostOk(h, row.kind);
     this.stats.fetched++;
     h.pages++;
     this.saveHost(h);
@@ -860,12 +894,8 @@ export class Spider extends EventEmitter {
 
   // RSS/Atom: newest entries first, filtered by title like sitemap entries.
   handleFeed(row, xml) {
-    let entries;
-    try {
-      entries = parseFeed(xml);
-    } catch {
-      return 0;
-    }
+    const entries = parseFeedTolerant(xml);
+    if (!entries) return 0;
     const cutoff = Date.now() - this.cfg.sitemapMaxAgeDays * 86400e3;
     let n = 0;
     const keep = q(`INSERT INTO feed_items (url, feed, title, body, published_at, author, image, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -1231,6 +1261,21 @@ export class Spider extends EventEmitter {
     const v = { running: this.running, paused: !this.cfg.enabled, frontier: f, docs, crawledPages: crawled, images: { stored: img.n, bytes: img.b }, hosts, pagesPerMinute: perMin, session: { ...this.stats, recent: undefined } };
     this._st = { at: now, v };
     return v;
+  }
+}
+
+// A feed cut off at the size cap still yields its complete entries.
+function parseFeedTolerant(xml) {
+  try {
+    return parseFeed(xml);
+  } catch {
+    for (const [item, close] of [['</item>', '</channel></rss>'], ['</entry>', '</feed>']]) {
+      const end = xml.lastIndexOf(item);
+      if (end > 0) {
+        try { return parseFeed(xml.slice(0, end + item.length) + close); } catch { /* try the other shape */ }
+      }
+    }
+    return null;
   }
 }
 

@@ -459,6 +459,9 @@ test('a site refusing page after page rests for hours', () => {
   assert.equal(h.pausedUntil, 0);
   spider.fail(row('https://refuser.example/a-9-b-c-d'), h, new HttpError(403, 'x'));
   assert.ok(h.pausedUntil > Date.now() + 5.9 * 3600e3, 'rests 6 hours after 10 refusals');
+  assert.ok(h.next_allowed_at < h.pausedUntil, "feeds and sitemaps aren't held by the rest");
+  spider.hostOk(h, 'feed');
+  assert.ok(h.pausedUntil > Date.now(), 'a working feed does not end a refusal rest');
   assert.ok(spider.resting().find((r) => r.host === 'refuser.example')?.refused);
   spider.hostOk(h);
   assert.equal(h.refuseStreak, 0);
@@ -693,4 +696,25 @@ test('a thin page uses its feed text', () => {
   const r = spider.indexPage(row(page.url), page);
   assert.equal(r.ok, true);
   assert.match(r.reason, /from its feed/);
+});
+
+test('a refused starting page gets its feed guessed; a cut-off feed keeps its complete entries', () => {
+  const hub = 'https://refusedhub.example/news';
+  settings.update({ 'crawler.hubs': [...settings.get('crawler.hubs'), hub] }, { role: 'owner', actor: 't' });
+  spider.fail(row(hub, 'hub', { depth: 0 }), spider.host('refusedhub.example'), new HttpError(403, hub));
+  assert.ok(frontier('https://refusedhub.example/news/rss.xml'), 'feed guessed under the page folder');
+  const now = new Date().toUTCString();
+  const item = (i) => `<item><title>OpenAI model ${i}</title><link>https://cutfeed.example/2026/openai-model-${i}</link><pubDate>${now}</pubDate></item>`;
+  const cut = `<rss><channel>${item(1)}${item(2)}<item><title>OpenAI mod`;
+  assert.equal(spider.handleFeed(row('https://cutfeed.example/feed', 'feed'), cut), 2);
+});
+
+test('stories refused before their feed copy was used are backfilled from it', () => {
+  const now = new Date().toUTCString();
+  const u = 'https://backfill.example/2026/openai-google-cloud';
+  spider.handleFeed(row('https://backfill.example/rss.xml', 'feed'), `<rss><channel><item><title>OpenAI models come to Google Cloud</title><link>${u}</link><pubDate>${now}</pubDate><description>OpenAI and Google Cloud are bringing frontier models and Codex workflows to the Model Garden for developers.</description></item></channel></rss>`);
+  q("UPDATE frontier SET status = 'error', error = 'HTTP 403 for x', http_status = NULL WHERE url = ?").run(u);
+  q('DELETE FROM docs WHERE url = ?').run(u);
+  assert.equal(spider.backfillFromFeeds() >= 1, true);
+  assert.ok(q('SELECT 1 FROM docs WHERE url = ?').get(u));
 });

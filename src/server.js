@@ -34,10 +34,14 @@ import { createAdminRouter } from './admin/routes.js';
 import { pruneSessions } from './admin/auth.js';
 import { contentEvents } from './admin/content.js';
 import { RateLimiter } from './security/ratelimit.js';
-import { clientIp, securityHeaders } from './security/httpkit.js';
+import { clientIp, securityHeaders, readJson } from './security/httpkit.js';
 import { startFileLog } from './logfile.js';
 import { xFeed } from './xfeed.js';
 import { startLabeler } from './pipeline/labeler.js';
+import { breakingHistory } from './pipeline/breaking.js';
+import { subscribe, unsubscribe, pushBreaking, alertStatus, subscriberCount } from './pipeline/alerts.js';
+import { vapidKeys } from './pipeline/webpush.js';
+import { buildIndex, jumpSearch, savedStatus } from './index/jump.js';
 
 const PROD = process.env.NODE_ENV === 'production';
 const PUBLIC = path.resolve('public');
@@ -179,6 +183,35 @@ export function createApp({ store, spider }) {
     json(req, res, 200, body, { 'cache-control': 'public, max-age=15' });
   }
 
+  // Breaking alerts: a browser's push subscription in or out. Same-origin
+  // JSON only, small bodies, and the search rate limit.
+  function pushRoute(req, res, p) {
+    if (limited(req, res)) return;
+    const site = req.headers['sec-fetch-site'];
+    if ((site && site !== 'same-origin') || !/^application\/json\b/.test(req.headers['content-type'] || '')) return json(req, res, 403, { error: 'Not allowed.' });
+    readJson(req, { limit: 4096 })
+      .then((body) => {
+        if (p === '/api/push/unsubscribe') return json(req, res, 200, { ok: unsubscribe(body?.endpoint) });
+        if (!subscribe(body)) return json(req, res, 400, { error: 'That is not a push subscription from a browser push service.' });
+        json(req, res, 200, { ok: true });
+      })
+      .catch((err) => json(req, res, err.status || 400, { error: err.status === 413 ? 'Too large.' : 'Send the subscription as JSON.' }));
+  }
+
+  // The palette's index, rebuilt when the feed, the graph or the themes change.
+  // Slow inputs are waited on briefly; the index fills in on a later query.
+  let jump = { key: null, index: [] };
+  const soon = (p, ms = 250) => Promise.race([p.catch(() => null), new Promise((r) => setTimeout(r, ms, null).unref())]);
+  async function jumpIndex() {
+    const [graph, em] = await Promise.all([soon(entityGraph(30)), soon(emergingThemes(store))]);
+    const key = `${store.snapshot.version}|${graph?.generatedAt || 0}|${em?.generatedAt || 0}`;
+    if (jump.key !== key) {
+      const sn = store.snapshot;
+      jump = { key, index: buildIndex({ stories: sn.stories, releases: sn.releases, markets: store.markets, posts: sn.social, graph, themes: em?.themes || [], breaking: sn.breaking }) };
+    }
+    return jump.index;
+  }
+
   function handle(req, res) {
     let url;
     try {
@@ -192,6 +225,7 @@ export function createApp({ store, spider }) {
     if (admin(req, res, url)) return;
 
     securityHeaders(res);
+    if (req.method === 'POST' && (url.pathname === '/api/push/subscribe' || url.pathname === '/api/push/unsubscribe')) return pushRoute(req, res, url.pathname);
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { allow: 'GET, HEAD', 'content-type': 'text/plain' });
       return res.end('Method not allowed');
@@ -313,8 +347,29 @@ export function createApp({ store, spider }) {
         })
         .catch((err) => json(req, res, 503, { error: `The digest is unavailable: ${err.message}` }));
     }
+    // Stories breaking now (with their coverage curves) and the past week's breaks.
+    if (p === '/api/breaking') {
+      const days = Number(url.searchParams.get('days')) || 7;
+      if (![1, 7, 30].includes(days)) return json(req, res, 400, { error: 'days must be 1, 7 or 30.' });
+      return json(req, res, 200, { active: store.breaking.active(), history: breakingHistory({ days }), version: store.snapshot.version }, { 'cache-control': 'public, max-age=30' });
+    }
+    // Command palette: pages, names, accounts, releases, stories and markets.
+    if (p === '/api/jump') {
+      if (limited(req, res)) return;
+      const qv = (url.searchParams.get('q') || '').slice(0, 80);
+      return jumpIndex()
+        .then((index) => json(req, res, 200, { q: qv, results: jumpSearch(index, qv) }, { 'cache-control': 'public, max-age=30' }))
+        .catch((err) => json(req, res, 503, { error: `Jump is unavailable: ${err.message}` }));
+    }
+    // The reading list: how each saved story looks now.
+    if (p === '/api/saved') {
+      if (limited(req, res)) return;
+      const sids = [...new Set((url.searchParams.get('ids') || '').split(',').filter((x) => /^[\w-]{6,16}$/.test(x)))].slice(0, 100);
+      return json(req, res, 200, { stories: savedStatus(store, sids) }, { 'cache-control': 'no-cache' });
+    }
+    if (p === '/api/push/key') return json(req, res, 200, { publicKey: vapidKeys().publicKey }, { 'cache-control': 'public, max-age=3600' });
     if (p === '/api/spider') return json(req, res, 200, spider.status(), { 'cache-control': 'public, max-age=10' });
-    if (p === '/api/status') return json(req, res, 200, { ...store.status(), version: store.snapshot.version, generatedAt: store.snapshot.generatedAt });
+    if (p === '/api/status') return json(req, res, 200, { ...store.status(), alerts: { ...alertStatus }, version: store.snapshot.version, generatedAt: store.snapshot.generatedAt });
 
     if (p === '/api/stream') {
       const ip = clientIp(req);
@@ -414,6 +469,8 @@ function main() {
     releasesCoverage(store.releases || []).catch(() => {}); // from the saved list; refreshed when it changes
     setTimeout(() => marketMoves(store).catch(() => {}), 30e3).unref();
     setTimeout(() => entityGraph(30).catch(() => {}), 45e3).unref();
+    subscriberCount();
+    store.on('breaking', (started) => pushBreaking(started, store.breaking).catch((err) => console.warn('[alerts]', err.message)));
     crawlAll(store)
       .then(() => {
         store.save();

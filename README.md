@@ -113,8 +113,10 @@ the oldest images first.
   - Pages that would only be skipped after fetching are never queued: docs,
     help and forum sections, job boards, stock-photo pages, and social sites and
     AI apps behind a login wall.
-  - Anything that keeps yielding nothing new is checked less often, up to 8×
-    the interval, and goes back to normal as soon as it has news.
+  - Anything that keeps yielding nothing new is checked less often: starting
+    pages down to 1/8 of their rate, feeds and sitemaps down to once a day
+    (about 40% of discovered feeds never produce anything). It goes back to
+    normal as soon as it has news, and the count survives restarts.
 - **How it stays polite and keeps going:**
   - It obeys robots.txt (including Crawl-delay) and identifies itself as
     `FrontierWireBot`.

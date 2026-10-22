@@ -46,7 +46,10 @@ const REFUSAL_LIMIT = 10;
 const FEED_MIN_WORDS = 15; // for stories indexed from a feed's summary: a headline and a sentence or two
 const SITEMAP_GUESSES = ['/sitemap.xml', '/sitemap_index.xml', '/news-sitemap.xml'];
 const FEED_GUESSES = ['/feed', '/feed.xml', '/rss.xml', '/atom.xml', '/index.xml'];
-const MAX_BACKOFF = 8; // recurring URLs are checked at most 8x less often
+// Recurring URLs that keep finding nothing are checked less often: starting
+// pages down to 1/8 of their rate, feeds and sitemaps down to once a day.
+const MAX_HUB_BACKOFF = 8;
+const MAX_IDLE_DELAY = 24 * 3600e3;
 const AUTO_HUB_EVERY_MS = 30 * 60e3;
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -66,7 +69,6 @@ export class Spider extends EventEmitter {
     this.deadEndStore = new DeadEnds(() => this.cfg);
     this.ring = []; // newest crawl-log entries, for the live view
     this.minutes = new Map(); // minute -> fetches, last hour
-    this.backoff = new Map(); // recurring url -> interval multiplier
     this.idleReason = null;
     this.autoHubsAt = 0;
     this.gdeltAt = 0;
@@ -180,8 +182,29 @@ export class Spider extends EventEmitter {
     return n;
   }
 
+  // The idle streaks column is new: start it from the last three days of the
+  // crawl log (each source's run of checks that found nothing, newest first),
+  // so the first wake doesn't recheck hundreds of idle feeds. Runs once.
+  seedIdleStreaks() {
+    if (q("SELECT 1 FROM kv WHERE k = 'spider.idleStreaksSeeded'").get()) return;
+    const runs = new Map(); // url -> { streak, open }
+    for (const r of q("SELECT url, outcome, reason FROM crawl_log WHERE at > ? AND kind IN ('feed', 'sitemap', 'hub') ORDER BY at DESC").all(Date.now() - 3 * 86400e3)) {
+      const run = runs.get(r.url) || { streak: 0, open: true };
+      if (run.open) {
+        const idle = r.outcome === 'not-modified' || /^(0 new URLs|nothing new)/.test(r.reason || '') || /: 0 new URLs$/.test(r.reason || '');
+        if (idle) run.streak++;
+        else run.open = false;
+      }
+      runs.set(r.url, run);
+    }
+    const set = q("UPDATE frontier SET idle_streak = ? WHERE url = ? AND kind IN ('feed', 'sitemap', 'hub')");
+    tx(() => { for (const [url, r] of runs) if (r.streak) set.run(Math.min(r.streak, 20), url); });
+    this.saveKv('spider.idleStreaksSeeded', Date.now());
+  }
+
   seed() {
     this.healDeadEnds();
+    try { this.seedIdleStreaks(); } catch (e) { console.warn('[spider] idle streak seeding failed', e.message); }
     try { this.backfillFromFeeds(); } catch (e) { console.warn('[spider] feed backfill failed', e.message); }
     const hubs = [...this.cfg.hubs, ...this.autoHubs().map((a) => a.url)];
     tx(() => {
@@ -651,14 +674,17 @@ export class Spider extends EventEmitter {
     return barren.map((b) => b.url);
   }
 
-  // How long until a recurring URL is checked again, after a run that found `fresh` new URLs.
+  // How long until a recurring URL is checked again, after a run that found
+  // `fresh` new URLs: doubling with each idle check (kept in the frontier, so
+  // it survives restarts), back to the base interval as soon as it has news.
   recurringDelay(row, fresh) {
     const base = { hub: this.cfg.hubRecrawlMin, sitemap: this.cfg.sitemapRecrawlMin, feed: this.cfg.feedRecrawlMin }[row.kind] * 60e3;
     if (!this.cfg.adaptiveRecrawl) return base;
-    const prev = this.backoff.get(row.url) || 1;
-    const next = fresh > 0 ? 1 : Math.min(MAX_BACKOFF, prev * 2);
-    this.backoff.set(row.url, next);
-    return base * next;
+    const prev = q('SELECT idle_streak FROM frontier WHERE url = ?').get(row.url)?.idle_streak || 0;
+    const streak = fresh > 0 ? 0 : Math.min(prev + 1, 20);
+    q('UPDATE frontier SET idle_streak = ? WHERE url = ?').run(streak, row.url);
+    const cap = row.kind === 'hub' ? MAX_HUB_BACKOFF : Math.max(MAX_HUB_BACKOFF, MAX_IDLE_DELAY / base);
+    return base * Math.min(cap, 2 ** streak);
   }
 
   fail(row, h, err) {

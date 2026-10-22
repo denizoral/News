@@ -86,12 +86,20 @@ test('feed discovery is capped per site', () => {
 
 test('recurring URLs back off when idle and reset when they find news', () => {
   const r = row('https://hub.example/', 'hub');
+  spider.enqueue(r.url, { kind: 'hub' });
   const base = settings.get('crawler.hubRecrawlMin') * 60e3;
   assert.equal(spider.recurringDelay(r, 0), base * 2);
   assert.equal(spider.recurringDelay(r, 0), base * 4);
   for (let i = 0; i < 5; i++) spider.recurringDelay(r, 0);
-  assert.equal(spider.recurringDelay(r, 0), base * 8, 'capped at 8x');
+  assert.equal(spider.recurringDelay(r, 0), base * 8, 'starting pages: capped at 8x');
+  assert.equal(new Spider().recurringDelay(r, 0), base * 8, 'the streak survives a restart');
   assert.equal(spider.recurringDelay(r, 3), base, 'news resets it');
+  // Feeds that keep finding nothing slow down to once a day.
+  const f = row('https://idlefeed.example/feed', 'feed');
+  spider.enqueue(f.url, { kind: 'feed' });
+  let d = 0;
+  for (let i = 0; i < 12; i++) d = spider.recurringDelay(f, 0);
+  assert.equal(d, 24 * 3600e3);
   settings.update({ 'crawler.adaptiveRecrawl': false }, { role: 'owner', actor: 't' });
   assert.equal(spider.recurringDelay(r, 0), base);
   settings.update({ 'crawler.adaptiveRecrawl': true }, { role: 'owner', actor: 't' });

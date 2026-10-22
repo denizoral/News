@@ -237,6 +237,10 @@ function migrate(d) {
   if (!hostCols.has('paused_until')) d.exec('ALTER TABLE hosts ADD COLUMN paused_until INTEGER NOT NULL DEFAULT 0');
   // Which page queued a URL, for dropping a page's remaining links at once.
   d.exec('CREATE INDEX IF NOT EXISTS frontier_via ON frontier(via, status)');
+  // Checks in a row that found nothing new, for recurring URLs (feeds,
+  // sitemaps, starting pages): their backoff survives restarts.
+  const frontierCols = new Set(d.prepare('PRAGMA table_info(frontier)').all().map((c) => c.name));
+  if (!frontierCols.has('idle_streak')) d.exec('ALTER TABLE frontier ADD COLUMN idle_streak INTEGER NOT NULL DEFAULT 0');
   // What feeds said about each article, kept two weeks: the crawler indexes a
   // story from its feed when the page itself refuses it or comes back thin.
   d.exec(`CREATE TABLE IF NOT EXISTS feed_items (

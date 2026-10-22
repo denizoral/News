@@ -38,7 +38,8 @@ export function isUsefulFeed(feedUrl, pageUrl) {
   } catch {
     return false;
   }
-  if (/comments?|replies|reviews/i.test(u.pathname + u.search)) return false;
+  // Comment and review feeds, and Web Stories (swipeable image cards, not articles).
+  if (/comments?|replies|reviews|web-stories/i.test(u.pathname + u.search)) return false;
   const segs = u.pathname.split('/').filter(Boolean);
   const content = segs.filter((s) => !/^(feed|feeds|rss|atom|index\.xml|rss\.xml|feed\.xml|atom\.xml|xml|all)$/i.test(s));
   if (content.some((s) => s.split('-').length >= 4)) return false; // a post's own feed

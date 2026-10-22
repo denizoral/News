@@ -22,6 +22,17 @@ function overlap(a, b) {
   return n / Math.max(1, Math.min(a.size, b.size));
 }
 
+// A story page asks twice with the same vector (X reactions, then background):
+// the second reuses the first scan when it needs no more candidates.
+let last = null;
+function nearest(vec, k) {
+  const key = vec.length + ':' + vec.slice(0, 24).join(',');
+  if (last && last.key === key && last.k >= k && last.n === index.n) return last.hits.slice(0, k);
+  const hits = index.search(vec, k);
+  last = { key, k, n: index.n, hits };
+  return hits;
+}
+
 // Nearest documents to `vec`, newest copy of each headline once.
 // `excludeUrls` and `excludeTitle` drop the story itself and its copies.
 // `until` and `sites` narrow it to a time window and to some sites ("x.com").
@@ -31,7 +42,7 @@ export function similarDocs(db, { vec, page = 1, perPage = 10, types = ['article
   const want = page * perPage;
   // A time window or site filter drops most neighbours, so look further.
   const narrow = sites || until !== Infinity || since > 0;
-  const hits = index.search(vec, narrow ? Math.max(800, want * 20) : want * 4 + 40).filter((h) => h.score >= minScore);
+  const hits = nearest(vec, narrow ? Math.max(800, want * 20) : want * 4 + 40).filter((h) => h.score >= minScore);
   if (!hits.length) return { results: [], total: 0, indexed: index.n };
   const rows = new Map(db.prepare(`SELECT id, url, type, title, description, site, source, author, image_url, published_at, first_seen, meta FROM docs
     WHERE id IN (${hits.map(() => '?').join(',')}) AND hidden = 0`).all(...hits.map((h) => h.id)).map((r) => [r.id, r]));

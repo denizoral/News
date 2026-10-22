@@ -33,47 +33,47 @@ const bearer = (t) => ({ authorization: `Bearer ${t}` });
 const DEVICE = (n) => `dev${n}:${'x'.repeat(60)}`;
 
 test('reader accounts: sign up, sign in, prefs, password change ends old sessions, delete', async () => {
-  const weak = await call('POST', '/api/account/signup', { email: 'a@example.com', password: 'short' });
+  const weak = await call('POST', '/api/user/signup', { email: 'a@example.com', password: 'short' });
   assert.equal(weak.status, 400);
-  const up = await call('POST', '/api/account/signup', { email: 'A@Example.com', password: 'correct horse battery', name: 'Ada' });
+  const up = await call('POST', '/api/user/signup', { email: 'A@Example.com', password: 'correct horse battery', name: 'Ada' });
   assert.equal(up.status, 200);
   assert.match(up.data.token, /^fwu_/);
   assert.equal(up.data.user.email, 'a@example.com');
-  assert.equal((await call('POST', '/api/account/signup', { email: 'a@example.com', password: 'correct horse battery' })).status, 409);
+  assert.equal((await call('POST', '/api/user/signup', { email: 'a@example.com', password: 'correct horse battery' })).status, 409);
   // Bearer only: no cookies are ever set.
   assert.equal(up.headers.get('set-cookie'), null);
 
-  const bad = await call('POST', '/api/account/login', { email: 'a@example.com', password: 'wrong password here' });
-  const none = await call('POST', '/api/account/login', { email: 'nobody@example.com', password: 'wrong password here' });
+  const bad = await call('POST', '/api/user/login', { email: 'a@example.com', password: 'wrong password here' });
+  const none = await call('POST', '/api/user/login', { email: 'nobody@example.com', password: 'wrong password here' });
   assert.equal(bad.status, 401);
   assert.equal(bad.data.error, none.data.error, 'unknown emails fail the same way');
-  const inn = await call('POST', '/api/account/login', { email: 'a@example.com', password: 'correct horse battery' });
+  const inn = await call('POST', '/api/user/login', { email: 'a@example.com', password: 'correct horse battery' });
   assert.equal(inn.status, 200);
   const t = inn.data.token;
 
-  assert.equal((await call('GET', '/api/account')).status, 401);
-  assert.equal((await call('GET', '/api/account', null, bearer(t))).data.user.name, 'Ada');
-  const p = await call('PUT', '/api/account/prefs', { follows: { names: [{ key: 'OpenAI', label: 'OpenAI' }, { key: 'openai' }], topics: [{ key: 'chips' }] }, alerts: { minOutlets: 5, quiet: { from: 22, to: 7, tz: 60 }, bogus: 1 } }, bearer(t));
+  assert.equal((await call('GET', '/api/user')).status, 401);
+  assert.equal((await call('GET', '/api/user', null, bearer(t))).data.user.name, 'Ada');
+  const p = await call('PUT', '/api/user/prefs', { follows: { names: [{ key: 'OpenAI', label: 'OpenAI' }, { key: 'openai' }], topics: [{ key: 'chips' }] }, alerts: { minOutlets: 5, quiet: { from: 22, to: 7, tz: 60 }, bogus: 1 } }, bearer(t));
   assert.deepEqual(p.data.prefs.follows.names, [{ key: 'openai', label: 'OpenAI' }]);
   assert.equal(p.data.prefs.alerts.minOutlets, 5);
   assert.deepEqual(p.data.prefs.alerts.quiet, { from: 22, to: 7, tz: 60 });
   assert.equal(p.data.prefs.alerts.bogus, undefined);
   // Not JSON: refused (a form post from another site can't get this far).
-  const form = await fetch(`${base}/api/account/prefs`, { method: 'PUT', headers: { ...bearer(t), 'content-type': 'text/plain' }, body: '{}' });
+  const form = await fetch(`${base}/api/user/prefs`, { method: 'PUT', headers: { ...bearer(t), 'content-type': 'text/plain' }, body: '{}' });
   assert.equal(form.status, 415);
 
-  const pw = await call('POST', '/api/account/password', { current: 'correct horse battery', next: 'another long passphrase' }, bearer(t));
+  const pw = await call('POST', '/api/user/password', { current: 'correct horse battery', next: 'another long passphrase' }, bearer(t));
   assert.equal(pw.status, 200);
-  assert.equal((await call('GET', '/api/account', null, bearer(up.data.token))).status, 401, 'older sessions end');
-  assert.equal((await call('GET', '/api/account', null, bearer(pw.data.token))).status, 200);
-  assert.equal((await call('POST', '/api/account/delete', { password: 'another long passphrase' }, bearer(pw.data.token))).status, 200);
+  assert.equal((await call('GET', '/api/user', null, bearer(up.data.token))).status, 401, 'older sessions end');
+  assert.equal((await call('GET', '/api/user', null, bearer(pw.data.token))).status, 200);
+  assert.equal((await call('POST', '/api/user/delete', { password: 'another long passphrase' }, bearer(pw.data.token))).status, 200);
   assert.equal(q('SELECT COUNT(*) AS n FROM users').get().n, 0);
 });
 
 test('devices: anonymous and signed-in installs register, bad tokens are refused', async () => {
   assert.equal((await call('POST', '/api/devices', { token: 'nope' })).status, 400);
   assert.equal((await call('POST', '/api/devices', { token: DEVICE(1) })).status, 200);
-  const up = await call('POST', '/api/account/signup', { email: 'd@example.com', password: 'correct horse battery' });
+  const up = await call('POST', '/api/user/signup', { email: 'd@example.com', password: 'correct horse battery' });
   await call('POST', '/api/devices', { token: DEVICE(2) }, bearer(up.data.token));
   assert.equal(q('SELECT user_id FROM devices WHERE token = ?').get(DEVICE(2)).user_id, up.data.user.id);
   assert.equal(q('SELECT user_id FROM devices WHERE token = ?').get(DEVICE(1)).user_id, null);

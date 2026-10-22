@@ -1,14 +1,14 @@
 // Reader account API, used by the Android app (bearer tokens; no cookies).
 //
-//   GET  /api/account/config     what's switched on (Google sign-in, push)
-//   POST /api/account/signup     { email, password, name } -> { token, user }
-//   POST /api/account/login      { email, password }       -> { token, user }
-//   POST /api/account/google     { idToken }               -> { token, user }
-//   GET  /api/account            -> { user }
-//   PUT  /api/account/prefs      { follows?, alerts? }     -> { prefs }
-//   POST /api/account/password   { current, next }         -> { token }
-//   POST /api/account/logout
-//   POST /api/account/delete     { password }
+//   GET  /api/user/config     what's switched on (Google sign-in, push)
+//   POST /api/user/signup     { email, password, name } -> { token, user }
+//   POST /api/user/login      { email, password }       -> { token, user }
+//   POST /api/user/google     { idToken }               -> { token, user }
+//   GET  /api/user            -> { user }
+//   PUT  /api/user/prefs      { follows?, alerts? }     -> { prefs }
+//   POST /api/user/password   { current, next }         -> { token }
+//   POST /api/user/logout
+//   POST /api/user/delete     { password }
 //   POST /api/devices            { token, app: 'wire' }    (signed in or not)
 //   POST /api/devices/remove     { token }
 
@@ -23,19 +23,19 @@ const limiter = new RateLimiter({ capacity: 120, refillPerSec: 2 }); // per IP, 
 const deviceLimiter = new RateLimiter({ capacity: 20, refillPerSec: 20 / 3600 });
 
 const ROUTES = [
-  ['GET', '/api/account/config', () => ({ google: googleEnabled(), googleClientId: googleClientIds()[0] || null, push: fcmEnabled(), passwordMin: 12 })],
-  ['POST', '/api/account/signup', async ({ req, body }) => out(await users.signup(req, body))],
-  ['POST', '/api/account/login', async ({ req, body }) => out(await users.login(req, body))],
-  ['POST', '/api/account/google', async ({ req, body }) => out(users.googleLogin(req, await verifyGoogleIdToken(body.idToken)))],
-  ['GET', '/api/account', ({ req }) => ({ user: users.publicUser(users.requireUser(req).user) })],
-  ['PUT', '/api/account/prefs', ({ req, body }) => ({ prefs: users.savePrefs(users.requireUser(req), body) })],
-  ['POST', '/api/account/password', async ({ req, body }) => ({ token: await users.changePassword(req, users.requireUser(req), body) })],
-  ['POST', '/api/account/logout', ({ req }) => {
+  ['GET', '/api/user/config', () => ({ google: googleEnabled(), googleClientId: googleClientIds()[0] || null, push: fcmEnabled(), passwordMin: 12 })],
+  ['POST', '/api/user/signup', async ({ req, body }) => out(await users.signup(req, body))],
+  ['POST', '/api/user/login', async ({ req, body }) => out(await users.login(req, body))],
+  ['POST', '/api/user/google', async ({ req, body }) => out(users.googleLogin(req, await verifyGoogleIdToken(body.idToken)))],
+  ['GET', '/api/user', ({ req }) => ({ user: users.publicUser(users.requireUser(req).user) })],
+  ['PUT', '/api/user/prefs', ({ req, body }) => ({ prefs: users.savePrefs(users.requireUser(req), body) })],
+  ['POST', '/api/user/password', async ({ req, body }) => ({ token: await users.changePassword(req, users.requireUser(req), body) })],
+  ['POST', '/api/user/logout', ({ req }) => {
     const a = users.authenticate(req);
     if (a) users.logout(a);
     return { ok: true };
   }],
-  ['POST', '/api/account/delete', async ({ req, body }) => {
+  ['POST', '/api/user/delete', async ({ req, body }) => {
     await users.deleteAccount(users.requireUser(req), body);
     return { ok: true };
   }],
@@ -51,7 +51,7 @@ const ROUTES = [
 
 const out = ({ user, token }) => ({ token, user: users.publicUser(user) });
 
-export const isAccountPath = (p) => p === '/api/account' || p.startsWith('/api/account/') || p === '/api/devices' || p.startsWith('/api/devices/');
+export const isAccountPath = (p) => p === '/api/user' || p.startsWith('/api/user/') || p === '/api/devices' || p.startsWith('/api/devices/');
 
 export async function accountRoute(req, res, url) {
   try {

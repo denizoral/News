@@ -2,6 +2,51 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-22 · Head to head (#vs)
+
+Two labs, people, products or governments side by side.
+
+- **Backend** (`src/index/versus.js`, history worker): reuses the entity
+  graph's 7/30/90-day scan. For two names: articles per day for each and for
+  both, totals against the window before, each one's biggest day (with the
+  headline most like the rest of that day's), outlets that wrote about either
+  and how far each leans from the overall split, the words that set each
+  one's headlines apart (weighted log-odds with an informative prior, phrases
+  and their own words folded together), who else comes up with each, money
+  (raised, last valuation, recent deals from the deals index), headlines
+  about only one, and headlines about both. Also the list of names worth
+  comparing in the window, for the pickers.
+- **API**: `/api/versus?a=&b=&days=` (404 with the name list when a name
+  isn't in the window or both are the same).
+- **UI**: big name pickers (grouped by kind) with a swap button, window chips
+  and popular match-ups; a tug-of-war bar that grows from the middle with
+  each side's share and change; a two-line daily chart with crosshair
+  tooltip and legend; two columns (words as weighted chips that link to
+  search, biggest day, seen-with bars that link to that match-up, money,
+  only-about headlines); a "Together" band; a diverging outlet-lean chart.
+  The graph's pair panel links "Head to head". Footer and ⌘K link it.
+
+## 2026-10-22 · News map (#map)
+
+Every story of the last day, three days or week, laid out by meaning.
+
+- **Backend** (`src/index/newsmap.js`, history worker): the window's items
+  clustered into stories as on the front page (up to 360/520/640, biggest
+  first); each story is the mean of its items' embeddings; deterministic
+  exact t-SNE (PCA start) puts them in 2-D; Ward clustering of the layout
+  makes 10–16 regions, each named by the phrase its headlines share, placed
+  at its median and marked growing when its last quarter holds more than the
+  map's share of stories.
+- **API**: `/api/map?days=1|3|7`.
+- **UI**: an SVG map with soft region territories (hulls), dots sized by
+  outlets and shaded by age in one hue, region names placed biggest first
+  without overlaps, a ripple-in entrance from the centre. Hover (or tap)
+  shows the headline; click opens the story page. Wheel/pinch zoom keeps the
+  point under the cursor, drag pans, +/−/⤢ buttons, Esc resets. Clicking a
+  region (on the map or in the side list) flies the camera into it and lists
+  its stories; "Find on the map" dims everything that doesn't match, live,
+  without moving the camera. Footer and ⌘K link it.
+
 ## 2026-10-22 · Catch up (#catchup, welcome back)
 
 Everything since a reader's last visit, on one page.

@@ -5,6 +5,24 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-22 (20:49 run)
+
+**News map layout.** Exact t-SNE (from the first two principal components, so
+the same data gives the same picture) over 360–640 story vectors: 1.4 s (a
+day) to 3.7 s (a week) including clustering the window, once per 15 minutes
+in the history worker. The first learning rate (120) diverged on small inputs;
+the sklearn-style `max(n/48, 50)` converges. Regions first came from greedy
+grouping in embedding space and didn't match the layout: only **49%** of a
+story's five nearest dots on the map shared its region. Ward clustering of
+the 2-D layout itself: **94–95%**, and every story lands in a region.
+`/api/map` 122–244 KB raw, 112 KB gzip for a week; cold 4–5 s, then cached.
+
+**Head to head.** Reuses the entity graph's window scan (cached in the
+worker), so a comparison is ~0.4–0.7 s cold (most of it the two companies'
+deal histories) and 1 ms warm; 17 KB. Distinctive words use weighted
+log-odds with an informative Dirichlet prior whose strength scales with the
+window (a fixed 500 found nothing on thin windows).
+
 ## 2026-10-22 (18:49 run)
 
 **Forecast scan.** 120 days of bodies (30k rows): reading takes 1.2 s; the

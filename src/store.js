@@ -11,6 +11,7 @@ import { computeTrending } from './pipeline/trending.js';
 import { StoryIds } from './index/stories.js';
 import { canonicalUrl } from './pipeline/text.js';
 import { clusterItems, scoreStory, matchMarkets } from './pipeline/cluster.js';
+import { BreakingTracker } from './pipeline/breaking.js';
 
 const STATE_FILE = path.resolve(process.env.DATA_DIR || 'data', 'state.json');
 
@@ -25,6 +26,7 @@ export class Store extends EventEmitter {
     this.version = 0;
     this.storyIds = new StoryIds();
     this.live = new Map(); // sid -> live story, items included
+    this.breaking = new BreakingTracker();
     this._timer = null;
   }
 
@@ -182,6 +184,13 @@ export class Store extends EventEmitter {
       console.warn('[stories] ids failed', err.message);
     }
     this.live = new Map([...liveNews, ...liveTech].filter((s) => s.sid).map((s) => [s.sid, s]));
+    // Breaking: stories whose coverage is arriving fast (src/pipeline/breaking.js).
+    let started = [];
+    try {
+      started = this.breaking.update(liveNews, now);
+    } catch (err) {
+      console.warn('[breaking] failed', err.message);
+    }
     for (const [i, s] of liveNews.entries()) topStories[i].sid = s.sid;
     const techStories = liveTech.map(({ _group, weakEntities, ...s }) => s);
 
@@ -212,8 +221,9 @@ export class Store extends EventEmitter {
     this._trending = new Map();
     this.version++;
     const releases = linkReleases(this.releases || [], topStories);
-    this.snapshot = { version: this.version, generatedAt: now, site: settings.publicSite(), stories: topStories, tech: techStories, releases, scoops, builds, markets, social, models, trending: computeTrending(newsItems, { now }), status: this.status() };
+    this.snapshot = { version: this.version, generatedAt: now, site: settings.publicSite(), stories: topStories, tech: techStories, releases, scoops, builds, markets, social, models, trending: computeTrending(newsItems, { now }), status: this.status(), breaking: this.breaking.active().map(({ curve, image, topics, ...b }) => b) };
     this.emit('update', this.snapshot);
+    if (started.length) this.emit('breaking', started);
   }
 
   // Trending over another window (/api/trending?hours=N), cached per version.
@@ -237,7 +247,7 @@ function linkReleases(releases, stories) {
   return releases.map((r) => {
     const name = r.name.toLowerCase().replace(/[^a-z0-9.]+/g, ' ').trim();
     const hit = name.length >= 4 && titles.find(({ t }) => t.includes(` ${name} `));
-    return hit ? { ...r, story: { id: hit.s.id, title: hit.s.title, url: hit.s.url } } : r;
+    return hit ? { ...r, story: { id: hit.s.id, sid: hit.s.sid || null, title: hit.s.title, url: hit.s.url } } : r;
   });
 }
 

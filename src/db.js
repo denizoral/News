@@ -180,6 +180,34 @@ CREATE TABLE IF NOT EXISTS odds (
   PRIMARY KEY (market, outcome, ts)
 ) WITHOUT ROWID;
 
+-- Breaking stories (src/pipeline/breaking.js): one row per story that broke.
+CREATE TABLE IF NOT EXISTS breaking (
+  sid TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  url TEXT,
+  image TEXT,
+  topics TEXT,                   -- JSON array
+  first_at INTEGER,              -- first report
+  started_at INTEGER NOT NULL,   -- when it crossed the line
+  ended_at INTEGER,
+  peak REAL,                     -- highest hourly velocity
+  voices INTEGER,                -- most distinct voices in an hour
+  curve TEXT,                    -- JSON: distinct voices so far, every 10 minutes
+  pushed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS breaking_started ON breaking(started_at DESC);
+
+-- Web Push subscriptions for breaking alerts. No personal data: the push
+-- service's endpoint and the browser's public keys.
+CREATE TABLE IF NOT EXISTS push_subs (
+  endpoint TEXT PRIMARY KEY,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_ok INTEGER,
+  fails INTEGER NOT NULL DEFAULT 0
+);
+
 -- One row per crawler fetch, for the dashboard's crawl log. Trimmed by retention.
 CREATE TABLE IF NOT EXISTS crawl_log (
   id INTEGER PRIMARY KEY,

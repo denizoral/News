@@ -8,6 +8,7 @@ import { EventEmitter } from 'node:events';
 import { settings } from './settings.js';
 import { q } from './db.js';
 import { computeTrending } from './pipeline/trending.js';
+import { StoryIds } from './index/stories.js';
 import { canonicalUrl } from './pipeline/text.js';
 import { clusterItems, scoreStory, matchMarkets } from './pipeline/cluster.js';
 
@@ -22,6 +23,8 @@ export class Store extends EventEmitter {
     this.bootstrapped = new Set(); // sources that completed at least one run
     this.snapshot = { stories: [], builds: [], markets: [], social: [], models: [], generatedAt: 0 };
     this.version = 0;
+    this.storyIds = new StoryIds();
+    this.live = new Map(); // sid -> live story, items included
     this._timer = null;
   }
 
@@ -154,11 +157,12 @@ export class Store extends EventEmitter {
     const scoops = scoopBoard(stories);
     // Pinned stories lead, then everything by score.
     stories.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.score - a.score);
-    const topStories = stories.slice(0, 400).map(({ _group, weakEntities, ...s }) => s);
+    const liveNews = stories.slice(0, 400);
+    const topStories = liveNews.map(({ _group, weakEntities, ...s }) => s);
 
     // Tech tab: classified non-AI technology news, clustered the same way. A
     // story's topic is the one most of its articles were filed under.
-    const techStories = clusterItems(all.filter((i) => i.section === 'tech'))
+    const liveTech = clusterItems(all.filter((i) => i.section === 'tech'))
       .map((s) => {
         const votes = {};
         for (const it of s._group) votes[it.topic] = (votes[it.topic] || 0) + 1;
@@ -167,8 +171,19 @@ export class Store extends EventEmitter {
         return s;
       })
       .sort((a, b) => b.score - a.score)
-      .slice(0, 150)
-      .map(({ _group, weakEntities, ...s }) => s);
+      .slice(0, 150);
+
+    // Stable ids for story pages (src/index/stories.js), set before the
+    // items are dropped from the published copies.
+    try {
+      this.storyIds.assign(liveNews, { now, section: 'news' });
+      this.storyIds.assign(liveTech, { now, section: 'tech' });
+    } catch (err) {
+      console.warn('[stories] ids failed', err.message);
+    }
+    this.live = new Map([...liveNews, ...liveTech].filter((s) => s.sid).map((s) => [s.sid, s]));
+    for (const [i, s] of liveNews.entries()) topStories[i].sid = s.sid;
+    const techStories = liveTech.map(({ _group, weakEntities, ...s }) => s);
 
     // Markets: attach the stories that point at each one.
     const marketStories = new Map();

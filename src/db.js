@@ -135,6 +135,32 @@ END;
 
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 
+-- Stable story ids. Stories are re-clustered constantly and their lead
+-- article can change, so every article ever in a story maps to the id the
+-- story first had; a link to the story keeps working after it leaves the feed.
+CREATE TABLE IF NOT EXISTS story_ids (
+  item_url TEXT PRIMARY KEY,
+  sid TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS story_ids_sid ON story_ids(sid);
+CREATE TABLE IF NOT EXISTS story_log (
+  sid TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  url TEXT,
+  summary TEXT,
+  image TEXT,
+  section TEXT,
+  topics TEXT,                   -- JSON arrays
+  entities TEXT,
+  markets TEXT,                  -- market ids
+  first_at INTEGER,
+  last_at INTEGER,
+  sources INTEGER,
+  seen_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS story_log_seen ON story_log(seen_at DESC);
+
 -- Sentence embeddings of articles and posts (title + start of summary), for
 -- semantic search and related coverage. v = float32 scale + 384 int8.
 CREATE TABLE IF NOT EXISTS doc_vecs (

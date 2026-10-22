@@ -17,6 +17,7 @@ import { marketHistory, backfillMarket, movers } from './pipeline/odds.js';
 import { topicHistory, topicKeys, warmTopics } from './index/topics.js';
 import { weeklyDigest, digestRss } from './index/digest.js';
 import { releasesCoverage, coverageCounts } from './index/releases.js';
+import { storyPage } from './index/storypage.js';
 import { semanticSearch, relatedTo, keepVectorsWarm } from './index/semantic.js';
 import { startEmbedder } from './index/vectors.js';
 import { crawlAll, startScheduler, attachSpider, runNow, SOURCES } from './crawler.js';
@@ -249,6 +250,13 @@ export function createApp({ store, spider }) {
       return topicHistory(key)
         .then((data) => json(req, res, 200, data, { 'cache-control': 'public, max-age=300' }))
         .catch((err) => json(req, res, 503, { error: `Topic history is unavailable: ${err.message}` }));
+    }
+    if (p === '/api/story') {
+      if (limited(req, res)) return;
+      const id = (url.searchParams.get('id') || '').slice(0, 2000);
+      return storyPage(store, id)
+        .then((d) => (d ? json(req, res, 200, d, { 'cache-control': 'public, max-age=60' }) : json(req, res, 404, { error: 'No story with that id.' })))
+        .catch((err) => json(req, res, 503, { error: `The story is unavailable: ${err.message}` }));
     }
     // Release coverage: counts for the whole list, or one release in full.
     if (p === '/api/releases/coverage' || p === '/api/release') {

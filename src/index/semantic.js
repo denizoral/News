@@ -24,11 +24,14 @@ function overlap(a, b) {
 
 // Nearest documents to `vec`, newest copy of each headline once.
 // `excludeUrls` and `excludeTitle` drop the story itself and its copies.
-export function similarDocs(db, { vec, page = 1, perPage = 10, types = ['article', 'post'], since = 0, minScore = 0, excludeUrls = [], excludeTitle = '' }) {
+// `until` and `sites` narrow it to a time window and to some sites ("x.com").
+export function similarDocs(db, { vec, page = 1, perPage = 10, types = ['article', 'post'], since = 0, until = Infinity, sites = null, minScore = 0, excludeUrls = [], excludeTitle = '' }) {
   index ||= new VectorIndex(db);
   index.refresh();
   const want = page * perPage;
-  const hits = index.search(vec, want * 4 + 40).filter((h) => h.score >= minScore);
+  // A time window or site filter drops most neighbours, so look further.
+  const narrow = sites || until !== Infinity || since > 0;
+  const hits = index.search(vec, narrow ? Math.max(800, want * 20) : want * 4 + 40).filter((h) => h.score >= minScore);
   if (!hits.length) return { results: [], total: 0, indexed: index.n };
   const rows = new Map(db.prepare(`SELECT id, url, type, title, description, site, source, author, image_url, published_at, first_seen, meta FROM docs
     WHERE id IN (${hits.map(() => '?').join(',')}) AND hidden = 0`).all(...hits.map((h) => h.id)).map((r) => [r.id, r]));
@@ -39,7 +42,8 @@ export function similarDocs(db, { vec, page = 1, perPage = 10, types = ['article
   for (const h of hits) {
     const r = rows.get(h.id);
     if (!r || !types.includes(r.type) || skipUrls.has(r.url)) continue;
-    if ((r.published_at || r.first_seen) < since) continue;
+    const at = r.published_at || r.first_seen;
+    if (at < since || at > until || (sites && !sites.includes(r.site))) continue;
     if (own && overlap(own, tokenSet(r.title)) >= 0.6) continue;
     const k = headKey(r.title);
     if (seen.has(k)) continue;

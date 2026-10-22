@@ -5,6 +5,39 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-22 (16:49 run)
+
+**Quote scan.** Reading 45 days of article bodies (31k rows, 259 MB of text)
+with `id > ? AND type = 'article' AND hidden = 0 AND +published_at >= ?`, SQLite
+picked `docs_moderation (hidden=?)` and walked the whole table. The first pass
+now reads by date on `docs_type_pub` with `+hidden`. Later passes read only new
+ids, through the covering `docs_when` index.
+
+| Step | Before | After |
+|---|---:|---:|
+| First pass, SQL | 16.0 s | 1.8 s |
+| Extraction (23.7k AI articles) | 4.1 s (patterns tried on whole bodies) | 1.2 s (only paragraphs with a quote mark and a saying verb) |
+| Refresh (new rows) | – | 12 ms |
+
+**Storylines.** Clustering 60 days, one day at a time, takes about 1.0 s on the
+history lane. Past days are kept, so a refresh reclusters only today. Chaining
+782 chapters by their mean embeddings takes about 0.1 s on the vectors lane,
+which already holds the vectors. A storyline page comes from the same result.
+
+**New endpoints** (cold after restart, then warm, gzipped):
+
+| Endpoint | Cold | Warm | Size |
+|---|---:|---:|---:|
+| /api/storylines | 2.4 s (incl. vector load) | 6 ms | 18.0 KB |
+| /api/storyline | – | 1 ms | 14.8 KB |
+| /api/quotes | 2.4 s (first scan) | 2 ms | 5.8 KB |
+| /api/quotes?q=nvidia | – | 26 ms | 5.0 KB |
+| /api/person | – | 9 ms | 5.4 KB |
+
+**Reddit.** A run takes about 238 s. That is deliberate: the crawler waits out
+Reddit's quota between anonymous requests. Every run is still ok, and the crawl
+runs in the background without blocking anything.
+
 ## 2026-10-22 (14:49 run)
 
 **Outlet profiles.** For `WHERE site = ? AND type = 'article' AND hidden = 0

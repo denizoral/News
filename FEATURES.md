@@ -2,6 +2,50 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-22 · Storylines (#storylines, #storyline/<id>)
+
+Stories that keep coming back over days and weeks: the arrest, then the
+hearing, then the court filing.
+
+- **Backend** (`src/index/storylines.js`):
+  - Each of the last 60 days is clustered the way the front page is, in the history worker. Past days are clustered once and kept.
+  - Each story with 2+ outlets becomes a chapter. Its vector is the mean of its articles' bge-small embeddings, in the vectors worker.
+  - Chapters are read in date order. Each joins the open storyline it is closest to, or starts a new one. To join, a chapter must be within 0.8 cosine of the line's last four chapters and close to the line as a whole, so a line can't drift.
+  - Below 0.85, a chapter must also share a rare headline word, which keeps "the same company's other news" out.
+  - A line closes after 8 quiet days. A storyline needs chapters on 3+ days.
+  - Storylines are ranked by coverage with a one-week half-life.
+- **API:**
+  - `/api/storylines` (list)
+  - `/api/storyline?id=` (chapters)
+  - Story pages get a `storyline` field.
+- **UI:**
+  - A swimlane timeline on one shared axis: four weeks on desktop, two on a phone.
+  - Each lane has a dot per day, sized by reports. Developing lines end in a pulsing dot.
+  - Rows rise in turn and dots pop in left to right. Dot tooltips. All/Developing filter.
+  - A storyline page has tiles, a reports-per-day bar chart with hover, and a chapter-by-chapter timeline with "N quiet days" gaps and every outlet's copy.
+  - Story pages show a "Part of a storyline" link.
+  - Linked from the footer and ⌘K.
+
+## 2026-10-22 · Who said what (#quotes, #person/<key>)
+
+Direct quotes from AI coverage, attributed by name.
+
+- **Backend** (`src/index/quotes.js`):
+  - Reads article bodies for the common reporting shapes ("…," said Name, role / "…," Name said / Company CEO Name said: "…").
+  - Strips leading role words and resolves surname-only attributions to the full name used in the piece.
+  - Skips pronouns and organisations' voices.
+  - Groups the same line carried by several outlets.
+  - The worker keeps an in-memory index of 45 days and reads only new rows on refresh.
+- **API:**
+  - `/api/quotes?q=`: people quoted by 2+ outlets in 30 days, plus the most-carried lines this week.
+  - `/api/person?name=`: every line, topics, outlets, and who else spoke in the same stories.
+- **UI:**
+  - A wall of pull quotes with an accent bar that draws in, and a staggered rise.
+  - "Ran in N outlets" disclosure.
+  - People directory with monograms, 30-day sparklines and topic chips, and a debounced server-side filter.
+  - Person page with roles, topic chips, a quotes-per-day bar chart with hover, a timeline of their lines, "Quoted by" bars, and "In the same stories".
+  - Linked from the footer and ⌘K.
+
 ## 2026-10-22 · Any day (#day)
 
 **Backend.** `src/index/day.js` rebuilds the front page of any past day from

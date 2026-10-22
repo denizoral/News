@@ -44,6 +44,9 @@ const state = {
   relCounts: null, // { at, data: { [release id]: { n, outlets } } } from /api/releases/coverage
   relCov: new Map(), // release id -> { data, error, pending } from /api/release
   relCovOpen: new Set(), // release ids showing their coverage
+  storyId: null,
+  storyCache: new Map(), // sid -> { at, data, error, pending } from /api/story
+  storyAll: new Set(), // sids showing every outlet in the timeline
   read: new Set(store.get('fw.read', [])),
   live: 'connecting',
   mode: 'api',
@@ -406,7 +409,8 @@ function coverageHtml(story) {
 
 function sourcesListHtml(story) {
   if (!state.open.has(story.id)) return '';
-  return coverageList(story.sources);
+  const link = storyLink(story);
+  return coverageList(story.sources) + (link ? `<a class="story-go" href="${link}">Full coverage: how it spread, the brief, reactions →</a>` : '');
 }
 
 function coverageList(sources) {
@@ -467,7 +471,8 @@ function firstHtml(s) {
 function storyHtml(s, { showThumb = true, dek = true } = {}) {
   const read = state.read.has(s.id) ? ' read' : '';
   const thumb = showThumb && s.image ? `<img class="thumb" src="${esc(s.image)}" alt="" loading="lazy" data-fallback="remove">` : '';
-  const hot = s.sources.length >= 4 ? `<span class="hot">Developing</span>` : '';
+  const link = storyLink(s);
+  const hot = s.sources.length >= 4 ? (link ? `<a class="hot" href="${link}" title="How this story developed">Developing</a>` : `<span class="hot">Developing</span>`) : '';
   return `<article class="story${read}${thumb ? ' has-thumb' : ''}" data-id="${esc(s.id)}">
     <h3><a href="${esc(s.url)}" target="_blank" rel="noopener" data-read="${esc(s.id)}">${highlight(s.title)}</a></h3>
     ${dek && s.summary && s.summary !== s.title && !isUrlOnly(s.summary) ? `<p class="dek">${highlight(s.summary)}</p>` : ''}
@@ -1195,6 +1200,191 @@ function renderTopic() {
   loadTopic(key);
 }
 
+// ---------- Story pages ----------
+// #story/<sid>: one story in full (server: src/index/storypage.js). How it
+// spread (who reported it when), a brief across outlets, X reactions, linked
+// markets with the move since it broke, and earlier background. Story ids are
+// stable, so the link keeps working after the story leaves the feed.
+
+const storyLink = (s) => (s.sid && state.mode === 'api' ? `#story/${encodeURIComponent(s.sid)}` : null);
+
+function sinceLabel(ms) {
+  const m = Math.max(0, Math.round(ms / 60e3));
+  if (m < 60) return `+${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `+${h}h${m % 60 && h < 10 ? ` ${m % 60}m` : ''}`;
+  return `+${Math.round(h / 24)}d`;
+}
+
+async function loadStory(sid) {
+  const hit = state.storyCache.get(sid);
+  if (state.mode !== 'api' || (hit && (hit.pending || Date.now() - hit.at < 2 * 60e3))) return;
+  state.storyCache.set(sid, { ...hit, pending: true });
+  let data = hit?.data || null;
+  let error = null;
+  try {
+    const res = await fetch(`api/story?id=${encodeURIComponent(sid)}`);
+    const body = await res.json();
+    if (res.ok) data = body;
+    else error = body.error;
+  } catch (e) {
+    error = e.message;
+  }
+  state.storyCache.set(sid, { at: Date.now(), data, error });
+  if (state.view === 'story' && state.storyId === sid) transition(renderStory);
+}
+
+// Outlets covering the story over time: a step line from the first report.
+const SCHART = { h: 170, l: 34, r: 12, t: 12, b: 24 };
+function spreadChartHtml(d, animate) {
+  const pts = d.growth;
+  if (pts.length < 2) return '';
+  const w = SCHART.w = Math.max(280, Math.round(($('#storyView .story-main')?.clientWidth || 640) - (innerWidth <= 560 ? 34 : 42)));
+  const { h, l, r, t, b } = SCHART;
+  const t0 = pts[0][0];
+  const t1 = Math.max(pts.at(-1)[0], t0 + 3600e3);
+  const top = Math.max(2, pts.at(-1)[1]);
+  const x = (ts) => l + ((ts - t0) / (t1 - t0)) * (w - l - r);
+  const y = (n) => t + (1 - n / top) * (h - t - b);
+  let path = `M${x(t0).toFixed(1)},${y(0).toFixed(1)}`;
+  for (const [ts, n] of pts) path += ` H${x(ts).toFixed(1)} V${y(n).toFixed(1)}`;
+  path += ` H${(w - r).toFixed(1)}`;
+  const area = `${path} V${y(0).toFixed(1)} H${x(t0).toFixed(1)} Z`;
+  const grid = [0, Math.round(top / 2), top].map((v) => `<line class="grid" x1="${l}" x2="${w - r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="axis" x="${l - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${v}</text>`).join('');
+  const span = t1 - t0;
+  const step = [1, 3, 6, 12, 24, 48, 96].map((hh) => hh * 3600e3).find((s) => span / s <= 6) || 7 * 86400e3;
+  const ticks = [];
+  for (let ts = t0; ts <= t1; ts += step) ticks.push(`<text class="axis" x="${x(ts).toFixed(1)}" y="${h - 6}" text-anchor="${ts === t0 ? 'start' : 'middle'}">${ts === t0 ? 'First report' : sinceLabel(ts - t0)}</text>`);
+  const dots = pts.map(([ts, n], i) => `<circle class="dot" cx="${x(ts).toFixed(1)}" cy="${y(n).toFixed(1)}" r="3.5" style="--i:${Math.min(i, 40)}"/>`).join('');
+  return `<div class="spread-chart${animate ? ' animate' : ''}">
+    <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Outlets covering the story over time: ${top} in ${sinceLabel(t1 - t0).slice(1)}">${grid}<path class="area" d="${area}"/><path class="line" d="${path}" pathLength="1"/><g class="dots">${dots}</g>${ticks.join('')}<line class="cross" y1="${t}" y2="${h - b}" x1="0" x2="0"/></svg>
+    <div class="odds-tip" hidden></div>
+  </div>`;
+}
+
+function spreadHover(e) {
+  const box = e.target.closest('.spread-chart');
+  const d = state.storyCache.get(state.storyId)?.data;
+  if (!box || !d) return;
+  const tip = box.querySelector('.odds-tip');
+  const cross = box.querySelector('.cross');
+  const rect = box.querySelector('svg').getBoundingClientRect();
+  const { w, l, r } = SCHART;
+  const px = ((e.clientX - rect.left) / rect.width) * w;
+  const t0 = d.growth[0][0];
+  const t1 = Math.max(d.growth.at(-1)[0], t0 + 3600e3);
+  const ts = t0 + ((px - l) / (w - l - r)) * (t1 - t0);
+  if (e.type === 'pointerleave' || ts < t0 - 60e3 || ts > t1 + (t1 - t0) * 0.05) { tip.hidden = true; cross.style.opacity = 0; return; }
+  // The latest report at or before the pointer.
+  let k = 0;
+  while (k + 1 < d.growth.length && d.growth[k + 1][0] <= ts) k++;
+  const [at, n] = d.growth[k];
+  const who = d.timeline.find((x) => x.at === at)?.name || d.reactions.find((x) => x.at === at)?.name || '';
+  setHtml(tip, `<time>${sinceLabel(at - t0)} · ${new Date(at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time><ul><li><b>${n}</b> ${n === 1 ? 'outlet' : 'outlets'}</li>${who ? `<li>Latest: ${esc(who)}</li>` : ''}</ul>`);
+  tip.hidden = false;
+  const cx = l + ((at - t0) / (t1 - t0)) * (w - l - r);
+  cross.setAttribute('x1', cx);
+  cross.setAttribute('x2', cx);
+  cross.style.opacity = 1;
+  const left = (cx / w) * rect.width;
+  tip.style.transform = `translateX(${left > rect.width / 2 ? `calc(${left - 12}px - 100%)` : `${left + 12}px`})`;
+}
+
+// One market's leading outcome over the story's window, the moment it broke marked.
+function storyMarketHtml(m, firstAt) {
+  const o = m.outcomes[0];
+  const pts = o?.points || [];
+  let chart = '';
+  if (pts.length > 1) {
+    const w = 260, h = 56, p = 3;
+    const ta = pts[0][0], tb = pts.at(-1)[0];
+    const ys = pts.map(([, v]) => v);
+    const lo = Math.max(0, Math.min(...ys) - 0.03), hi = Math.min(1, Math.max(...ys) + 0.03);
+    const x = (ts) => p + ((ts - ta) / Math.max(1, tb - ta)) * (w - 2 * p);
+    const y = (v) => p + (1 - (v - lo) / Math.max(0.01, hi - lo)) * (h - 2 * p);
+    const line = pts.map(([ts, v]) => `${x(ts).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    const mark = firstAt > ta && firstAt < tb ? `<line class="broke" x1="${x(firstAt).toFixed(1)}" x2="${x(firstAt).toFixed(1)}" y1="0" y2="${h}"/>` : '';
+    chart = `<svg class="sm-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${mark}<polyline points="${line}" pathLength="1"/></svg>`;
+  }
+  const mv = m.move;
+  const move = mv && Math.abs(mv.change) >= 0.005
+    ? `<span class="sm-move ${mv.change > 0 ? 'up' : 'down'}">${pct(mv.from)} → <b>${pct(mv.to)}</b> since the story broke</span>`
+    : mv ? `<span class="sm-move">Steady at <b>${pct(mv.to)}</b> since the story broke</span>` : o?.yes != null ? `<span class="sm-move"><b>${pct(o.yes)}</b>${m.binary ? '' : ` ${esc(o.label)}`}</span>` : '';
+  return `<li><a href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.title)}</a>${chart}${move}${chart && mv ? '<small class="sm-key"><i></i>Story broke</small>' : ''}</li>`;
+}
+
+let storyShown = '';
+function renderStory() {
+  const sid = state.storyId;
+  const entry = state.storyCache.get(sid);
+  const d = entry?.data;
+  // The feed copy shows at once while the full page loads.
+  const live = (state.data?.stories || []).concat(state.data?.tech || []).find((s) => s.sid === sid);
+  const title = d?.title || live?.title || '';
+  document.title = `${title || 'Story'} · ${state.data?.site?.name || 'Frontier Wire'}`;
+  const animate = !!d && storyShown !== `${sid}:${d.generatedAt}` && !reducedMotion();
+  if (d) storyShown = `${sid}:${d.generatedAt}`;
+  if (!d && !live) {
+    setHtml($('#storyView'), `<header class="topic-head"><a class="back" href="#news">← News</a><p class="kicker">Story</p>
+      ${entry?.error ? `<h1>Story not found</h1><p class="topic-sum">${esc(entry.error)}</p>` : '<i class="skeleton sk-title"></i><i class="skeleton"></i>'}</header>`);
+    return loadStory(sid);
+  }
+  const first = d?.firstAt || live?.publishedAt;
+  const lead = d?.lead;
+  const outlets = d?.outlets ?? live?.sources.length ?? 0;
+  const entities = (d?.entities || live?.entities || []).slice(0, 4);
+  const summary = d?.summary || live?.summary || '';
+  const image = d?.image || live?.image;
+  const status = d && !d.live ? 'Archived' : outlets >= 4 ? 'Developing' : 'Story';
+  const meta = [
+    lead?.name ? `First reported by <b>${esc(lead.name)}</b>` : '',
+    first ? time(first) : '',
+    outlets > 1 ? `${outlets} outlets` : '',
+    d?.lastAt && d.lastAt - first > 3600e3 ? `latest ${time(d.lastAt)}` : '',
+  ].filter(Boolean).join(' · ');
+
+  const brief = d?.brief?.length
+    ? `<section class="story-card"><h2>The brief <small>sentences picked from the coverage</small></h2><ol class="brief${animate ? ' animate' : ''}">${d.brief.map((b, i) => `<li style="--i:${i}"><p>${esc(b.text)}</p><a href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.source)}</a></li>`).join('')}</ol></section>`
+    : '';
+  const chart = d ? spreadChartHtml(d, animate) : '<div class="spread-chart loading" aria-busy="true"><i class="skeleton"></i></div>';
+  const tl = d?.timeline || [];
+  const showAll = state.storyAll.has(sid);
+  const rows = (showAll ? tl : tl.slice(0, 10)).map((e, i) => {
+    const h = e.platform === 'web' ? e.host : PLATFORM_HOST[e.platform] || e.host;
+    const via = e.discussion && (e.platform === 'hn' || e.platform === 'reddit') ? `<a class="via" href="${esc(e.discussion)}" target="_blank" rel="noopener">discussion</a>` : '';
+    return `<li style="--i:${Math.min(i, 12)}"${i === 0 ? ' class="first"' : ''}><span class="st-when" title="${esc(new Date(e.at).toLocaleString())}">${i === 0 ? 'First' : sinceLabel(e.at - first)}</span>
+      <img src="${esc(e.avatar || fav(h))}" alt="" width="18" height="18" loading="lazy">
+      <span class="st-body"><b>${esc(e.name)}</b> <a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title)}</a>${via}</span></li>`;
+  }).join('');
+  const spread = `<section class="story-card story-spread"><h2>How it spread <small>${d ? `${tl.length} ${tl.length === 1 ? 'outlet' : 'outlets'}${d.growth.length > tl.length ? ` and ${d.growth.length - tl.length} on X` : ''}` : 'loading…'}</small></h2>${chart}
+    ${rows ? `<ol class="st-list${animate ? ' animate' : ''}">${rows}</ol>` : ''}
+    ${tl.length > 10 ? `<button class="more st-more" type="button" data-storyall="${esc(sid)}">${showAll ? 'Show fewer' : `Show all ${tl.length}`}</button>` : ''}</section>`;
+
+  const reactions = d?.reactions?.length ? `<section><h2>On X</h2><ul class="st-x">${d.reactions.map((r) => `<li><img src="${esc(r.avatar || fav('x.com'))}" alt="" width="28" height="28" loading="lazy" data-fallback="remove">
+    <div><a class="who" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a>${r.at ? ` <span>${time(r.at)}</span>` : ''}<p>${esc(r.title)}</p></div></li>`).join('')}</ul></section>` : '';
+  const markets = d?.markets?.length ? `<section><h2>Markets</h2><ul class="st-markets">${d.markets.map((m) => storyMarketHtml(m, first)).join('')}</ul></section>` : '';
+  const background = d?.background?.length ? `<section><h2>Background <small>earlier coverage</small></h2><ul class="topic-live">${d.background.map((r) => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a><span class="tl-meta"><img src="${esc(fav(r.site))}" alt="" loading="lazy" width="14" height="14">${esc(r.source || r.site)}${r.publishedAt ? ` · ${new Date(r.publishedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}</span></li>`).join('')}</ul></section>` : '';
+  const side = reactions + markets + background || (d ? '' : '<section aria-busy="true"><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i></section>');
+
+  setHtml($('#storyView'), `
+    <header class="topic-head story-head${image ? ' has-image' : ''}">
+      <div>
+        <a class="back" href="#news">← News</a>
+        <p class="kicker">${status}${entities.length ? ` · ${entities.map((k) => `<a href="#topic/${esc(k)}">${esc(topicName(k))}</a>`).join(', ')}` : ''}</p>
+        <h1><a href="${esc(lead?.url || d?.url || live?.url)}" target="_blank" rel="noopener">${esc(title)}</a></h1>
+        ${summary && summary !== title && !isUrlOnly(summary) ? `<p class="story-dek">${esc(summary)}</p>` : ''}
+        <p class="topic-sum">${meta}</p>
+        <button class="chip story-share" type="button" data-share="${esc(sid)}">Copy link</button>
+      </div>
+      ${image ? `<img class="story-hero" src="${esc(image)}" alt="" loading="lazy" data-fallback="remove">` : ''}
+    </header>
+    <div class="topic-grid story-grid">
+      <div class="story-main">${brief}${spread}</div>
+      <aside class="topic-side">${side}</aside>
+    </div>`);
+  loadStory(sid);
+}
+
 // ---------- This week (weekly digest) ----------
 
 async function loadWeek() {
@@ -1355,6 +1545,7 @@ function render() {
   if (state.view === 'markets') renderMarkets();
   if (state.view === 'topic') renderTopic();
   if (state.view === 'week') renderWeek();
+  if (state.view === 'story') renderStory();
   renderFoot();
   updateLive();
   animateOdds();
@@ -1369,6 +1560,13 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
+  const story = /^story\/([\w-]{6,16})$/.exec(v);
+  if (story) {
+    state.storyId = story[1];
+    state.view = 'story';
+    const go = () => { render(); window.scrollTo({ top: 0 }); };
+    return state.data ? transition(go) : go();
+  }
   const topic = /^topic\/([a-z0-9]+)$/.exec(v);
   if (topic) {
     state.topicKey = topic[1];
@@ -1410,6 +1608,16 @@ document.addEventListener('click', (e) => {
   else if (d.xcat) { state.xCat = d.xcat; state.xHandle = null; store.set('fw.xcat', d.xcat); loadX({ animate: true }); }
   else if (d.xhandle) { state.xHandle = state.xHandle === d.xhandle ? null : d.xhandle; loadX({ animate: true }); }
   else if (d.chartToggle) toggleChart(d.chartToggle);
+  else if (d.storyall) {
+    state.storyAll.has(d.storyall) ? state.storyAll.delete(d.storyall) : state.storyAll.add(d.storyall);
+    transition(renderStory);
+  }
+  else if (d.share) {
+    const url = `${location.origin}${location.pathname}#story/${d.share}`;
+    (navigator.share && matchMedia('(pointer: coarse)').matches ? navigator.share({ url }) : navigator.clipboard.writeText(url))
+      .then(() => { t.textContent = 'Copied'; setTimeout(() => (t.textContent = 'Copy link'), 1600); })
+      .catch(() => {});
+  }
   else if (d.relcov) {
     state.relCovOpen.has(d.relcov) ? state.relCovOpen.delete(d.relcov) : state.relCovOpen.add(d.relcov);
     loadRelCov(d.relcov);
@@ -1436,6 +1644,8 @@ document.addEventListener('click', (e) => {
 
 $('#marketList').addEventListener('pointermove', chartHover);
 $('#topicView').addEventListener('pointermove', topicHover);
+$('#storyView').addEventListener('pointermove', spreadHover);
+$('#storyView').addEventListener('pointerleave', spreadHover, true);
 $('#topicView').addEventListener('pointerleave', topicHover, true);
 $('#marketList').addEventListener('pointerleave', chartHover, true);
 $('#moreStories').addEventListener('click', () => { state.limit += 60; renderNews(); });

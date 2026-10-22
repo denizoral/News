@@ -5,6 +5,33 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-22 (06:49 run)
+
+**X account analytics (`computeAccounts`, 30 days: ~700 posts against
+~27k articles, in the vectors worker).**
+
+| | Before | After |
+| --- | ---: | ---: |
+| Every account, cold | 4,013 ms | 911 ms |
+| Every account, warm | — | 217 ms |
+| One account, warm | 120–220 ms | 18 ms |
+
+- **What was slow:** loading full article rows (titles, URLs) for 30 days.
+  The scan now reads only ids, times and sites; titles and URLs are fetched
+  for the few matches.
+- **Caching:** results for posts more than a day old can't change, so they
+  are cached by URL. A warm run only redoes the last day's posts.
+- **Dot products:** a dot product between two stored int8 rows
+  (`VectorIndex.dot`) costs the same as the search loop. Each post only
+  compares with its own 30-hour window, found by binary search on time.
+- **Cached responses:** `/api/accounts` and `/api/account` are cached for
+  10 minutes in the worker. The directory is warmed 60 s after start.
+
+**For you (`/api/foryou`):** ~290 ms with 6 follows on the live feed. Most
+of that is the taste job (URL → doc → row lookups and 300 dot products
+against the centroid). The follow matching on the main thread takes under
+5 ms for 400 stories.
+
 ## 2026-10-22 (04:49 run)
 
 New work per feed rebuild and per request, measured on the live feed (400

@@ -2,6 +2,88 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-22 · X account pages ("Who’s first on X")
+
+**Backend** (`src/index/accounts.js`, in the vectors worker).
+- **Ahead of the press:** every stored X post (~700 in 30 days, all
+  embedded) is compared with the articles published from six hours before
+  it to a day after (int8 dot products against rows already in memory).
+  When articles that say the same thing (cosine ≥ 0.80) only appear after
+  the post, the post led the press by the time to the first of them.
+  - A post doesn't count when the press covered it first, or within 10
+    minutes.
+  - Its own linked article doesn't count, and neither do Reddit or Hacker
+    News, which relay links.
+  - A single late follow-up (one outlet, more than 6 h later) doesn't count.
+  - Results for posts over a day old are final and cached.
+- **Per account:** posts per day, a weekday × hour grid, the companies and
+  themes it posts about, the accounts it mentions, its lead posts, its most
+  picked-up posts (joined live stories with many sources) and its latest
+  posts.
+- **`GET /api/accounts`:** every account ranked by lead posts, with a 14-day
+  sparkline.
+- **`GET /api/account?handle=`:** one account. Add `&vs=` for two accounts
+  side by side plus the names they share.
+- The ⌘K palette's X-account results now open account pages, and the
+  palette lists every account, not only those in the live posts.
+
+**UI** (`public/accounts.js`).
+- **`#accounts`:** a ranked list with a lead bar, median lead, a 14-day
+  sparkline, the top three topics, group and sort chips, and a Follow
+  button.
+- **`#account/<handle>`:**
+  - stat tiles;
+  - a posts-per-day bar chart with hover;
+  - a heatmap of posting hours in the reader's own time zone;
+  - "talks about" share bars;
+  - the lead posts, each showing how far ahead it was and of whom;
+  - a "Compare with…" picker.
+- **`#account/<a>/vs/<b>`:**
+  - two daily charts on one shared scale;
+  - a butterfly chart of the names both accounts post about;
+  - a head-to-head table that marks the leader;
+  - each account's best lead posts.
+- **Where to find it:** the X tab links to it ("Who’s first on X →"), and
+  every author name on X posts opens that account's page. Bars grow and
+  rows rise in, both off under reduced motion.
+
+## 2026-10-22 · For you (follows and a personal feed)
+
+**Backend** (`src/index/foryou.js`).
+- **`GET /api/foryou?t=&n=&a=&o=&s=`** takes the reader's follows from the
+  query string and keeps nothing: topics, names from the Connections graph,
+  X handles, outlets and saved story ids, at most 30 of each. Malformed
+  values are dropped.
+- **Matching:** a story matches when it is tagged with a followed topic,
+  names a followed name, or carries a post or article from a followed
+  account or outlet. Each match carries its reasons.
+- **Taste vector:** the mean embedding of the saved stories and the best
+  follow matches, computed in the vectors worker, scores every live story.
+  This brings in stories close in meaning that name no follow (marked ≈).
+- **Ranking:** distinct follow matches, then taste, then story score, with
+  a boost for stories that are breaking. The response also carries the
+  latest posts from followed accounts.
+- **`GET /api/follow/suggest`:** what is worth following now: topics in the
+  live feed, the most-mentioned names, accounts that lead the press, and
+  the busiest outlets.
+
+**UI** (`public/foryou.js`).
+- **Follow buttons:** topic pages, Connections name panels, account pages
+  and the account list each get one. The plus folds into a check. Every
+  copy on the page stays in step, and a toast confirms each change.
+- **Follows** are kept in this browser (`fw.follows`). The **For you** tab
+  shows how many there are.
+- **`#foryou`:**
+  - with no follows, a picker of suggestions;
+  - with follows, the ranked feed with reason chips (topic, name, @account,
+    outlet, ≈ taste, Breaking);
+  - a "Following" manager with unfollow buttons;
+  - recent posts from followed accounts;
+  - more suggestions;
+  - a short "How it works".
+- The palette and j/k cover both new pages. The service worker caches the
+  new modules (cache `fw-v2`).
+
 ## 2026-10-22 · ⌘K palette, reading list, shortcuts and installable app
 
 **Backend.**

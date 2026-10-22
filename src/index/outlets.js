@@ -130,14 +130,16 @@ export function computeOutlet(db, { site, now = Date.now(), scan = scanOutlets(d
   const s = scan.sites.get(site);
   if (!s || s.ai < MIN_AI) return null;
   // A year of weekly volume (all articles, AI or not), oldest first.
+  // The unary + keeps SQLite on the site index; on the date index it reads a
+  // year of every outlet's articles (2-24 s against ~20 ms).
   const yearSince = now - 52 * WEEK;
   const year = new Array(52).fill(0);
-  for (const r of db.prepare(`SELECT published_at AS at FROM docs WHERE site = ? AND type = 'article' AND hidden = 0 AND published_at >= ?`).all(site, yearSince)) {
+  for (const r of db.prepare(`SELECT published_at AS at FROM docs WHERE site = ? AND +type = 'article' AND +hidden = 0 AND +published_at >= ?`).all(site, yearSince)) {
     const w = Math.floor((now - r.at) / WEEK);
     if (w >= 0 && w < 52) year[51 - w]++;
   }
-  const life = db.prepare(`SELECT COUNT(*) AS n, MIN(published_at) AS first FROM docs WHERE site = ? AND type = 'article' AND hidden = 0`).get(site);
-  const latest = db.prepare(`SELECT title, url, published_at AS at, author FROM docs WHERE site = ? AND type = 'article' AND hidden = 0 AND published_at <= ? ORDER BY published_at DESC LIMIT 40`).all(site, now + 3600e3)
+  const life = db.prepare(`SELECT COUNT(*) AS n, MIN(published_at) AS first FROM docs WHERE site = ? AND +type = 'article' AND +hidden = 0`).get(site);
+  const latest = db.prepare(`SELECT title, url, published_at AS at, author FROM docs WHERE site = ? AND +type = 'article' AND +hidden = 0 AND +published_at <= ? ORDER BY published_at DESC LIMIT 40`).all(site, now + 3600e3)
     .filter((r, i, a) => isAiRelated(r.title) && a.findIndex((x) => x.title === r.title) === i).slice(0, 10);
   const similar = listed(scan).filter((o) => o.site !== site)
     .map((o) => ({ site: o.site, name: nameOf(o), score: mixSimilarity(s, o, scan.all), ai: o.ai }))

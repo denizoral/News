@@ -20,6 +20,8 @@ const PAGES = [
   ['Saved', '#saved', 'Your reading list'],
   ['Ask the Wire', '#ask', 'A question answered with sentences from the coverage, with sources'],
   ['Deals', '#deals', 'Funding rounds, valuations and acquisitions'],
+  ['Any day', '#day', 'The front page of any day in the last year'],
+  ['Outlets', '#outlets', 'Who covers AI and what each outlet covers most'],
   ['Trends', '#trends', 'How often any term comes up, since 2024'],
   ['Status', '#status', 'Every source hour by hour, server vitals, quiet X accounts'],
   ['API and feeds', '#developers', 'JSON API, RSS and JSON feeds for any topic, account or search'],
@@ -177,7 +179,18 @@ export function createPalette({ $, $$, esc, time, setHtml, store, state, reduced
   function tail(qv) {
     const askRow = { type: 'ask', label: `Ask the Wire: “${qv}”`, q: qv };
     const searchRow = { type: 'search', label: `Search everything for “${qv}”`, q: qv };
-    return qv.length < 3 ? [searchRow] : looksLikeQuestion(qv) ? [askRow, searchRow] : [searchRow, askRow];
+    const rest = qv.length < 3 ? [searchRow] : looksLikeQuestion(qv) ? [askRow, searchRow] : [searchRow, askRow];
+    const d = dateIn(qv);
+    return d ? [{ type: 'page', label: `Any day: ${new Date(`${d}T00:00:00Z`).toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`, href: `#day/${d}`, sub: 'That day’s front page' }, ...rest] : rest;
+  }
+
+  // "2026-03-10", "March 10 2026", "Mar 10": a past day, as YYYY-MM-DD.
+  function dateIn(qv) {
+    if (!/\d/.test(qv) || !/^(?:\d{4}-\d{1,2}-\d{1,2}|[a-z]{3,9}\.? \d{1,2}(?:,? \d{4})?|\d{1,2} [a-z]{3,9}(?: \d{4})?)$/i.test(qv)) return null;
+    let t = Date.parse(/^\d{4}-/.test(qv) ? `${qv}T00:00:00Z` : `${qv}${/\d{4}$/.test(qv) ? '' : ` ${new Date().getUTCFullYear()}`} UTC`);
+    if (Number.isNaN(t)) return null;
+    if (t > Date.now() && !/\d{4}/.test(qv)) t = Date.parse(`${new Date(t).toISOString().slice(0, 10).replace(/^\d{4}/, (y) => y - 1)}T00:00:00Z`);
+    return t <= Date.now() && t > Date.now() - 400 * 86400e3 ? new Date(t).toISOString().slice(0, 10) : null;
   }
 
   async function query() {

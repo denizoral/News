@@ -161,7 +161,8 @@ export function computeDay(db, { day, now = Date.now() }) {
       source: lead.source,
       host: lead.sourceHost,
       at: group[0].publishedAt,
-      image: s.image || null,
+      // The lead's own picture; another copy's may be a text card.
+      image: lead.image || null,
       summary: (lead.summary || '').slice(0, 280),
       sources,
       outlets,

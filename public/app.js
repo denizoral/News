@@ -9,6 +9,8 @@ import { createTrends } from './trends.js';
 import { createStatus } from './status.js';
 import { createDeals } from './deals.js';
 import { createAsk } from './ask.js';
+import { createDay } from './day.js';
+import { createOutlets } from './outlets.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -173,6 +175,8 @@ let trendsUi = null;
 let statusUi = null;
 let dealsUi = null;
 let askUi = null;
+let dayUi = null;
+let outletsUi = null;
 
 // ---------- Data ----------
 
@@ -1936,7 +1940,7 @@ function renderWeek() {
   const top = d?.top.length ? `<ol class="wk-top${animate ? ' animate' : ''}">${d.top.map((s, i) => weekStoryHtml(s, i, max)).join('')}</ol>` : d ? '<p class="rail-note">Not enough coverage stored yet.</p>' : '<div class="topic-chart loading" aria-busy="true"><i class="skeleton"></i></div>';
   const days = d?.byDay.length ? `<ol class="wk-days${animate ? ' animate' : ''}">${[...d.byDay].reverse().map((x, i) => `<li style="--i:${i}">
       <time datetime="${x.day}"><b>${dayLabel(x.day, { weekday: 'short' })}</b>${dayLabel(x.day, { day: 'numeric' })}</time>
-      <div>${x.top ? `<a href="${esc(x.top.url)}" target="_blank" rel="noopener">${esc(x.top.title)}</a>` : ''}<span class="tl-meta">${x.top ? `${esc(x.top.source)} · ${x.top.sources} sources · ` : ''}${x.stories.toLocaleString()} stories that day</span></div></li>`).join('')}</ol>` : '';
+      <div>${x.top ? `<a href="${esc(x.top.url)}" target="_blank" rel="noopener">${esc(x.top.title)}</a>` : ''}<span class="tl-meta">${x.top ? `${esc(x.top.source)} · ${x.top.sources} sources · ` : ''}<a href="#day/${x.day}">${x.stories.toLocaleString()} stories that day →</a></span></div></li>`).join('')}</ol>` : '';
 
   const tmax = d?.topics[0]?.n || 1;
   const topics = d?.topics.length ? `<ol class="wk-topics${animate ? ' animate' : ''}">${d.topics.map((t, i) => `<li style="--i:${i}"><a href="#topic/${esc(t.key)}">
@@ -2052,6 +2056,8 @@ function render() {
   if (state.view === 'status') statusUi.render();
   if (state.view === 'deals') dealsUi.render();
   if (state.view === 'ask') askUi.render();
+  if (state.view === 'day') dayUi.render();
+  if (state.view === 'outlets') outletsUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2067,7 +2073,7 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash);
+  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash);
   if (acct) {
     const was = state.view;
     state.view = acct;
@@ -2122,6 +2128,7 @@ document.addEventListener('click', (e) => {
   if (devUi.onClick(t, e)) return;
   if (state.view === 'trends' && trendsUi.onClick(t, e)) return;
   if (state.view === 'deals' && dealsUi.onClick(t, e)) return;
+  if (state.view === 'outlets' && outletsUi.onClick(t, e)) return;
   if (breakingUi.onClick(t) || paletteUi.onClick(t) || foryouUi.onClick(t) || accountsUi.onClick(t) || (state.view === 'models' && modelsUi.onClick(t))) return;
   const d = t.dataset;
   if (d.xopen) { state.xHandle = d.xopen; if (location.hash === '#x') loadX({ animate: true }); return; }
@@ -2192,6 +2199,12 @@ document.addEventListener('submit', (e) => trendsUi.onSubmit(e) || askUi.onSubmi
 $('#dealsView').addEventListener('pointermove', (e) => dealsUi.hover(e));
 $('#dealsView').addEventListener('pointerleave', (e) => dealsUi.hover(e), true);
 $('#dealsView').addEventListener('input', (e) => dealsUi.onInput(e));
+$('#dayView').addEventListener('pointerover', (e) => dayUi.hover(e));
+$('#dayView').addEventListener('pointerleave', (e) => dayUi.hover(e), true);
+$('#dayView').addEventListener('change', (e) => dayUi.onChange(e));
+$('#outletsView').addEventListener('pointermove', (e) => outletsUi.hover(e));
+$('#outletsView').addEventListener('pointerleave', (e) => outletsUi.hover(e), true);
+$('#outletsView').addEventListener('input', (e) => outletsUi.onInput(e));
 $('#askView').addEventListener('pointerover', (e) => askUi.hover(e));
 $('#askView').addEventListener('focusin', (e) => askUi.hover(e));
 $('#askView').addEventListener('pointerleave', (e) => askUi.hover(e), true);
@@ -2233,7 +2246,7 @@ $('#q').addEventListener('input', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (paletteUi.onKey(e) || trendsUi.onKey(e)) return;
+  if (paletteUi.onKey(e) || trendsUi.onKey(e) || dayUi.onKey(e)) return;
   const typing = /input|textarea/i.test(document.activeElement?.tagName);
   if (e.key === '/' && !typing) { e.preventDefault(); $('#q').focus(); return; }
   if (e.key === 'Escape' && typing && document.activeElement === $('#q')) { if (state.mode === 'static') { $('#q').value = ''; state.q = ''; render(); } $('#q').blur(); }
@@ -2307,6 +2320,8 @@ trendsUi = createTrends({ $, esc, setHtml, state, reducedMotion });
 statusUi = createStatus({ $, esc, setHtml, state, reducedMotion, labels: SOURCE_LABELS });
 dealsUi = createDeals({ $, esc, setHtml, state, reducedMotion });
 askUi = createAsk({ $, esc, setHtml, state, reducedMotion, store });
+dayUi = createDay({ $, esc, setHtml, state, reducedMotion });
+outletsUi = createOutlets({ $, esc, setHtml, state, reducedMotion, followBtn: (...a) => foryouUi.btn(...a) });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

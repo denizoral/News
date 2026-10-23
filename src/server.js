@@ -41,6 +41,8 @@ import { incidentsQuery } from './index/incidents.js';
 import { robotsQuery } from './index/robots.js';
 import { openQuery } from './index/openweights.js';
 import { termsQuery } from './index/terms.js';
+import { chipsQuery } from './index/chips.js';
+import { watchFor, normQuery, MAX_WATCHES } from './index/watch.js';
 import { editionIds, isEditionId } from './index/quiz.js';
 import { quizEdition, publicQuiz, recordAnswer, recordScore, quizStats } from './index/quizbook.js';
 import { talentQuery } from './index/talent.js';
@@ -644,6 +646,28 @@ export function createApp({ store, spider }) {
       return openQuery()
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
         .catch((err) => json(req, res, 503, { error: `Open weights are unavailable: ${err.message}` }));
+    }
+    // The compute race: chips, export controls, deals, shortages.
+    if (p === '/api/chips') {
+      if (limited(req, res)) return;
+      return chipsQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `The compute race is unavailable: ${err.message}` }));
+    }
+    // Watchlists: each q (with s, the reader's last look) and what's new since.
+    if (p === '/api/watch') {
+      if (limited(req, res)) return;
+      const qs = url.searchParams.getAll('q');
+      const ss = url.searchParams.getAll('s');
+      const list = [];
+      qs.forEach((raw, i) => {
+        const q = normQuery(raw);
+        if (q && !list.some((x) => x.q.toLowerCase() === q.toLowerCase()) && list.length < MAX_WATCHES) list.push({ q, since: Number(ss[i]) || 0 });
+      });
+      if (!list.length) return json(req, res, 400, { error: 'Add a search to watch.' });
+      return watchFor(list)
+        .then((watches) => json(req, res, 200, { generatedAt: Date.now(), watches }, { 'cache-control': 'private, no-store' }))
+        .catch((err) => json(req, res, 503, { error: `Watchlists are unavailable: ${err.message}` }));
     }
     // AI words, explained, with how much of the coverage uses each.
     if (p === '/api/terms') {

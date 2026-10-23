@@ -29,6 +29,8 @@ const PAGES = [
   ['Benchmarks', '#benchmarks', 'Who leads SWE-bench, GPQA, ARC-AGI and more, and since when'],
   ['Talent moves', '#talent', 'Who joined, left or was hired away between AI labs'],
   ['Courtroom', '#court', 'Lawsuits against AI companies, rulings and settlements'],
+  ['The buildout', '#buildout', 'AI data centers: projects, gigawatts, power and the places pushing back'],
+  ['AI rules', '#rules', 'AI bills, laws, executive orders and regulations, and how far each got'],
   ['AI status', '#uptime', 'Is ChatGPT, Claude or Copilot down? Live status and incident history'],
   ['New names', '#new', 'Models, products and projects new to the news, and what they are'],
   ['Who said what', '#quotes', 'Who is being quoted about AI, and the lines every outlet carried'],

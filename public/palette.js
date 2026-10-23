@@ -40,6 +40,8 @@ const PAGES = [
   ['Watchlist', '#watch', 'Searches you keep, and what’s new since you last looked'],
   ['The mood of AI news', '#mood', 'Good news minus bad, week by week, by company and by outlet'],
   ['Framing', '#framing', 'Same story, different headlines: how each outlet tells it'],
+  ['What’s coming', '#ahead', 'Dates in AI news: launches, events, deadlines, model retirements, markets closing'],
+  ['AI in science', '#science', 'Discoveries, studies and concerns where AI meets research and medicine'],
   ['Quiz', '#quiz', 'The week in AI quiz: ten questions from the stories everyone ran'],
   ['AI status', '#uptime', 'Is ChatGPT, Claude or Copilot down? Live status and incident history'],
   ['New names', '#new', 'Models, products and projects new to the news, and what they are'],

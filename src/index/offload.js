@@ -3,6 +3,7 @@
 // the main thread would stall every request; the worker has its own
 // read-only connection instead.
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 
@@ -49,14 +50,56 @@ export function runJob(job) {
   });
 }
 
+// Results of the default views (no typed parameters: 'rumors', 'deals:1y',
+// 'forecasts::0:') are also kept on disk, so the first visitor after a
+// restart gets the last result at once while it refreshes, instead of
+// waiting seconds for a cold job. Off under the test runner.
+const DISK_KEY = /^[a-zA-Z]+(?::(?:1y|0|7|14|30|90|))*$/;
+const DISK_MAX = 4e6;
+let diskDir = process.env.NODE_TEST_CONTEXT ? null : path.resolve(process.env.DATA_DIR || 'data', 'jobcache');
+export function setJobCacheDir(dir) {
+  diskDir = dir;
+}
+const diskFile = (key) => (diskDir && DISK_KEY.test(key) ? path.join(diskDir, `${key.replace(/:/g, '_')}.json`) : null);
+
+function fromDisk(key) {
+  const file = diskFile(key);
+  if (!file) return null;
+  try {
+    const at = fs.statSync(file).mtimeMs;
+    return { at, data: JSON.parse(fs.readFileSync(file, 'utf8')) };
+  } catch {
+    return null;
+  }
+}
+
+function toDisk(key, data) {
+  const file = diskFile(key);
+  if (!file) return;
+  const text = JSON.stringify(data);
+  if (text.length > DISK_MAX) return;
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.promises.mkdir(diskDir, { recursive: true })
+    .then(() => fs.promises.writeFile(tmp, text))
+    .then(() => fs.promises.rename(tmp, file))
+    .catch(() => {});
+}
+
 // Runs `job` in the worker, cached under `key` for `ttlMs`; a stale entry is
 // served while it refreshes.
 export function cachedJob(key, job, ttlMs) {
-  const hit = cache.get(key);
+  let hit = cache.get(key);
+  if (!hit) {
+    hit = fromDisk(key);
+    if (hit) cache.set(key, hit);
+  }
   if (hit?.data && Date.now() - hit.at < ttlMs) return Promise.resolve(hit.data);
   if (!hit?.pending) {
     const pending = runJob(job)
-      .then((data) => cache.set(key, { at: Date.now(), data }))
+      .then((data) => {
+        cache.set(key, { at: Date.now(), data });
+        toDisk(key, data);
+      })
       .catch((err) => {
         if (hit?.data) cache.set(key, hit);
         else cache.delete(key);

@@ -1595,9 +1595,9 @@ a.hot:hover { text-decoration: underline; }
 .tr-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; list-style: none; margin: -4px 0 10px; padding: 0; font-size: var(--s-1); color: var(--ink-2); font-weight: 600; }
 
 /* ---------- Trends (#trends) ---------- */
-#trendsView, #statusView, #dealsView, #dayView, #outletsView, #quotesView, #storylinesView, #predictionsView, #catchupView, #mapView, #versusView, #rumorsView, #newnamesView, #benchmarksView, #talentView, #uptimeView, #courtView, #buildoutView, #rulesView, #jobsView, #incidentsView, #robotsView, #quizView, #openView, #termsView, #chipsView, #watchView, #moodView, #framingView, #aheadView, #scienceView { position: relative; --s1c: #2a78d6; --s2c: #eb6834; --s3c: #1baf7a; --s4c: #eda100; }
-:root[data-theme='dark'] #trendsView, :root[data-theme='dark'] #statusView, :root[data-theme='dark'] #dealsView, :root[data-theme='dark'] #dayView, :root[data-theme='dark'] #outletsView, :root[data-theme='dark'] #quotesView, :root[data-theme='dark'] #storylinesView, :root[data-theme='dark'] #predictionsView, :root[data-theme='dark'] #catchupView, :root[data-theme='dark'] #mapView, :root[data-theme='dark'] #versusView, :root[data-theme='dark'] #rumorsView, :root[data-theme='dark'] #newnamesView, :root[data-theme='dark'] #benchmarksView, :root[data-theme='dark'] #talentView, :root[data-theme='dark'] #uptimeView, :root[data-theme='dark'] #courtView, :root[data-theme='dark'] #buildoutView, :root[data-theme='dark'] #rulesView, :root[data-theme='dark'] #jobsView, :root[data-theme='dark'] #incidentsView, :root[data-theme='dark'] #robotsView, :root[data-theme='dark'] #quizView, :root[data-theme='dark'] #openView, :root[data-theme='dark'] #termsView, :root[data-theme='dark'] #chipsView, :root[data-theme='dark'] #watchView, :root[data-theme='dark'] #moodView, :root[data-theme='dark'] #framingView, :root[data-theme='dark'] #aheadView, :root[data-theme='dark'] #scienceView { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) #trendsView, :root:not([data-theme='light']) #statusView, :root:not([data-theme='light']) #dealsView, :root:not([data-theme='light']) #dayView, :root:not([data-theme='light']) #outletsView, :root:not([data-theme='light']) #quotesView, :root:not([data-theme='light']) #storylinesView, :root:not([data-theme='light']) #predictionsView, :root:not([data-theme='light']) #catchupView, :root:not([data-theme='light']) #mapView, :root:not([data-theme='light']) #versusView, :root:not([data-theme='light']) #rumorsView, :root:not([data-theme='light']) #newnamesView, :root:not([data-theme='light']) #benchmarksView, :root:not([data-theme='light']) #talentView, :root:not([data-theme='light']) #uptimeView, :root:not([data-theme='light']) #courtView, :root:not([data-theme='light']) #buildoutView, :root:not([data-theme='light']) #rulesView, :root:not([data-theme='light']) #jobsView, :root:not([data-theme='light']) #incidentsView, :root:not([data-theme='light']) #robotsView, :root:not([data-theme='light']) #quizView, :root:not([data-theme='light']) #openView, :root:not([data-theme='light']) #termsView, :root:not([data-theme='light']) #chipsView, :root:not([data-theme='light']) #watchView, :root:not([data-theme='light']) #moodView, :root:not([data-theme='light']) #framingView, :root:not([data-theme='light']) #aheadView, :root:not([data-theme='light']) #scienceView { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; } }
+#trendsView, #statusView, #dealsView, #dayView, #outletsView, #quotesView, #storylinesView, #predictionsView, #catchupView, #mapView, #versusView, #rumorsView, #newnamesView, #benchmarksView, #talentView, #uptimeView, #courtView, #buildoutView, #rulesView, #jobsView, #incidentsView, #robotsView, #quizView, #openView, #termsView, #chipsView, #watchView, #moodView, #framingView, #aheadView, #scienceView, #papersView, #shippedView { position: relative; --s1c: #2a78d6; --s2c: #eb6834; --s3c: #1baf7a; --s4c: #eda100; }
+:root[data-theme='dark'] #trendsView, :root[data-theme='dark'] #statusView, :root[data-theme='dark'] #dealsView, :root[data-theme='dark'] #dayView, :root[data-theme='dark'] #outletsView, :root[data-theme='dark'] #quotesView, :root[data-theme='dark'] #storylinesView, :root[data-theme='dark'] #predictionsView, :root[data-theme='dark'] #catchupView, :root[data-theme='dark'] #mapView, :root[data-theme='dark'] #versusView, :root[data-theme='dark'] #rumorsView, :root[data-theme='dark'] #newnamesView, :root[data-theme='dark'] #benchmarksView, :root[data-theme='dark'] #talentView, :root[data-theme='dark'] #uptimeView, :root[data-theme='dark'] #courtView, :root[data-theme='dark'] #buildoutView, :root[data-theme='dark'] #rulesView, :root[data-theme='dark'] #jobsView, :root[data-theme='dark'] #incidentsView, :root[data-theme='dark'] #robotsView, :root[data-theme='dark'] #quizView, :root[data-theme='dark'] #openView, :root[data-theme='dark'] #termsView, :root[data-theme='dark'] #chipsView, :root[data-theme='dark'] #watchView, :root[data-theme='dark'] #moodView, :root[data-theme='dark'] #framingView, :root[data-theme='dark'] #aheadView, :root[data-theme='dark'] #scienceView, :root[data-theme='dark'] #papersView, :root[data-theme='dark'] #shippedView { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) #trendsView, :root:not([data-theme='light']) #statusView, :root:not([data-theme='light']) #dealsView, :root:not([data-theme='light']) #dayView, :root:not([data-theme='light']) #outletsView, :root:not([data-theme='light']) #quotesView, :root:not([data-theme='light']) #storylinesView, :root:not([data-theme='light']) #predictionsView, :root:not([data-theme='light']) #catchupView, :root:not([data-theme='light']) #mapView, :root:not([data-theme='light']) #versusView, :root:not([data-theme='light']) #rumorsView, :root:not([data-theme='light']) #newnamesView, :root:not([data-theme='light']) #benchmarksView, :root:not([data-theme='light']) #talentView, :root:not([data-theme='light']) #uptimeView, :root:not([data-theme='light']) #courtView, :root:not([data-theme='light']) #buildoutView, :root:not([data-theme='light']) #rulesView, :root:not([data-theme='light']) #jobsView, :root:not([data-theme='light']) #incidentsView, :root:not([data-theme='light']) #robotsView, :root:not([data-theme='light']) #quizView, :root:not([data-theme='light']) #openView, :root:not([data-theme='light']) #termsView, :root:not([data-theme='light']) #chipsView, :root:not([data-theme='light']) #watchView, :root:not([data-theme='light']) #moodView, :root:not([data-theme='light']) #framingView, :root:not([data-theme='light']) #aheadView, :root:not([data-theme='light']) #scienceView, :root:not([data-theme='light']) #papersView, :root:not([data-theme='light']) #shippedView { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; } }
 .tr-form { display: flex; gap: 8px; margin: 0 0 12px; max-width: 640px; }
 .tr-form input { flex: 1; min-width: 0; font: inherit; font-size: var(--s0); padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); }
 .tr-form input:focus { outline: 2px solid var(--signal); outline-offset: 1px; border-color: transparent; }
@@ -1820,7 +1820,7 @@ a.hot:hover { text-decoration: underline; }
 }
 
 /* ---------- Any day (#day) ---------- */
-#dayView h2.when, #outletsView h2.when, #quotesView h2.when, #storylinesView h2.when, #predictionsView h2.when, #catchupView h2.when, #mapView h2.when, #versusView h2.when, #rumorsView h2.when, #newnamesView h2.when, #benchmarksView h2.when, #talentView h2.when, #uptimeView h2.when, #courtView h2.when, #buildoutView h2.when, #rulesView h2.when, #jobsView h2.when, #incidentsView h2.when, #robotsView h2.when, #quizView h2.when, #openView h2.when, #termsView h2.when, #chipsView h2.when, #watchView h2.when, #moodView h2.when, #framingView h2.when, #aheadView h2.when, #scienceView h2.when { display: flex; align-items: baseline; gap: 8px; font-size: var(--s-1); font-weight: 700; color: var(--muted); margin: 8px 0 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+#dayView h2.when, #outletsView h2.when, #quotesView h2.when, #storylinesView h2.when, #predictionsView h2.when, #catchupView h2.when, #mapView h2.when, #versusView h2.when, #rumorsView h2.when, #newnamesView h2.when, #benchmarksView h2.when, #talentView h2.when, #uptimeView h2.when, #courtView h2.when, #buildoutView h2.when, #rulesView h2.when, #jobsView h2.when, #incidentsView h2.when, #robotsView h2.when, #quizView h2.when, #openView h2.when, #termsView h2.when, #chipsView h2.when, #watchView h2.when, #moodView h2.when, #framingView h2.when, #aheadView h2.when, #scienceView h2.when, #papersView h2.when, #shippedView h2.when { display: flex; align-items: baseline; gap: 8px; font-size: var(--s-1); font-weight: 700; color: var(--muted); margin: 8px 0 10px; text-transform: uppercase; letter-spacing: 0.05em; }
 #dayView h2.when span { text-transform: none; letter-spacing: 0; font-weight: 600; }
 .dy-cal { padding-bottom: 12px; }
 .dy-scroll { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 4px; }
@@ -2748,8 +2748,8 @@ a.sl-hl:hover { color: var(--signal); }
 }
 
 /* The buildout (#buildout) */
-#buildoutView h2.when, #rulesView h2.when, #jobsView h2.when, #incidentsView h2.when, #robotsView h2.when, #quizView h2.when, #openView h2.when, #termsView h2.when, #chipsView h2.when, #watchView h2.when, #moodView h2.when, #framingView h2.when, #aheadView h2.when, #scienceView h2.when { flex-wrap: wrap; }
-#buildoutView h2.when span, #rulesView h2.when span, #jobsView h2.when span, #incidentsView h2.when span, #robotsView h2.when span, #quizView h2.when span, #openView h2.when span, #termsView h2.when span, #chipsView h2.when span, #watchView h2.when span, #moodView h2.when span, #framingView h2.when span, #aheadView h2.when span, #scienceView h2.when span { text-transform: none; letter-spacing: 0; font-weight: 600; }
+#buildoutView h2.when, #rulesView h2.when, #jobsView h2.when, #incidentsView h2.when, #robotsView h2.when, #quizView h2.when, #openView h2.when, #termsView h2.when, #chipsView h2.when, #watchView h2.when, #moodView h2.when, #framingView h2.when, #aheadView h2.when, #scienceView h2.when, #papersView h2.when, #shippedView h2.when { flex-wrap: wrap; }
+#buildoutView h2.when span, #rulesView h2.when span, #jobsView h2.when span, #incidentsView h2.when span, #robotsView h2.when span, #quizView h2.when span, #openView h2.when span, #termsView h2.when span, #chipsView h2.when span, #watchView h2.when span, #moodView h2.when span, #framingView h2.when span, #aheadView h2.when span, #scienceView h2.when span, #papersView h2.when span, #shippedView h2.when span { text-transform: none; letter-spacing: 0; font-weight: 600; }
 .bo-charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; margin-bottom: 22px; align-items: start; }
 .bo-charts svg { display: block; width: 100%; height: auto; }
 .bo-seg.s1, .ru-seg.s1 { fill: var(--s1c); } .bo-seg.s2, .ru-seg.s2 { fill: var(--s2c); } .bo-seg.s3, .ru-seg.s3 { fill: var(--s3c); } .ru-seg.s4 { fill: var(--s4c); }
@@ -3532,6 +3532,78 @@ a.sl-hl:hover { color: var(--signal); }
   .ah-mk li { grid-template-columns: minmax(0, 1fr) 7em; }
   .ah-odds { display: none; }
   .sc-labs a { grid-template-columns: 8em minmax(0, 1fr) 2.2em; }
+}
+
+/* Research papers (#papers) */
+#papersView svg, #shippedView svg { display: block; width: 100%; height: auto; }
+#papersView .ac-tip, #shippedView .ac-tip { font-weight: 500; white-space: normal; width: max-content; max-width: min(340px, calc(100vw - 40px)); }
+#papersView .ac-tip p, #shippedView .ac-tip p { white-space: normal; margin: 0; }
+.pp-themes { margin: 0 0 24px; }
+.pp-panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; }
+.pp-panel { display: block; color: var(--ink); padding: 6px 8px 2px; border-radius: var(--r-sm); border: 1px solid transparent; }
+.pp-panel:hover { text-decoration: none; border-color: var(--line); }
+.pp-panel.on { border-color: var(--signal); background: color-mix(in oklab, var(--signal) 6%, var(--surface)); }
+.pp-panel.dim { opacity: 0.45; }
+.pp-ph { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; margin: 0 0 2px; font-size: 12px; }
+.pp-ph b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-ph span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.pp-c rect:not(.pp-hit) { fill: var(--s1c); }
+.pp-c:hover rect:not(.pp-hit) { opacity: 0.8; }
+.pp-hit { fill: transparent; }
+.pp-base { stroke: var(--line); stroke-width: 1; }
+.pp-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 28px; margin: 0 0 24px; align-items: start; }
+.pp-news ol, .pp-latest ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.pp-pn { margin: 0 0 4px; font-size: var(--s0); line-height: 1.35; overflow-wrap: anywhere; }
+.pp-pn a { color: var(--ink); }
+.pp-pn small, .pp-latest small { display: block; color: var(--muted); font-size: 12px; }
+.pp-news ul { list-style: none; margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); display: grid; gap: 4px; }
+.pp-news ul li { font-size: var(--s-1); line-height: 1.35; overflow-wrap: anywhere; }
+.pp-news ul a { color: var(--ink-2); font-weight: 600; }
+.pp-news ul small { color: var(--muted); margin-left: 6px; }
+.pp-words { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0; }
+.pp-words span { font-size: calc(var(--s0) * var(--s)); font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+.pp-words small { font-size: 11px; color: var(--muted); font-weight: 600; margin-left: 3px; }
+.pp-latest { max-width: 860px; }
+.pp-latest li { font-size: var(--s0); line-height: 1.35; overflow-wrap: anywhere; }
+.pp-latest li > a { color: var(--ink); }
+.pp-latest small a { color: var(--ink-2); }
+.pp-page.animate .pp-panel { animation: up-rise 0.4s ease-out both; animation-delay: calc(var(--i) * 45ms); }
+.pp-page.animate .pp-c { transform-box: fill-box; transform-origin: bottom; animation: up-bar 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i) * 25ms + 0.15s); }
+.pp-page.animate .pp-words span { display: inline-block; animation: up-rise 0.35s ease-out both; animation-delay: calc(var(--i) * 25ms + 0.2s); }
+.pp-page.animate .pp-news > ol > li, .pp-page.animate .pp-latest li { animation: up-rise 0.35s ease-out both; animation-delay: calc(var(--i) * 30ms + 0.2s); }
+
+/* Shipped (#shipped) */
+.sh-heat { margin: 0 0 20px; max-width: 900px; }
+.sh-rl { fill: var(--ink-2); font-size: 12px; font-weight: 600; }
+.sh-row:hover .sh-rl, .sh-row.on .sh-rl { fill: var(--signal); }
+.sh-row.dim { opacity: 0.4; }
+.sh-cell { fill: color-mix(in oklab, var(--s1c) calc(var(--a) * 100%), var(--track)); transition: transform 0.15s; transform-box: fill-box; transform-origin: center; }
+.sh-cell.none { fill: var(--track); opacity: 0.6; }
+.sh-cell:hover { stroke: var(--ink); stroke-width: 1.5; }
+.sh-scale { display: flex; align-items: center; gap: 4px; margin: 6px 0 0; font-size: 11px; color: var(--muted); }
+.sh-scale i { width: 16px; height: 10px; border-radius: 2px; background: color-mix(in oklab, var(--s1c) calc(var(--a) * 100%), var(--track)); }
+.sh-scale span { margin: 0 4px; }
+.sh-log { max-width: 860px; }
+.sh-log > ol { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 8px; }
+.sh-h h2 { margin: 14px 0 2px !important; }
+.sh-item { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); }
+.sh-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 4px; font-size: 12px; }
+.sh-prod { font-weight: 800; color: var(--ink); }
+.sh-kind { font-size: 11px; font-weight: 700; color: var(--muted); border: 1px solid var(--line); padding: 0 7px; border-radius: 999px; }
+.sh-kind.k-removal { color: var(--no); border-color: color-mix(in oklab, var(--no) 40%, var(--line)); }
+.sh-meta time { margin-left: auto; color: var(--muted); }
+.sh-item h3 { margin: 0 0 2px; font-size: var(--s0); line-height: 1.35; overflow-wrap: anywhere; }
+.sh-item h3 a { color: var(--ink); }
+.sh-src { margin: 0; font-size: 12px; color: var(--muted); }
+.sh-src a { color: var(--ink-2); }
+.sh-page.animate .sh-cell { animation: ct-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; animation-delay: calc(var(--i) * 20ms + 0.1s); }
+.sh-page.animate .sh-item { animation: up-rise 0.35s ease-out both; animation-delay: calc(var(--i) * 30ms + 0.2s); }
+@media (max-width: 900px) {
+  .pp-grid { grid-template-columns: minmax(0, 1fr); }
+  .pp-panels { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (max-width: 520px) {
+  .sh-rl { font-size: 10.5px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

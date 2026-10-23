@@ -42,6 +42,8 @@ const PAGES = [
   ['Framing', '#framing', 'Same story, different headlines: how each outlet tells it'],
   ['What’s coming', '#ahead', 'Dates in AI news: launches, events, deadlines, model retirements, markets closing'],
   ['AI in science', '#science', 'Discoveries, studies and concerns where AI meets research and medicine'],
+  ['Research papers', '#papers', 'AI papers by theme, rising words, and papers that made the news'],
+  ['Shipped', '#shipped', 'What ChatGPT, Claude, Gemini, Copilot and others shipped, week by week'],
   ['Quiz', '#quiz', 'The week in AI quiz: ten questions from the stories everyone ran'],
   ['AI status', '#uptime', 'Is ChatGPT, Claude or Copilot down? Live status and incident history'],
   ['New names', '#new', 'Models, products and projects new to the news, and what they are'],

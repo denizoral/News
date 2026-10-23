@@ -37,6 +37,8 @@ import { createMood } from './mood.js';
 import { createFraming } from './framing.js';
 import { createAhead } from './ahead.js';
 import { createScience } from './science.js';
+import { createPapers } from './papers.js';
+import { createShipped } from './shipped.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -229,6 +231,8 @@ let moodUi = null;
 let framingUi = null;
 let aheadUi = null;
 let scienceUi = null;
+let papersUi = null;
+let shippedUi = null;
 
 // ---------- Data ----------
 
@@ -2137,6 +2141,8 @@ function render() {
   if (state.view === 'framing') framingUi.render();
   if (state.view === 'ahead') aheadUi.render();
   if (state.view === 'science') scienceUi.render();
+  if (state.view === 'papers') papersUi.render();
+  if (state.view === 'shipped') shippedUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2152,7 +2158,7 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash) || mapUi.route(location.hash) || versusUi.route(location.hash) || rumorsUi.route(location.hash) || newNamesUi.route(location.hash) || benchmarksUi.route(location.hash) || talentUi.route(location.hash) || uptimeUi.route(location.hash) || courtUi.route(location.hash) || buildoutUi.route(location.hash) || rulesUi.route(location.hash) || jobsUi.route(location.hash) || incidentsUi.route(location.hash) || robotsUi.route(location.hash) || quizUi.route(location.hash) || openUi.route(location.hash) || termsUi.route(location.hash) || chipsUi.route(location.hash) || watchUi.route(location.hash) || moodUi.route(location.hash) || framingUi.route(location.hash) || aheadUi.route(location.hash) || scienceUi.route(location.hash);
+  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash) || mapUi.route(location.hash) || versusUi.route(location.hash) || rumorsUi.route(location.hash) || newNamesUi.route(location.hash) || benchmarksUi.route(location.hash) || talentUi.route(location.hash) || uptimeUi.route(location.hash) || courtUi.route(location.hash) || buildoutUi.route(location.hash) || rulesUi.route(location.hash) || jobsUi.route(location.hash) || incidentsUi.route(location.hash) || robotsUi.route(location.hash) || quizUi.route(location.hash) || openUi.route(location.hash) || termsUi.route(location.hash) || chipsUi.route(location.hash) || watchUi.route(location.hash) || moodUi.route(location.hash) || framingUi.route(location.hash) || aheadUi.route(location.hash) || scienceUi.route(location.hash) || papersUi.route(location.hash) || shippedUi.route(location.hash);
   if (acct) {
     const was = state.view;
     state.view = acct;
@@ -2339,6 +2345,10 @@ $('#aheadView').addEventListener('pointerover', (e) => aheadUi.hover(e));
 $('#aheadView').addEventListener('pointerleave', (e) => aheadUi.hover(e), true);
 $('#scienceView').addEventListener('pointerover', (e) => scienceUi.hover(e));
 $('#scienceView').addEventListener('pointerleave', (e) => scienceUi.hover(e), true);
+$('#papersView').addEventListener('pointerover', (e) => papersUi.hover(e));
+$('#papersView').addEventListener('pointerleave', (e) => papersUi.hover(e), true);
+$('#shippedView').addEventListener('pointerover', (e) => shippedUi.hover(e));
+$('#shippedView').addEventListener('pointerleave', (e) => shippedUi.hover(e), true);
 $('#storylinesView').addEventListener('pointerleave', (e) => storylinesUi.hover(e), true);
 $('#askView').addEventListener('pointerover', (e) => askUi.hover(e));
 $('#askView').addEventListener('focusin', (e) => askUi.hover(e));
@@ -2483,6 +2493,8 @@ moodUi = createMood({ $, esc, setHtml, state, reducedMotion });
 framingUi = createFraming({ $, esc, setHtml, state, reducedMotion });
 aheadUi = createAhead({ $, esc, setHtml, state, reducedMotion });
 scienceUi = createScience({ $, esc, setHtml, state, reducedMotion });
+papersUi = createPapers({ $, esc, setHtml, state, reducedMotion });
+shippedUi = createShipped({ $, esc, setHtml, state, reducedMotion });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

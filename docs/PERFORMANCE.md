@@ -5,6 +5,29 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-23 (04:49 run)
+
+**Cold job results after a restart: seconds → milliseconds.** The job cache
+was in memory only, so the first visitor after each deploy or restart waited
+for a cold history-worker job. Default views are now kept on disk
+(`data/jobcache/*.json`, written atomically) and served while they refresh.
+
+| Endpoint, first request after restart | Before | After |
+|---|---|---|
+| `/api/rumors` | 4.5–5.6 s | 6 ms |
+| `/api/buildout` | 1.3 s | 6 ms |
+| `/api/new-names` | 10–19 s | served from disk once written (cached on its next run) |
+
+- **The buildout (`/api/buildout`):**
+  - Compute is 200–320 ms over about 2,350 headlines (FTS prefilter on
+    titles, about 260 ms of it).
+  - Payload is 144 KB raw.
+- **AI rules (`/api/rules`):**
+  - Compute is 105–180 ms over about 400 matching headlines.
+  - Payload is 89 KB raw.
+- **Reddit:** each run takes about 238 s. That is the rate-limit pacing in
+  `redditGet` working as intended, not a fault.
+
 ## 2026-10-23 (02:49 run)
 
 - **AI status (`/api/uptime`):**

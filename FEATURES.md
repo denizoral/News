@@ -2,6 +2,87 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · The buildout (#buildout)
+
+**Backend.** `src/index/buildout.js`:
+- **What it reads:** a year of English data center headlines (FTS prefilter
+  on "data center", "AI factory", Stargate, gigawatt…). Market-research
+  releases, stock tips, how-tos and drone strikes are left out.
+- **Each headline gives:**
+  - the builder, from a list of labs, clouds and data center companies, or
+    else the headline's subject ("KT Cloud breaks ground…");
+  - the place: a US state, a city or project we can place (Abilene,
+    Memphis, Hyperion…) or a country or region;
+  - the size in GW (fleet-wide goals and chip deals don't count);
+  - the money (not revenue, valuations, tax breaks or bills);
+  - the power source: gas, nuclear, solar, batteries and more;
+  - the status: announced, approved, building, online or cancelled.
+- **Pushback:** moratorium or pause, ban, rejected, withdrawn, lawsuit,
+  protest.
+- **Projects:** headlines about the same builder in the same place are one
+  project; the same story from several outlets within two days is one event.
+- **Places:** projects, gigawatts and pushback by kind for each US state and
+  region.
+- **Also:** twelve months of project, pushback and power stories; power
+  sources; builders; and stats, including how many places paused, banned or
+  rejected data centers in 90 days and pushback's share of the coverage.
+- `/api/buildout`.
+
+**UI.** `public/buildout.js`:
+- stat tiles;
+- stacked monthly columns and a pushback-share line (the line doesn't depend
+  on how much we collected that month), both with hover tooltips;
+- a US tile map shaded by projects or by pushback, with a tooltip per state
+  and the rest of the world as bars; tapping a place filters everything
+  below;
+- tabs:
+  - **Projects:** cards with a status rail, a GW bar, money, power chips and
+    an event timeline;
+  - **Pushback:** kind chips and a feed;
+  - **Power and builders:** bars and a builder table;
+- tiles pop in, columns grow, the line draws, cards rise; all off under
+  reduced motion.
+
+## 2026-10-23 · AI rules (#rules)
+
+**Backend.** `src/index/rules.js`:
+- **What counts:** a year of AI policy headlines. Each needs an AI word, a
+  rule word and a jurisdiction. Law-firm news, explainers, guides, questions,
+  lawsuits, and company or platform bans ("Etsy bans…") are left out.
+- **Jurisdiction:** a US state (or its governor), US federal (Congress, the
+  White House, agencies, a US measure about China), the EU, the UK, China and
+  others, or international.
+- **Measure name:** a bill number (SB 53), an act name read back from "Act"
+  to a stop word (RAISE Act; Colorado's AI Act isn't the EU's), an executive
+  order or the AI Action Plan.
+- **Stage:** proposed, advancing, passed, signed, in force, or blocked
+  (vetoed, struck down, delayed, repealed).
+- **Subjects:** chips and export controls, preemption, kids, deepfakes,
+  frontier safety, copyright, jobs, privacy, health, energy, government use.
+- **Grouping:** headlines naming the same measure are one measure; without
+  a name, the same jurisdiction and subject. A measure stands at the
+  furthest stage it reached, unless it was blocked since.
+- **Also:** monthly steps and jurisdictions by stage.
+- `/api/rules`.
+
+**UI.** `public/rules.js`:
+- stat tiles;
+- monthly stacked columns, four stage groups, with a tooltip;
+- jurisdictions as stacked bars of where their measures stand; tap to
+  filter, hover for counts;
+- subject chips;
+- measure cards with a stage rail, jurisdiction and subject chips, and a
+  timeline; named measures first.
+
+## 2026-10-23 · Job results survive restarts
+
+`src/index/offload.js`:
+- the default views' results (rumors, deals, the court, the buildout, and
+  others with no typed parameters) are written to `data/jobcache/`;
+- after a restart they're served at once, as fresh as the file's time
+  allows, while they refresh;
+- off under the test runner.
+
 ## 2026-10-23 · AI status (#uptime)
 
 **Backend.** `src/sources/uptime.js` (a new source, every 10 minutes) and

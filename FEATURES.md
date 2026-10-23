@@ -2,6 +2,65 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · Framing (#framing)
+
+**Backend.** `src/index/framing.js`, `/api/framing`:
+- **Grouping:** the last 48 hours of English AI headlines are grouped into
+  stories by meaning. A headline joins a story when its bge-small cosine to
+  the story's first headline is at least 0.85, among candidates sharing two
+  or more words. 0.82 merged different Nvidia stories; 0.89 split real
+  ones.
+- **Outlets:** one headline per outlet. Outlet names are merged across
+  domains (bbc.co.uk = bbc.com), and a dashed subtitle isn't taken as an
+  outlet.
+- **For each story told by four or more outlets:**
+  - the words most of them share, and the words only one outlet used;
+  - each headline's tone;
+  - its shape: question, quote, number, explainer or scoop;
+  - how differently they're worded (mean pairwise Jaccard distance);
+  - the range of tone.
+- **Most divided:** the stories with the widest tone range, then the widest
+  wording spread.
+- **Outlets against the pack:** each outlet's headline tone minus the other
+  outlets' on the same stories. A darker or brighter outlet shows up even
+  though outlets cover different news.
+
+**UI.** `public/framing.js`:
+- Story cards with a wording-spread meter and good and bad counts. Opening
+  one lines up every outlet's headline, with its own words highlighted, a
+  good or bad tag (the words behind it on hover) and shape tags, under
+  "most say …".
+- Most divided first, then every story.
+- "Against the pack" as diverging bars.
+- `#framing?s=` deep-links to a story.
+
+## 2026-10-23 · The mood of AI news (#mood)
+
+**Backend.** `src/pipeline/tone.js` and `src/index/mood.js`, `/api/mood`:
+- **Tone of a headline:** read from evaluative words, about 150 good and
+  250 bad. "not", "without" and "despite" flip the word after them, and
+  non-evaluative senses are skipped ("fine-tune", "free tier"). A launch is
+  neither good nor bad.
+- **Mood:** points of good headlines minus bad, from 26 weeks of English AI
+  headlines (each copy counted once), by week.
+- **Companies:** 14 big ones, with 90 days against the 90 before, this week,
+  a weekly series, and this week's good and bad headlines.
+- **Outlets:** the warmest and coolest of those with 40 or more headlines.
+- **This week:** the words driving it (with last week's counts) and the
+  strongest-worded headlines.
+
+**UI.** `public/mood.js`:
+- Week-by-week diverging bars around zero, with hover (indigo for good,
+  magenta for bad, the pair validated earlier).
+- Companies as dumbbells: the last 90 days as a dot, the 90 before as a
+  ring. Tapping one opens its weeks and this week's headlines.
+- This week's words sized by count.
+- Warmest and coolest outlets as bars.
+- The week's good and bad headlines in two columns, with the words that
+  made them so.
+
+**Tests:** `test/mood-framing.test.js` (tone, mood, framing).
+
 ## 2026-10-23 · Watchlist (#watch)
 
 **Backend.** `src/index/watch.js`, `/api/watch?q=…&s=…`:

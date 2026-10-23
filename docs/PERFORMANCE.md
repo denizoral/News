@@ -5,6 +5,34 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-23 (14:49 run)
+
+**Mood (`/api/mood`), worker time over 26 weeks of articles:**
+
+| Version | Time | What it read |
+|---|---|---|
+| First | 12.7 s | 8.5 s of it reading 43k rows, cold cache |
+| Now | 0.63 s | only title, URL and date; the outlet comes from the headline suffix or the URL host |
+
+**Why the read was slow:** `site`, `source`, `lang` and `hidden` are stored
+after the large `body` column, so asking for them reads each row's body
+pages.
+
+Warm, selecting only title, URL and date took 220 ms against 728 ms with
+site and source. The language and hidden filters cost about 60–100 ms on
+top.
+
+The mood endpoint answers in 2.5 ms warm, 19 KB brotli.
+
+**Framing (`/api/framing`):**
+- 0.23 s to cluster 3,500 headlines. Embeddings are compared only against
+  stories that share two words, not every pair.
+- The vector index takes 2.2 s to load once per worker, and is shared with
+  the other similarity jobs.
+- Served in 8 ms warm, 55 KB brotli.
+
+**Health:** all sources were OK and every service log was quiet.
+
 ## 2026-10-23 (12:49 run)
 
 **Watchlists (`/api/watch`):**

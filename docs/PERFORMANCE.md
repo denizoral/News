@@ -5,6 +5,27 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-23 (18:49 run)
+
+**Research papers (`/api/papers`):**
+
+| Version | Time | What it did |
+|---|---|---|
+| First | 6.5 s | one FTS search per named paper, about 5 ms each and about 1,000 of them |
+| Now | 0.54 s | 63 days of news titles read once and indexed by word |
+
+The news titles are read with title, URL and date only, since those sit
+before the body. Each paper name is checked against the headlines that
+contain its rarest word. Served in 24 ms warm, 21 KB brotli.
+
+**Shipped (`/api/shipped`):**
+- 0.4 s in the worker. Articles only cut the rows to scan; posts were
+  mostly chatter anyway.
+- Served in 20 ms warm, 32 KB brotli.
+
+**Health:** the classifier errors are fixed (above). Everything else was
+OK.
+
 ## 2026-10-23 (16:49 run)
 
 **What's coming (`/api/ahead`):**

@@ -2,6 +2,71 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · Shipped (#shipped)
+
+**Backend.** `src/index/shipped.js`, `/api/shipped`:
+- **Products:** ChatGPT, Claude, Gemini, Copilot, Grok, Meta AI,
+  Perplexity, Codex, Claude Code, Cursor, Apple Intelligence and Alexa+.
+- **What counts:** 120 days of article headlines that open with the product
+  or its maker and a shipping verb ("can now", "rolls out", "adds",
+  "launches", "is testing", "removes", "will let"…).
+- **What's left out:**
+  - other companies building on a product ("Webflow adds … to ChatGPT");
+  - first-person posts, how-tos, comparisons and negations ("didn't");
+  - business stories (IPO, trademarks, attacks) and newsletter roundups.
+- **Kinds:** removal, pricing, test or spotted, new model, more places and
+  people, or new feature.
+- **Grouping:** the same change within four days is one entry.
+- **Output:** 17 weekly counts per product, the busiest product, and
+  removals in 30 days.
+
+**UI.** `public/shipped.js`:
+- A "who ships most" heatmap of products by week, in one hue and five
+  steps. Hovering a cell lists that week's changes; tapping a product row
+  filters.
+- Product and kind chips.
+- A changelog grouped as "This week", "Last week" and "Week of …".
+
+## 2026-10-23 · Research papers (#papers)
+
+**Backend.** `src/index/papers.js`, `/api/papers`:
+- **What it reads:** a year of Hugging Face paper pages (about 400–1,000 a
+  month), each title once.
+- **Nine themes,** a paper can have several: agents, reasoning and RL,
+  vision, generation, robotics, efficiency, safety, code and maths, and
+  benchmarks.
+- **Rising words:** title words in the last 30 days against the 90 before,
+  by lift.
+- **Papers in the news:** named papers ("QwenGyre:", "LatentLoop:") from
+  the last 60 days whose name a news headline carries as written.
+  - **Plain-word names:** a name like "Mosaic" or "Foresight" also needs
+    two more words from the paper's title.
+  - **Speed:** 63 days of news titles are read once and indexed by word,
+    instead of one search per paper (6.5 s → 0.5 s).
+
+**UI.** `public/papers.js`:
+- Nine theme small multiples (share of each month's papers, one scale) that
+  filter, with hover.
+- Rising words sized by lift.
+- Papers in the news, with their headlines.
+- The latest papers with theme links.
+
+**Tests:** `test/papers-shipped.test.js`.
+
+## 2026-10-23 · Fix: the labeler stalled on half an emoji
+
+The classifier service failed a 28-item batch with a tokenizer `TypeError`
+every minute from 17:53, so 27 items went unlabelled.
+
+- **Cause:** `itemText` cut text with `String#slice(0, 400)`, which split a
+  👀 into a lone UTF-16 surrogate. The tokenizer can't take that.
+- **Fixed:**
+  - `cutChars()` cuts by characters, for the labeler's and the embedder's
+    texts;
+  - the service replaces lone surrogates;
+  - a failing batch is retried one text at a time, with the bad text
+    logged and left unscored, so one item can't stall the queue again.
+
 ## 2026-10-23 · AI in science (#science)
 
 **Backend.** `src/index/science.js`, `/api/science`:

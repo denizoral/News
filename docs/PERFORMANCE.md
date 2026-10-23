@@ -5,6 +5,29 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-23 (20:49 run)
+
+**Company dossiers (`/api/co`), first request for a company after a
+restart:**
+
+| Version | Time |
+|---|---|
+| First | 12–17 s |
+| Now | 2.6 s, with two parts pending, complete a few seconds later |
+
+- **Why it was slow:** the per-company jobs (topic history, company deals)
+  queued behind the startup refreshes in the history lane.
+- **Fix:** each part now races a 2.5 s timer. Late parts are listed as
+  missing, the response isn't cached, and the page asks again every 4 s,
+  up to six times.
+- **Warm:** 3–5 ms.
+
+**AI by the numbers (`/api/numbers`):** about 90 ms in the worker, 4 ms
+warm, 11 KB brotli.
+
+**Health:** all sources were OK. The labeler has run cleanly since last
+run's fix: 146 labelled, none pending.
+
 ## 2026-10-23 (18:49 run)
 
 **Research papers (`/api/papers`):**

@@ -2,6 +2,66 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · Company dossiers (#co, #co/<key>)
+
+**Backend.** `src/index/dossier.js`, `/api/co?key=`:
+- **Companies:** OpenAI, Anthropic, Google, Meta, Microsoft, xAI, Nvidia,
+  Amazon, Apple, DeepSeek and Mistral.
+- **Nothing new is computed.** The cached results of other pages are
+  filtered to the company, with a mapping of how each page names it
+  (ChatGPT and Codex for OpenAI on Shipped; Claude for Anthropic on AI
+  incidents…). The parts are:
+  - its share of coverage (topic pages) and the mood of its headlines;
+  - funding and valuations (Deals) and the figures put on it (Numbers);
+  - what it shipped, incidents, lawsuits, layoffs and open releases, merged
+    into one 120-day timeline with duplicates removed;
+  - dates ahead. A date whose headline names two or more other companies
+    isn't about this one.
+- **Speed:** parts still computing after 2.5 s are listed as missing. They
+  keep computing into the cache, and the page asks again (cold 12–17 s →
+  2.6 s).
+
+**UI.** `public/dossier.js`:
+- Company chips and tiles.
+- Three cards: share of coverage over 30 days (a filled line that draws
+  in), mood by week as diverging bars, and valuations as a step chart.
+- Latest-figure cards and "coming up" dates.
+- One timeline, grouped by week, with type tags and type chips.
+- Topic pages for these companies link to "Full dossier →".
+
+## 2026-10-23 · AI by the numbers (#numbers)
+
+**Backend.** `src/index/numbers.js`, `/api/numbers`:
+- **What it reads:** headlines that open with a company and put a figure
+  on it.
+- **Metrics:** run-rate revenue, revenue, losses and burn, spending on
+  compute, and users. A headline can carry several ("revenue to $5.7
+  billion … burned through $3.7 billion" is two).
+- **The amount:** the one nearest the metric's word, within about 45
+  characters. An amount followed by another metric's word belongs to that
+  metric ("$100B in annual revenue as record AI spending…" is revenue).
+- **Left out:**
+  - valuations, bond sales, IPO bids, deals;
+  - gaps and changes ("$20 billion lower", "$15B increase");
+  - figures where another company is named before the metric word.
+- **Marked:**
+  - forecasts as outlooks;
+  - secondhand reports as "reportedly";
+  - figures for one product or unit (ads, Claude Code, Azure, iPhone) as
+    "part", when the word comes before or just after the amount.
+- **Grouping:** the same figure within two weeks is one point.
+- **The board:** each company's latest whole-company figure per metric, and
+  its history.
+
+**UI.** `public/numbers.js`:
+- A panel per metric: company, a bar (dashed when the latest is only an
+  outlook), the value and its period, tags, a small history chart (hollow
+  dots for outlooks) and the source.
+- Every figure with its headline.
+- Metric and company chips. Company names open dossiers.
+
+**Tests:** `test/numbers-dossier.test.js`.
+
 ## 2026-10-23 · Shipped (#shipped)
 
 **Backend.** `src/index/shipped.js`, `/api/shipped`:

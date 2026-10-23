@@ -34,6 +34,8 @@ import { newNamesQuery } from './index/newnames.js';
 import { benchmarksQuery } from './index/benchmarks.js';
 import { uptimeQuery } from './index/uptime.js';
 import { courtQuery } from './index/court.js';
+import { buildoutQuery } from './index/buildout.js';
+import { rulesQuery } from './index/rules.js';
 import { talentQuery } from './index/talent.js';
 import { statusHistory, startVitals, noteRequest } from './status.js';
 import { storyPage } from './index/storypage.js';
@@ -582,6 +584,20 @@ export function createApp({ store, spider }) {
       return courtQuery()
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
         .catch((err) => json(req, res, 503, { error: `The courtroom is unavailable: ${err.message}` }));
+    }
+    // AI data center projects, power and the places pushing back.
+    if (p === '/api/buildout') {
+      if (limited(req, res)) return;
+      return buildoutQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `The buildout is unavailable: ${err.message}` }));
+    }
+    // AI bills, laws, orders and regulations, and how far each got.
+    if (p === '/api/rules') {
+      if (limited(req, res)) return;
+      return rulesQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `AI rules are unavailable: ${err.message}` }));
     }
     // Who joined, left or was hired away, and the flows between companies.
     if (p === '/api/talent') {

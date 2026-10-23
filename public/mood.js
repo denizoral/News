@@ -39,7 +39,8 @@ export function createMood({ $, esc, setHtml, state, reducedMotion }) {
 
   // Weekly mood around zero: good above, bad below, one scale.
   function weeks(series, narrow, { H = 190, label = 'AI headlines' } = {}) {
-    const W = narrow ? 360 : 760, L = 34, R = 6, T = 8, B = 22;
+    // Close to its drawn width, so the axis text stays at its own size.
+    const W = narrow ? 360 : 1150, L = 34, R = 6, T = 8, B = 22;
     const vals = series.map((s) => s.mood).filter((v) => v != null);
     const m = Math.max(5, ...vals.map(Math.abs));
     const step = m > 20 ? 10 : 5;

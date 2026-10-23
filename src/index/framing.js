@@ -18,7 +18,7 @@ const HOUR = 3600e3;
 const TTL_MS = 20 * 60e3;
 export const FRAMING_HOURS = 48;
 const MIN_OUTLETS = 4;
-const SIM = 0.82;
+const SIM = 0.85;
 
 // One outlet across its domains and names: "bbc.co.uk", "bbc.com" and "BBC".
 export const outletKey = (s) => s.toLowerCase().replace(/^www\./, '').replace(/\.(?:com|co\.uk|org|net|io|ai|co|news|blog|uk)$/, '').replace(/[^a-z0-9]+/g, '');
@@ -44,7 +44,10 @@ export function clusterHeadlines(rows, vi) {
   const groups = [];
   const byTok = new Map();
   for (const r of rows) {
-    const { title, outlet } = splitOutlet(r.title || '');
+    const split = splitOutlet(r.title || '');
+    const { title } = split;
+    // A dashed subtitle ("… - Chief Executive says AI is 'icing on the cake'") isn't an outlet.
+    const outlet = split.outlet && split.outlet.split(/\s+/).length <= 4 ? split.outlet : null;
     if (!title || !/^[\x20-\x7E‘-”–—…$€£]+$/.test(title) || !isAiRelated(title)) continue;
     const toks = new Set(tokens(title));
     if (toks.size < 3) continue;

@@ -1595,9 +1595,9 @@ a.hot:hover { text-decoration: underline; }
 .tr-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; list-style: none; margin: -4px 0 10px; padding: 0; font-size: var(--s-1); color: var(--ink-2); font-weight: 600; }
 
 /* ---------- Trends (#trends) ---------- */
-#trendsView, #statusView, #dealsView, #dayView, #outletsView, #quotesView, #storylinesView, #predictionsView, #catchupView, #mapView, #versusView, #rumorsView, #newnamesView, #benchmarksView, #talentView, #uptimeView { position: relative; --s1c: #2a78d6; --s2c: #eb6834; --s3c: #1baf7a; --s4c: #eda100; }
-:root[data-theme='dark'] #trendsView, :root[data-theme='dark'] #statusView, :root[data-theme='dark'] #dealsView, :root[data-theme='dark'] #dayView, :root[data-theme='dark'] #outletsView, :root[data-theme='dark'] #quotesView, :root[data-theme='dark'] #storylinesView, :root[data-theme='dark'] #predictionsView, :root[data-theme='dark'] #catchupView, :root[data-theme='dark'] #mapView, :root[data-theme='dark'] #versusView, :root[data-theme='dark'] #rumorsView, :root[data-theme='dark'] #newnamesView, :root[data-theme='dark'] #benchmarksView, :root[data-theme='dark'] #talentView, :root[data-theme='dark'] #uptimeView { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) #trendsView, :root:not([data-theme='light']) #statusView, :root:not([data-theme='light']) #dealsView, :root:not([data-theme='light']) #dayView, :root:not([data-theme='light']) #outletsView, :root:not([data-theme='light']) #quotesView, :root:not([data-theme='light']) #storylinesView, :root:not([data-theme='light']) #predictionsView, :root:not([data-theme='light']) #catchupView, :root:not([data-theme='light']) #mapView, :root:not([data-theme='light']) #versusView, :root:not([data-theme='light']) #rumorsView, :root:not([data-theme='light']) #newnamesView, :root:not([data-theme='light']) #benchmarksView, :root:not([data-theme='light']) #talentView, :root:not([data-theme='light']) #uptimeView { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; } }
+#trendsView, #statusView, #dealsView, #dayView, #outletsView, #quotesView, #storylinesView, #predictionsView, #catchupView, #mapView, #versusView, #rumorsView, #newnamesView, #benchmarksView, #talentView, #uptimeView, #courtView { position: relative; --s1c: #2a78d6; --s2c: #eb6834; --s3c: #1baf7a; --s4c: #eda100; }
+:root[data-theme='dark'] #trendsView, :root[data-theme='dark'] #statusView, :root[data-theme='dark'] #dealsView, :root[data-theme='dark'] #dayView, :root[data-theme='dark'] #outletsView, :root[data-theme='dark'] #quotesView, :root[data-theme='dark'] #storylinesView, :root[data-theme='dark'] #predictionsView, :root[data-theme='dark'] #catchupView, :root[data-theme='dark'] #mapView, :root[data-theme='dark'] #versusView, :root[data-theme='dark'] #rumorsView, :root[data-theme='dark'] #newnamesView, :root[data-theme='dark'] #benchmarksView, :root[data-theme='dark'] #talentView, :root[data-theme='dark'] #uptimeView, :root[data-theme='dark'] #courtView { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) #trendsView, :root:not([data-theme='light']) #statusView, :root:not([data-theme='light']) #dealsView, :root:not([data-theme='light']) #dayView, :root:not([data-theme='light']) #outletsView, :root:not([data-theme='light']) #quotesView, :root:not([data-theme='light']) #storylinesView, :root:not([data-theme='light']) #predictionsView, :root:not([data-theme='light']) #catchupView, :root:not([data-theme='light']) #mapView, :root:not([data-theme='light']) #versusView, :root:not([data-theme='light']) #rumorsView, :root:not([data-theme='light']) #newnamesView, :root:not([data-theme='light']) #benchmarksView, :root:not([data-theme='light']) #talentView, :root:not([data-theme='light']) #uptimeView, :root:not([data-theme='light']) #courtView { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; } }
 .tr-form { display: flex; gap: 8px; margin: 0 0 12px; max-width: 640px; }
 .tr-form input { flex: 1; min-width: 0; font: inherit; font-size: var(--s0); padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); }
 .tr-form input:focus { outline: 2px solid var(--signal); outline-offset: 1px; border-color: transparent; }
@@ -1820,7 +1820,7 @@ a.hot:hover { text-decoration: underline; }
 }
 
 /* ---------- Any day (#day) ---------- */
-#dayView h2.when, #outletsView h2.when, #quotesView h2.when, #storylinesView h2.when, #predictionsView h2.when, #catchupView h2.when, #mapView h2.when, #versusView h2.when, #rumorsView h2.when, #newnamesView h2.when, #benchmarksView h2.when, #talentView h2.when, #uptimeView h2.when { display: flex; align-items: baseline; gap: 8px; font-size: var(--s-1); font-weight: 700; color: var(--muted); margin: 8px 0 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+#dayView h2.when, #outletsView h2.when, #quotesView h2.when, #storylinesView h2.when, #predictionsView h2.when, #catchupView h2.when, #mapView h2.when, #versusView h2.when, #rumorsView h2.when, #newnamesView h2.when, #benchmarksView h2.when, #talentView h2.when, #uptimeView h2.when, #courtView h2.when { display: flex; align-items: baseline; gap: 8px; font-size: var(--s-1); font-weight: 700; color: var(--muted); margin: 8px 0 10px; text-transform: uppercase; letter-spacing: 0.05em; }
 #dayView h2.when span { text-transform: none; letter-spacing: 0; font-weight: 600; }
 .dy-cal { padding-bottom: 12px; }
 .dy-scroll { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 4px; }
@@ -2684,6 +2684,67 @@ a.sl-hl:hover { color: var(--signal); }
 @media (max-width: 640px) {
   .up-more { padding-left: 14px; }
   .up-card > a { padding: 12px 12px 10px; }
+}
+
+/* ---------- Courtroom (#court) ---------- */
+#courtView h2.when { flex-wrap: wrap; }
+#courtView .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+#courtView h2.when span { text-transform: none; letter-spacing: 0; font-weight: 600; }
+.ct-charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; margin-bottom: 22px; align-items: start; }
+.ct-months svg { display: block; width: 100%; height: auto; }
+.ct-seg.s1 { fill: var(--s1c); } .ct-seg.s2 { fill: var(--s2c); } .ct-seg.s3 { fill: var(--s3c); }
+.ct-hit { fill: transparent; }
+.ct-col:hover .ct-seg { opacity: 0.8; }
+.ct-sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+.ct-sw.s1 { background: var(--s1c); } .ct-sw.s2 { background: var(--s2c); } .ct-sw.s3 { background: var(--s3c); }
+#courtView .ac-tip { white-space: nowrap; font-weight: 500; }
+.ct-mx-scroll { overflow-x: auto; }
+.ct-matrix table { border-collapse: collapse; font-size: 12px; }
+.ct-matrix th { font-weight: 650; color: var(--ink-2); }
+.ct-matrix thead th { height: 112px; vertical-align: bottom; padding: 0 2px 6px; }
+.ct-matrix thead th a { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; color: var(--muted); max-height: 108px; overflow: hidden; text-overflow: ellipsis; }
+.ct-matrix thead th a.on, .ct-matrix tr.on th a { color: var(--signal); }
+.ct-matrix tbody th { text-align: right; white-space: nowrap; padding: 0 10px 0 0; }
+.ct-matrix tbody th a { color: var(--ink); }
+.ct-matrix tbody th small { color: var(--muted); font-weight: 500; }
+.ct-matrix td { width: 34px; height: 34px; padding: 0; text-align: center; border-top: 1px solid var(--line); }
+.ct-dot { display: inline-grid; place-items: center; width: var(--r); height: var(--r); border-radius: 50%; background: color-mix(in oklab, var(--s1c) 70%, var(--surface)); color: var(--ink); font-size: 10px; font-weight: 700; transition: transform 0.15s, opacity 0.2s; box-shadow: 0 0 0 2px var(--surface); }
+.ct-dot span { opacity: 0; }
+.ct-dot:hover { transform: scale(1.12); text-decoration: none; }
+.ct-dot:hover span { opacity: 1; }
+.ct-dot.off { opacity: 0.25; }
+.ct-themes { margin: 0 0 14px; }
+.ct-themes small { color: var(--muted); font-weight: 500; }
+.ct-cases { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 10px; align-items: start; }
+.ct-case details { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); transition: border-color 0.2s; }
+.ct-case details:hover, .ct-case details[open] { border-color: var(--ink-2); }
+.ct-case summary { list-style: none; cursor: pointer; padding: 14px 16px; }
+.ct-case summary::-webkit-details-marker { display: none; }
+.ct-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; }
+.ct-status { font-size: 11px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--track); color: var(--ink-2); }
+.ct-status.settled, .ct-status.verdict { background: color-mix(in oklab, var(--s3c) 22%, var(--surface)); }
+.ct-status.ruling { background: color-mix(in oklab, var(--s2c) 22%, var(--surface)); }
+.ct-status.filed { background: color-mix(in oklab, var(--s1c) 18%, var(--surface)); }
+.ct-amt { font-size: 13px; font-variant-numeric: tabular-nums; }
+.ct-case h3 { margin: 0 0 4px; font-size: var(--s1); letter-spacing: -0.01em; line-height: 1.25; }
+.ct-sub { margin: 0 0 6px; color: var(--muted); font-size: 12px; }
+.ct-latest { margin: 0; color: var(--ink-2); font-size: var(--s-1); line-height: 1.4; }
+.ct-events { list-style: none; margin: 0 16px 14px 26px; padding: 0 0 0 16px; border-left: 2px solid var(--line); display: grid; gap: 10px; font-size: var(--s-1); }
+.ct-events li { position: relative; }
+.ct-events li::before { content: ''; position: absolute; left: -22px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--track); box-shadow: 0 0 0 2px var(--surface); }
+.ct-events li.k-filed::before { background: var(--s1c); } .ct-events li.k-ruling::before { background: var(--s2c); }
+.ct-events li.k-settled::before, .ct-events li.k-verdict::before, .ct-events li.k-dismissed::before { background: var(--s3c); }
+.ct-ev-h { margin: 0; color: var(--muted); font-size: 12px; }
+.ct-ev-h b { color: var(--ink-2); }
+.ct-ev-t { margin: 2px 0 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; overflow-wrap: anywhere; }
+.ct-ev-t img { border-radius: 3px; align-self: center; }
+.ct-ev-t small { color: var(--muted); }
+.ct-page.animate .ct-col { transform-box: fill-box; transform-origin: bottom; animation: up-bar 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i) * 40ms); }
+.ct-page.animate .ct-case { animation: up-rise 0.4s ease-out both; animation-delay: calc(var(--i) * 35ms + 0.15s); }
+.ct-page.animate .ct-dot { animation: ct-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; animation-delay: 0.2s; }
+@keyframes ct-pop { from { transform: scale(0); } }
+@media (max-width: 900px) {
+  .ct-charts { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {

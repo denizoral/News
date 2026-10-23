@@ -5,6 +5,28 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-23 (12:49 run)
+
+**Watchlists (`/api/watch`):**
+- 10–20 ms per query in the worker.
+- Two watches answer in 42 ms cold and 2 ms warm.
+
+The first design read up to 500 rows per query and counted those. A broad
+watch ("nvidia") hit the cap, so its daily counts covered only the last two
+days. It now runs one grouped count in 10-minute buckets (exact at any
+breadth) and reads only the 60 newest rows. "New since" comes from the
+buckets on the main thread, so the cache is shared across readers.
+
+**The compute race (`/api/chips`):**
+
+| | Time | Notes |
+|---|---|---|
+| Worker | about 370 ms | |
+| First request after a restart | 437 ms | |
+| Warm | 7 ms | 49 KB brotli |
+
+**Health:** all sources were OK and every service log was quiet.
+
 ## 2026-10-23 (10:49 run)
 
 **AI words (`/api/terms`), worker time on the full index:**

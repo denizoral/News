@@ -2,6 +2,68 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · Watchlist (#watch)
+
+**Backend.** `src/index/watch.js`, `/api/watch?q=…&s=…`:
+- **What a watch is:** any site search ("exact phrase", -word, OR,
+  intitle:, site:, type:), parsed by the search module's own parser.
+- **What it matches:** headlines and summaries of articles and posts from
+  the last 14 days.
+- **How it's counted:**
+  - each query is read once in the history worker, as counts in 10-minute
+    buckets plus the newest rows;
+  - the result is cached for three minutes, shared by everyone watching the
+    same query;
+  - the server counts what's newer than each reader's own last look (`s`).
+  The counts stay exact however broad the watch ("nvidia" has 1,526 matches
+  in 14 days).
+- **Limits:** up to 12 watches of 100 characters each. Responses are
+  `private, no-store`.
+
+**UI.** `public/watch.js`:
+- Watches are kept in the browser.
+- **Each card shows:**
+  - the "N new" count;
+  - 14 days of matches as columns, with the days since your last look in
+    full colour and hover;
+  - the newest headlines, with new ones marked;
+  - "Mark seen" and "All results".
+- **Across watches:** "Mark all seen", suggestion chips, and the page title
+  shows the count of new matches.
+- "Watch this search →" on every search page (`#watch?add=`).
+
+**Tests:** `test/watch.test.js`.
+
+## 2026-10-23 · The compute race (#chips)
+
+**Backend.** `src/index/chips.js`, `/api/chips`:
+- **What counts:** a year of English chip headlines. Each must name silicon
+  (GPUs, TPUs, accelerators, HBM, fabs, AI servers); stock tips, gaming
+  cards, phones and model releases are left out.
+- **Camps:** Nvidia, AMD, cloud giants' own chips, Chinese chips, chip
+  startups, and memory and fabs.
+- **What happened:** export controls, shortages and prices, deals and
+  orders, launches, or money.
+- **Grouping:** one camp's news of one kind told the same way within five
+  days is one event.
+- **GPU counts:** taken with the report that names them, with the buyer
+  from the verb or the headline's subject.
+- **Output:**
+  - each camp's monthly share of chip headlines and its 90-day change in
+    points;
+  - the export-control timeline;
+  - stats.
+
+**UI.** `public/chips.js`:
+- Events stacked by what happened, with a legend that filters.
+- Six camp small multiples on one scale (tap to filter).
+- GPU counts as bars on a log scale.
+- The export-control timeline.
+- Camp chips and event cards with every report.
+- Hover tooltips throughout.
+
+**Tests:** `test/chips.test.js`.
+
 ## 2026-10-23 · AI words (#terms)
 
 **Backend.** `src/index/terms.js`, `/api/terms`:

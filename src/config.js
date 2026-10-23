@@ -196,6 +196,7 @@ export const SCHEDULE = {
   showhn: 300,
   tech: 600,
   releases: 900,
+  uptime: 600,
 };
 
 export const RETENTION_HOURS = 72;

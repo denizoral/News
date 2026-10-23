@@ -1,4 +1,4 @@
-// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, any-day pages, outlets, quotes, storylines, predictions, catch-up, the news map, head to head, rumors, new names, benchmarks, talent moves, the entity graph, X accounts, For you) off the main thread
+// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, any-day pages, outlets, quotes, storylines, predictions, catch-up, the news map, head to head, rumors, new names, benchmarks, talent moves, the AI status board, the entity graph, X accounts, For you) off the main thread
 // with its own read-only connection (see offload.js).
 
 import { parentPort, workerData } from 'node:worker_threads';
@@ -27,6 +27,7 @@ import { computeVersus } from './versus.js';
 import { computeRumors, urlSimilarity } from './rumors.js';
 import { computeNewNames } from './newnames.js';
 import { computeBenchmarks } from './benchmarks.js';
+import { computeUptime } from './uptime.js';
 import { computeTalent } from './talent.js';
 
 const db = new DatabaseSync(workerData.file, { readOnly: true });
@@ -67,6 +68,7 @@ const JOBS = {
   versus: ({ a, b, days }) => computeVersus(db, { a, b, days }),
   newnames: () => computeNewNames(db),
   benchmarks: () => computeBenchmarks(db),
+  uptime: () => computeUptime(db),
   talent: () => computeTalent(db),
   rumors: () => computeRumors(db, { similar: urlSimilarity(db, vectorIndex(db)) }),
   forecasts: ({ theme, year, who }) => computeForecasts(forecastIndex(db), { theme, year, who }),

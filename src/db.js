@@ -351,6 +351,25 @@ CREATE TABLE IF NOT EXISTS pushes_sent (
   PRIMARY KEY (token, ref)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS pushes_sent_at ON pushes_sent(at);
+-- Incidents from AI services' status page feeds (src/sources/uptime.js).
+CREATE TABLE IF NOT EXISTS status_incidents (
+  service TEXT NOT NULL,
+  key TEXT NOT NULL,              -- the incident's link on the status page
+  url TEXT NOT NULL,
+  title TEXT NOT NULL,
+  kind TEXT NOT NULL,             -- incident | maintenance
+  severity TEXT NOT NULL,         -- major | minor | maintenance
+  status TEXT NOT NULL,           -- latest update's status
+  started_at INTEGER NOT NULL,
+  resolved_at INTEGER,
+  updated_at INTEGER NOT NULL,
+  components TEXT NOT NULL DEFAULT '[]',
+  updates TEXT NOT NULL DEFAULT '[]',
+  first_seen INTEGER NOT NULL,
+  detailed INTEGER NOT NULL DEFAULT 0, -- incident page read for every update's time
+  PRIMARY KEY (service, key)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS status_incidents_started ON status_incidents(started_at);
 `;
 
 let db = null;

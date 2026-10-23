@@ -32,6 +32,7 @@ import { VERSUS_WINDOWS, versusQuery } from './index/versus.js';
 import { rumorsQuery } from './index/rumors.js';
 import { newNamesQuery } from './index/newnames.js';
 import { benchmarksQuery } from './index/benchmarks.js';
+import { uptimeQuery } from './index/uptime.js';
 import { talentQuery } from './index/talent.js';
 import { statusHistory, startVitals, noteRequest } from './status.js';
 import { storyPage } from './index/storypage.js';
@@ -566,6 +567,13 @@ export function createApp({ store, spider }) {
       return benchmarksQuery()
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
         .catch((err) => json(req, res, 503, { error: `Benchmarks are unavailable: ${err.message}` }));
+    }
+    // AI services' status page incidents: live state, history and coverage.
+    if (p === '/api/uptime') {
+      if (limited(req, res)) return;
+      return uptimeQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=120' }))
+        .catch((err) => json(req, res, 503, { error: `The status board is unavailable: ${err.message}` }));
     }
     // Who joined, left or was hired away, and the flows between companies.
     if (p === '/api/talent') {

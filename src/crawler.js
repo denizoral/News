@@ -5,6 +5,7 @@ import { fetchX, xStatus, embedStatus } from './sources/x.js';
 import { fetchPolymarket } from './sources/polymarket.js';
 import { fetchTech, techStatus } from './sources/tech.js';
 import { fetchReleases } from './sources/releases.js';
+import { fetchUptime } from './sources/uptime.js';
 import { fetchHuggingFace, fetchGitHub, fetchProductHunt, fetchShowHN, fetchOpenRouter } from './sources/builds.js';
 import { ingestAggregatorItems, ingestMarkets } from './index/documents.js';
 import { recordRun } from './status.js';
@@ -32,6 +33,7 @@ export const SOURCES = {
   showhn: fetchShowHN,
   tech: fetchTech,
   releases: fetchReleases,
+  uptime: fetchUptime,
 };
 
 // Bluesky is a backup for X: it only runs while X has been failing, and its
@@ -79,12 +81,12 @@ export async function runSource(store, name) {
     } catch (err) {
       console.warn(`[index] ${name}: ${err.message}`);
     }
-    const count = out.markets?.length ?? out.releases?.length ?? out.items?.length ?? 0;
+    const count = out.count ?? out.markets?.length ?? out.releases?.length ?? out.items?.length ?? 0;
     const ok = !out.stale && (count > 0 || !out.errors?.length);
     store.sourceStatus[name] = {
       ok,
       count,
-      added,
+      added: out.added ?? added,
       errors: out.errors?.length || 0,
       error: ok ? null : out.errors?.[0]?.error,
       ...(out.stale ? { stale: true } : {}),

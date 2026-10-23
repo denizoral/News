@@ -59,3 +59,9 @@ test('dossier: other pages filtered to one company and merged into a timeline', 
   assert.equal(d.stats.shipped30, 1);
   assert.equal(buildDossier('nobody', parts), null);
 });
+
+test('numbers: a figure for one product is marked part and doesn’t stand for the company', async () => {
+  const { parseNumber } = await import('../src/index/numbers.js');
+  assert.equal(parseNumber('Anthropic’s Claude Code hits a $2.5B run rate').part, true);
+  assert.equal(parseNumber('Anthropic boasts revenue run rate of $30 billion').part, false);
+});

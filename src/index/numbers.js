@@ -50,6 +50,9 @@ const METRIC_LABEL = Object.fromEntries(METRICS.map(([k, l]) => [k, l]));
 const MONEY = /([$€£])\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(trillion|billion|million|bn|mn|tn|[bmt])?(?![\p{L}\p{N}])/giu;
 const COUNT = /\b(\d+(?:\.\d+)?)\s*(billion|million|thousand|[bmk])\b(?!\s*(?:dollars|in revenue))/gi;
 const OUTLOOK = /\bthrough 20\d\d\b|\bby the end of\b|\b(?:forecast\w*|expect\w*|project\w*|target\w*|plans?|planned|guidance|outlook|aims?|will|to hit|could|would|may|set to|on track|by 20\d\d|estimat\w*|predict\w*|sees|eyes)\b/i;
+// A figure for part of the business (an ad product, a pilot, one product or
+// division), not the company as a whole.
+const PART = /\bads?\b|\badvertis\w*|\bpilot\b|\bClaude Code\b|\bCodex\b|\bcreators?\b|\bAzure\b|\bAWS\b|\bGoogle Cloud\b|\bcloud\b|\biPhone\b|\bdivision\b|\bsegment\b|\bunit\b|\bVR\b|\bReality Labs\b|\bon VR\b|\bSora\b|\bAPI\b/i;
 const REPORTED = /\breported(?:ly)?\b|\breport\b|\bsources\b|\bsays (?:a )?report\b|\bthe information\b/i;
 // Not company figures: stock tips, price targets, ad returns, reviews.
 const NOT = /\bstatistics\b|\bstats\b|\bstocks? to\b|\bprice target\b|\bshould you\b|\bbuy\b(?! back)|\breview\b|\bvs\.?\b|\bper (?:user|dollar|share)\b|\bper-user\b|\bcould be worth\b|\bwhat to expect\b|\?$/i;
@@ -108,7 +111,7 @@ export function parseNumber(rawTitle, { only = null, used = new Set() } = {}) {
         .filter((c) => !/[$€£]\s?$/.test(title.slice(Math.max(0, c.at - 2), c.at)));
       const c = nearest(counts.filter((x) => !used.has(x.at)), m.index, end);
       if (!c || c.v < 1e4) continue;
-      return { title, at: c.at, company: co[0], metric: key, value: c.v, unit: 'people', period: periodOf(title) || (/\bsubscribers\b/i.test(title) ? 'subscribers' : null), outlook: OUTLOOK.test(title), reported: REPORTED.test(title) };
+      return { title, at: c.at, company: co[0], metric: key, value: c.v, unit: 'people', part: /\bCodex\b|\bClaude Code\b|\bSora\b|\bMuse\b|\bCopilot\b/.test(title), period: periodOf(title) || (/\bsubscribers\b/i.test(title) ? 'subscribers' : null), outlook: OUTLOOK.test(title), reported: REPORTED.test(title) };
     }
     const amounts = [...title.matchAll(MONEY)].map((x) => ({ v: parseMoney(x[1], x[2], x[3]), at: x.index, end: x.index + x[0].length }))
       .filter((x) => {
@@ -120,7 +123,7 @@ export function parseNumber(rawTitle, { only = null, used = new Set() } = {}) {
       });
     const a = nearest(amounts.filter((x) => !used.has(x.at)), m.index, end);
     if (!a) continue;
-    return { title, at: a.at, company: co[0], metric: key, value: a.v, unit: 'usd', period: periodOf(title), outlook: OUTLOOK.test(title), reported: REPORTED.test(title) };
+    return { title, at: a.at, company: co[0], metric: key, value: a.v, unit: 'usd', part: PART.test(title), period: periodOf(title), outlook: OUTLOOK.test(title), reported: REPORTED.test(title) };
   }
   return null;
 }
@@ -161,6 +164,7 @@ export function computeNumbers(db, now = Date.now(), days = NUMBER_DAYS) {
     unit: x.unit,
     period: x.period,
     outlook: x.outlook,
+    part: x.part,
     reported: x.reported,
     title: x.title,
     url: x.url,
@@ -174,8 +178,8 @@ export function computeNumbers(db, now = Date.now(), days = NUMBER_DAYS) {
     const rowsFor = COMPANIES.map(([company]) => {
       const list = out.filter((x) => x.company === company && x.metric === metric);
       if (!list.length) return null;
-      const actual = list.filter((x) => !x.outlook);
-      const latest = actual[0] || list[0];
+      // The latest figure for the whole company, else the latest actual, else anything.
+      const latest = list.find((x) => !x.outlook && !x.part) || list.find((x) => !x.outlook) || list[0];
       return { company, label: LABEL[company], latest, history: [...list].reverse().slice(-12) };
     }).filter(Boolean).sort((a, b) => b.latest.value - a.latest.value);
     return { metric, label, companies: rowsFor };

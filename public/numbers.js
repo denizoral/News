@@ -70,7 +70,7 @@ export function createNumbers({ $, esc, setHtml, state, reducedMotion }) {
       return `<li style="--i:${j}">
         <span class="nb-co">${coLink(r.company, r.label)}</span>
         <span class="nb-barw"><span class="nb-bar${l.outlook ? ' out' : ''}" style="width:${Math.max(1.5, (100 * l.value) / max).toFixed(1)}%"></span></span>
-        <span class="nb-v"><b>${esc(fmt(l))}</b>${l.period ? `<small>${esc(l.period)}</small>` : ''}${l.outlook ? '<small class="nb-tag">outlook</small>' : ''}${l.reported ? '<small class="nb-tag">reportedly</small>' : ''}</span>
+        <span class="nb-v"><b>${esc(fmt(l))}</b>${l.period ? `<small>${esc(l.period)}</small>` : ''}${l.outlook ? '<small class="nb-tag">outlook</small>' : ''}${l.part ? '<small class="nb-tag" title="For part of the business, not the whole company">part</small>' : ''}${l.reported ? '<small class="nb-tag">reportedly</small>' : ''}</span>
         ${history(r, max, d)}
         <a class="nb-src" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.title)}">${esc(l.source || 'source')}</a></li>`;
     }).join('')}</ol></section>`;
@@ -81,7 +81,7 @@ export function createNumbers({ $, esc, setHtml, state, reducedMotion }) {
     const labels = [view.c && d.labels.companies[view.c], view.m && d.labels.metrics[view.m]].filter(Boolean);
     return `<section class="nb-list"><h2 class="when">${esc(labels.length ? labels.join(' · ') : 'Every figure')}<span>newest first</span>${labels.length ? '<a class="tl-clear" href="#numbers">Show all</a>' : ''}</h2><ol>${pts.map((p, i) => `<li style="--i:${Math.min(i, 20)}">
       <b class="nb-amt">${esc(fmt(p))}</b>
-      <div><p class="nb-meta">${coLink(p.company, d.labels.companies[p.company])} · ${esc(d.labels.metrics[p.metric])}${p.period ? ` · ${esc(p.period)}` : ''}${p.outlook ? ' · <span class="nb-tag">outlook</span>' : ''}${p.reported ? ' · <span class="nb-tag">reportedly</span>' : ''}</p>
+      <div><p class="nb-meta">${coLink(p.company, d.labels.companies[p.company])} · ${esc(d.labels.metrics[p.metric])}${p.period ? ` · ${esc(p.period)}` : ''}${p.outlook ? ' · <span class="nb-tag">outlook</span>' : ''}${p.part ? ' · <span class="nb-tag">part of the business</span>' : ''}${p.reported ? ' · <span class="nb-tag">reportedly</span>' : ''}</p>
       <p class="nb-t"><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a><small>${esc(p.source)}${p.outlets > 1 ? ` and ${p.outlets - 1} more` : ''} · ${esc(dayFmt(p.at))}</small></p></div></li>`).join('') || '<li class="rail-note">No figures match.</li>'}</ol></section>`;
   }
 
@@ -98,7 +98,7 @@ export function createNumbers({ $, esc, setHtml, state, reducedMotion }) {
       <nav class="pd-chips ct-themes" aria-label="Company"><a class="chip${view.c ? '' : ' on'}" href="${esc(href({ c: '' }))}">Every company</a>${d.companies.map((c) => `<a class="chip${view.c === c.key ? ' on' : ''}" href="${esc(href({ c: view.c === c.key ? '' : c.key }))}">${esc(c.label)} <small>${c.n}</small></a>`).join('')}</nav>
       <div class="nb-panels">${panels.map((b, i) => panel(b, d, i)).join('')}</div>
       ${list(d)}
-      <p class="rail-note">From ${d.headlines} headlines in the last year that open with a company and put a figure on it: run-rate revenue, reported revenue, losses and burn, spending on compute and data centers, or users. The amount is the one nearest the metric’s word; valuations, bond sales, IPO targets and gaps (“$20 billion lower”) are left out. Forecasts are marked outlook and hollow, secondhand reports “reportedly”. Headlines round and companies define revenue differently, so compare with care. Valuations are on <a href="#deals">Deals</a>. <a href="/api/numbers">JSON</a></p>`;
+      <p class="rail-note">From ${d.headlines} headlines in the last year that open with a company and put a figure on it: run-rate revenue, reported revenue, losses and burn, spending on compute and data centers, or users. The amount is the one nearest the metric’s word; valuations, bond sales, IPO targets and gaps (“$20 billion lower”) are left out. Forecasts are marked outlook and hollow, figures for one product or unit (an ad business, Claude Code, Azure) “part”, and secondhand reports “reportedly”; a company’s bar shows its latest whole-company figure when there is one. Headlines round and companies define revenue differently, so compare with care. Valuations are on <a href="#deals">Deals</a>. <a href="/api/numbers">JSON</a></p>`;
   }
 
   function render() {

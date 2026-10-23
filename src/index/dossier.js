@@ -56,7 +56,9 @@ export function buildDossier(key, parts, now = Date.now()) {
     return true;
   });
 
-  const ahead = (parts.ahead?.items || []).filter((x) => x.kind !== 'market' && c.match.test(x.title)).slice(0, 8);
+  // About this company, not a list of several ("We asked ChatGPT, Claude and Grok…").
+  const others = Object.entries(DOSSIERS).filter(([k]) => k !== key).map(([, o]) => o.match);
+  const ahead = (parts.ahead?.items || []).filter((x) => x.kind !== 'market' && c.match.test(x.title) && others.filter((re) => re.test(x.title)).length < 2).slice(0, 8);
   const mood = (parts.mood?.companies || []).find((m) => m.key === c.mood) || null;
   const latestFigures = (parts.numbers?.board || []).map((b) => ({ metric: b.metric, label: b.label, row: b.companies.find((r) => r.company === c.numbers) })).filter((x) => x.row).map((x) => ({ metric: x.metric, label: x.label, latest: x.row.latest, history: x.row.history }));
   const share = parts.topic?.series || null;

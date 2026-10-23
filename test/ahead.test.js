@@ -43,4 +43,6 @@ test('what’s coming: grouped across outlets, kinds, markets by day, iCalendar'
   assert.match(ics, /BEGIN:VEVENT[\s\S]*DTSTART;VALUE=DATE:20261130[\s\S]*END:VEVENT/);
   assert.equal(ics.match(/BEGIN:VEVENT/g).length, 1);
   assert.ok(ics.split('\r\n').every((l) => l.length <= 75));
+  const order = d.items.map((x) => x.date);
+  assert.deepEqual(order, [...order].sort(), 'by date');
 });

@@ -161,7 +161,9 @@ export function computeAhead(db, { now = Date.now(), markets = [] } = {}) {
     list.sort((a, b) => b.volume - a.volume);
     out.push({ id: `${date}-markets`, date, precision: 'day', kind: 'market', title: list.length === 1 ? list[0].title : `${list.length} prediction markets close`, url: list[0].url, source: 'Polymarket', outlets: 0, markets: list.slice(0, 8), marketCount: list.length, reports: [] });
   }
-  out.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'market') - (b.kind === 'market') || b.outlets - a.outlets);
+  // On one date the loosest come first, so the agenda's headings stay together.
+  const loose = { quarter: 0, month: 1, week: 2, day: 3 };
+  out.sort((a, b) => a.date.localeCompare(b.date) || loose[a.precision] - loose[b.precision] || (a.kind === 'market') - (b.kind === 'market') || b.outlets - a.outlets);
   const in30 = out.filter((x) => Date.parse(x.date) <= today + 30 * DAY);
   return {
     generatedAt: now,

@@ -25,6 +25,8 @@ import { createUptime } from './uptime.js';
 import { createCourt } from './court.js';
 import { createBuildout } from './buildout.js';
 import { createRules } from './rules.js';
+import { createJobs } from './jobs.js';
+import { createIncidents } from './incidents.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -205,6 +207,8 @@ let uptimeUi = null;
 let courtUi = null;
 let buildoutUi = null;
 let rulesUi = null;
+let jobsUi = null;
+let incidentsUi = null;
 
 // ---------- Data ----------
 
@@ -2101,6 +2105,8 @@ function render() {
   if (state.view === 'court') courtUi.render();
   if (state.view === 'buildout') buildoutUi.render();
   if (state.view === 'rules') rulesUi.render();
+  if (state.view === 'jobs') jobsUi.render();
+  if (state.view === 'incidents') incidentsUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2116,7 +2122,7 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash) || mapUi.route(location.hash) || versusUi.route(location.hash) || rumorsUi.route(location.hash) || newNamesUi.route(location.hash) || benchmarksUi.route(location.hash) || talentUi.route(location.hash) || uptimeUi.route(location.hash) || courtUi.route(location.hash) || buildoutUi.route(location.hash) || rulesUi.route(location.hash);
+  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash) || mapUi.route(location.hash) || versusUi.route(location.hash) || rumorsUi.route(location.hash) || newNamesUi.route(location.hash) || benchmarksUi.route(location.hash) || talentUi.route(location.hash) || uptimeUi.route(location.hash) || courtUi.route(location.hash) || buildoutUi.route(location.hash) || rulesUi.route(location.hash) || jobsUi.route(location.hash) || incidentsUi.route(location.hash);
   if (acct) {
     const was = state.view;
     state.view = acct;
@@ -2281,6 +2287,10 @@ $('#buildoutView').addEventListener('pointerover', (e) => buildoutUi.hover(e));
 $('#buildoutView').addEventListener('pointerleave', (e) => buildoutUi.hover(e), true);
 $('#rulesView').addEventListener('pointerover', (e) => rulesUi.hover(e));
 $('#rulesView').addEventListener('pointerleave', (e) => rulesUi.hover(e), true);
+$('#jobsView').addEventListener('pointerover', (e) => jobsUi.hover(e));
+$('#jobsView').addEventListener('pointerleave', (e) => jobsUi.hover(e), true);
+$('#incidentsView').addEventListener('pointerover', (e) => incidentsUi.hover(e));
+$('#incidentsView').addEventListener('pointerleave', (e) => incidentsUi.hover(e), true);
 $('#storylinesView').addEventListener('pointerleave', (e) => storylinesUi.hover(e), true);
 $('#askView').addEventListener('pointerover', (e) => askUi.hover(e));
 $('#askView').addEventListener('focusin', (e) => askUi.hover(e));
@@ -2413,6 +2423,8 @@ uptimeUi = createUptime({ $, esc, setHtml, state, reducedMotion });
 courtUi = createCourt({ $, esc, setHtml, state, reducedMotion });
 buildoutUi = createBuildout({ $, esc, setHtml, state, reducedMotion });
 rulesUi = createRules({ $, esc, setHtml, state, reducedMotion });
+jobsUi = createJobs({ $, esc, setHtml, state, reducedMotion });
+incidentsUi = createIncidents({ $, esc, setHtml, state, reducedMotion });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

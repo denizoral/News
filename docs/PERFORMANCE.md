@@ -5,6 +5,29 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-23 (10:49 run)
+
+**AI words (`/api/terms`), worker time on the full index:**
+
+| Version | Time | What it did per term |
+|---|---|---|
+| First | 6.7 s | three search-index queries: monthly counts, 90-day windows, first sighting |
+| Now | 2.1 s | one read of the matching rows; months, windows and examples bucketed in JS |
+
+- **Why it changed:** the JS bucketing also re-checks each match against the
+  term's own words, which the search index can't do.
+- **Served:** 17 ms warm, 36 KB brotli (107 KB raw).
+- **Cold:** 3.9 s on the first request after a restart, while the startup
+  refreshes run. After that it's served from `data/jobcache`.
+
+**Open weights (`/api/open`):**
+- 150–270 ms in the worker.
+- 16 KB brotli.
+- The first request after a restart took 2.6 s, behind the startup jobs.
+
+**Health:** all 15 sources were OK and every service log was quiet. Nothing
+needed fixing.
+
 ## 2026-10-23 (08:49 run)
 
 **Front-page payload:** checked, no change. `/api/snapshot` is 1.29 MB raw

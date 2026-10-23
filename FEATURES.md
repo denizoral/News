@@ -2,6 +2,74 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · AI words (#terms)
+
+**Backend.** `src/index/terms.js`, `/api/terms`:
+- **Glossary:** 48 hand-written definitions of the jargon in AI news, in five
+  kinds (products, techniques, business, safety, culture). Examples: agents,
+  MCP, mixture of experts, RAG, open weights, alignment, AI slop.
+- **For each term:**
+  - its share of all stored headlines, month by month for a year, so a busier
+    crawl doesn't look like a rising word;
+  - headlines in the last 90 days and the change in share against the 90
+    before;
+  - the peak month;
+  - the five latest English headlines.
+- **Matching:** the search index stems words and ignores case, so every
+  match is checked against the term's own words. "Transformer" doesn't
+  count "transform", and "MoE" doesn't count "Scott Moe". Words that also
+  mean other things (agents, tokens, inference, alignment) count only next to
+  an AI word.
+- **Cost:** one read per term; about 2 s in the history worker, kept on disk.
+- **Rising and fading:** the biggest gains and losses in share.
+
+**UI.** `public/terms.js`:
+- Rising cards with sparklines that draw in.
+- Rising-and-fading diverging bars on one scale, with hover.
+- The glossary A to Z with kind chips. Each entry shows its definition, a
+  sparkline, the 90-day count and its change; opening it shows the year as
+  columns (with hover) and the latest headlines.
+- `#terms?t=mcp` opens a term and scrolls to it.
+
+**Tests:** `test/terms.test.js`.
+
+## 2026-10-23 · Open weights (#open)
+
+**Backend.** `src/index/openweights.js`, `/api/open`:
+- **What counts:** a year of headlines where a lab releases a model and says
+  the weights are open, or names a family that ships open (Gemma, Qwen,
+  Llama, Nemotron, GLM, Kimi…). Tools, engines, datasets, chips, deals and
+  hosted-only or weightless releases are left out.
+- **For each release:**
+  - the lab and where it's based (US, China, Europe or elsewhere);
+  - the model's name;
+  - total and active parameters (a size in the model's own name wins);
+  - context length, license, and what it handles: text, code, speech,
+    images, or vision.
+- **Grouping:** the same lab's model within a month is one release.
+- **Built on:** the lab must be the subject of the headline. Another
+  company's model post-trained on a lab's weights is a derivative
+  (Cognition's SWE-2 on Kimi K3).
+- **Output:** monthly releases by region, labs, sizes over time, and 90-day
+  shares. The tiles show the biggest model, the share that are mixtures of
+  experts, and the median size.
+
+**UI.** `public/open.js`:
+- Releases by month stacked by region, with legend items that filter.
+- Sizes over time on a log scale. Each dot is coloured by region, a dashed
+  line drops to the active parameters, and the biggest are labelled without
+  colliding.
+- Labs with their region, which filter.
+- Built on, as chips.
+- Release cards with every report, and kind-of-model chips.
+- Hover tooltips throughout.
+
+**Tests:** `test/openweights.test.js`.
+
+**Also:** deep links that open a card or term (#open, #terms, #robots,
+#incidents) now scroll after the router's jump to the top, so they land on
+the item.
+
 ## 2026-10-23 · The week in AI quiz (#quiz)
 
 **Backend.** `src/index/quiz.js`, `src/index/quizbook.js`:

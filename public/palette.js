@@ -34,6 +34,8 @@ const PAGES = [
   ['AI and jobs', '#jobs', 'Layoffs companies tie to AI, how many jobs, and whether AI is really the reason'],
   ['AI incidents', '#incidents', 'When AI went wrong: rogue agents, hacks, deepfakes, scams, harm and made-up answers'],
   ['Robots', '#robots', 'Humanoids and robot brains: money raised, launches, deployments, prices, and the US–China race'],
+  ['Open weights', '#open', 'Open model releases: labs, sizes, licenses, who builds on whom, and the US–China race'],
+  ['AI words', '#terms', 'The jargon in AI news explained, and which words are rising'],
   ['Quiz', '#quiz', 'The week in AI quiz: ten questions from the stories everyone ran'],
   ['AI status', '#uptime', 'Is ChatGPT, Claude or Copilot down? Live status and incident history'],
   ['New names', '#new', 'Models, products and projects new to the news, and what they are'],

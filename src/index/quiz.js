@@ -127,9 +127,16 @@ export function moneyQuestion(title, rand) {
   return null;
 }
 
+// "OpenAI resumes training by...?" with its one outcome "October 31".
+export function marketText(title, label) {
+  if (!label || label === title) return title;
+  if (/(?:\.\.\.|…)\?$/.test(title)) return title.replace(/\s*(?:\.\.\.|…)\?$/, ` ${label}?`);
+  return `${title} (${label})`;
+}
+
 // Where a market that moved this week ended it: options ten or more points
 // apart, one of them where it started.
-export function marketQuestion(market, start, end, rand) {
+export function marketQuestion(market, start, end, rand, since = 'when the week began') {
   const right = Math.round(end * 100);
   const from = Math.round(start * 100);
   const picks = [right];
@@ -144,11 +151,11 @@ export function marketQuestion(market, start, end, rand) {
   return {
     type: 'market',
     kind: 'market',
-    prompt: `On Polymarket this week, the odds started at ${from}%. Where did they end the week?`,
-    text: market.title,
+    prompt: `On Polymarket, the odds were ${from}% ${since}. Where did they end the week?`,
+    text: marketText(market.title, market.outcomes?.[0]),
     options,
     answer: options.indexOf(`${right}%`),
-    market: { title: market.title, url: market.url, start: from, end: right },
+    market: { title: marketText(market.title, market.outcomes?.[0]), url: market.url, start: from, end: right },
   };
 }
 
@@ -215,18 +222,20 @@ export function buildQuiz(db, { id, markets = [], stories }) {
   }
 
   // Binary markets with the biggest move between the week's start and end.
-  const at = db.prepare('SELECT yes FROM odds WHERE market = ? AND outcome = ? AND ts <= ? ORDER BY ts DESC LIMIT 1');
-  const after = db.prepare('SELECT yes FROM odds WHERE market = ? AND outcome = ? AND ts >= ? AND ts < ? ORDER BY ts LIMIT 1');
+  const at = db.prepare('SELECT yes, ts FROM odds WHERE market = ? AND outcome = ? AND ts <= ? ORDER BY ts DESC LIMIT 1');
+  const after = db.prepare('SELECT yes, ts FROM odds WHERE market = ? AND outcome = ? AND ts >= ? AND ts < ? ORDER BY ts LIMIT 1');
   const moved = [];
   for (const m of markets) {
     if (!m.binary || !m.outcomes?.length) continue;
     const o = m.outcomes[0];
-    const a = at.get(m.id, o, from)?.yes ?? after.get(m.id, o, from, from + DAY)?.yes;
+    // Where it stood when the week began, or when the history starts if
+    // that's within the week's first five days.
+    const s0 = at.get(m.id, o, from) || after.get(m.id, o, from, from + 5 * DAY);
     const b = at.get(m.id, o, end)?.yes;
-    if (a == null || b == null || Math.abs(b - a) < 0.08) continue;
-    moved.push({ m, a, b, d: Math.abs(b - a) });
+    if (!s0 || b == null || Math.abs(b - s0.yes) < 0.08) continue;
+    moved.push({ m, a: s0.yes, b, d: Math.abs(b - s0.yes), since: s0.ts <= from ? 'when the week began' : `on ${new Date(s0.ts).toLocaleDateString('en', { weekday: 'long', timeZone: 'UTC' })}` });
   }
-  const mq = moved.sort((x, y) => y.d - x.d).slice(0, 2).map(({ m, a, b }) => marketQuestion(m, a, b, rand)).filter(Boolean);
+  const mq = moved.sort((x, y) => y.d - x.d).slice(0, 2).map(({ m, a, b, since }) => marketQuestion(m, a, b, rand, since)).filter(Boolean);
 
   // Names lead, money and markets break it up.
   const questions = [...names];

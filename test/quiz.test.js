@@ -31,6 +31,8 @@ test('quiz questions: a missing name, an amount, where a market ended', () => {
   const k = marketQuestion({ title: 'OpenAI IPO in 2026?', url: 'https://polymarket.com/x' }, 0.34, 0.61, rand);
   assert.equal(k.options[k.answer], '61%');
   assert.ok(k.options.includes('34%'), 'where it started is an option');
+  assert.match(k.prompt, /34% when the week began/);
+  assert.equal(marketQuestion({ title: 'OpenAI resumes training by...?', outcomes: ['October 31'] }, 0.58, 0.34, rand).text, 'OpenAI resumes training by October 31?');
 });
 
 test('quiz: an edition from the week’s headlines, answers counted', () => {

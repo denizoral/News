@@ -1820,7 +1820,7 @@ a.hot:hover { text-decoration: underline; }
 }
 
 /* ---------- Any day (#day) ---------- */
-#dayView h2.when, #outletsView h2.when, #quotesView h2.when, #storylinesView h2.when, #predictionsView h2.when, #catchupView h2.when, #mapView h2.when, #versusView h2.when, #rumorsView h2.when, #newnamesView h2.when, #benchmarksView h2.when, #talentView h2.when { display: flex; align-items: baseline; gap: 8px; font-size: var(--s-1); font-weight: 700; color: var(--muted); margin: 8px 0 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+#dayView h2.when, #outletsView h2.when, #quotesView h2.when, #storylinesView h2.when, #predictionsView h2.when, #catchupView h2.when, #mapView h2.when, #versusView h2.when, #rumorsView h2.when, #newnamesView h2.when, #benchmarksView h2.when, #talentView h2.when, #uptimeView h2.when { display: flex; align-items: baseline; gap: 8px; font-size: var(--s-1); font-weight: 700; color: var(--muted); margin: 8px 0 10px; text-transform: uppercase; letter-spacing: 0.05em; }
 #dayView h2.when span { text-transform: none; letter-spacing: 0; font-weight: 600; }
 .dy-cal { padding-bottom: 12px; }
 .dy-scroll { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 4px; }
@@ -2603,8 +2603,8 @@ a.sl-hl:hover { color: var(--signal); }
 .up-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 0; margin: 0 0 10px; font-size: 12px; color: var(--muted); }
 .up-legend li { display: inline-flex; align-items: center; gap: 6px; }
 .up-legend i { width: 8px; height: 14px; border-radius: 2px; background: var(--up-ok); }
-.up-legend .minor i { background: var(--up-minor); } .up-legend .major i { background: var(--up-major); } .up-legend .maintenance i { background: var(--up-maint); }
-.up-legend .ok i { height: 7px; } .up-legend .nd i { height: 7px; background: var(--up-nd); }
+.up-legend .lg-minor i { background: var(--up-minor); } .up-legend .lg-major i { background: var(--up-major); } .up-legend .lg-maintenance i { background: var(--up-maint); }
+.up-legend .lg-ok i { height: 7px; } .up-legend .lg-nd i { height: 7px; background: var(--up-nd); }
 
 .up-grid { list-style: none; padding: 0; margin: 0 0 28px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 12px; }
 .up-card > a { display: block; height: 100%; padding: 14px 16px 12px; border-radius: var(--r-lg); border: 1px solid var(--line); background: var(--surface); color: inherit; transition: border-color 0.2s, transform 0.2s, opacity 0.2s; }
@@ -2612,7 +2612,7 @@ a.sl-hl:hover { color: var(--signal); }
 .up-card.sel > a { border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal); }
 .up-card.dim > a { opacity: 0.55; }
 .up-card.dim > a:hover { opacity: 1; }
-.up-card.major > a { border-color: color-mix(in oklab, var(--up-major) 50%, var(--line)); }
+.up-card.st-major > a { border-color: color-mix(in oklab, var(--up-major) 50%, var(--line)); }
 .up-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .up-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 750; font-size: var(--s0); }
 .up-name img { border-radius: 4px; }
@@ -2668,6 +2668,8 @@ a.sl-hl:hover { color: var(--signal); }
 .up-heat-key i.l1 { background: color-mix(in oklab, var(--s1c) 18%, var(--surface)); } .up-heat-key i.l2 { background: color-mix(in oklab, var(--s1c) 38%, var(--surface)); }
 .up-heat-key i.l3 { background: color-mix(in oklab, var(--s1c) 58%, var(--surface)); } .up-heat-key i.l4 { background: color-mix(in oklab, var(--s1c) 78%, var(--surface)); }
 .up-heat-key i.l5 { background: var(--s1c); }
+#uptimeView h2.when { flex-wrap: wrap; }
+#uptimeView h2.when span { text-transform: none; letter-spacing: 0; font-weight: 600; }
 #uptimeView .ac-tip { white-space: normal; max-width: min(300px, calc(100vw - 40px)); font-weight: 500; }
 
 .up-page.animate .up-card { animation: up-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i) * 45ms); }
@@ -2677,7 +2679,7 @@ a.sl-hl:hover { color: var(--signal); }
 @keyframes up-bar { from { transform: scaleY(0); } }
 
 @media (max-width: 900px) {
-  .up-cols { grid-template-columns: 1fr; }
+  .up-cols { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
   .up-more { padding-left: 14px; }

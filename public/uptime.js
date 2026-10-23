@@ -15,10 +15,10 @@ export function dur(min) {
   if (min == null) return '';
   if (min < 60) return `${Math.max(1, Math.round(min))} min`;
   if (min < 1440) {
-    const h = Math.floor(min / 60), m = Math.round(min % 60);
+    const mins = Math.round(min), h = Math.floor(mins / 60), m = mins % 60;
     return m ? `${h} h ${m} min` : `${h} h`;
   }
-  const d = Math.floor(min / 1440), h = Math.round((min % 1440) / 60);
+  const hrs = Math.round(min / 60), d = Math.floor(hrs / 24), h = hrs % 24;
   return h ? `${d} d ${h} h` : `${d} d`;
 }
 
@@ -88,7 +88,7 @@ export function createUptime({ $, esc, setHtml, state, reducedMotion }) {
       s.incidents30 ? `${s.incidents30} incident${s.incidents30 === 1 ? '' : 's'} in 30 days` : 'No incidents in 30 days',
       s.medianFixMin != null ? `fixed in ${dur(s.medianFixMin)} (median)` : '',
     ].filter(Boolean).join(' · ');
-    return `<li class="up-card ${s.state}${sel ? ' sel' : ''}${view.svc && !sel ? ' dim' : ''}" style="--i:${i}">
+    return `<li class="up-card st-${s.state}${sel ? ' sel' : ''}${view.svc && !sel ? ' dim' : ''}" style="--i:${i}">
       <a href="${esc(href(sel ? null : s.key))}" aria-current="${sel ? 'true' : 'false'}">
         <header><span class="up-name"><img src="${esc(fav(hostOf(s.home)))}" alt="" width="16" height="16" loading="lazy" data-fallback="remove">${esc(s.name)}</span>${pill(s.state)}</header>
         <p class="up-prod">${esc(s.product)}</p>
@@ -154,7 +154,7 @@ export function createUptime({ $, esc, setHtml, state, reducedMotion }) {
         <p><b>${d.stats.majors30}</b><span>major outages in 30 days</span></p>
         <p><b>${d.stats.covered}</b><span>incidents in the news or on X${noticed ? `, ${noticed} reported before the status page` : ''}</span></p>
       </div>
-      <ul class="up-legend" aria-label="Legend"><li class="ok"><i></i>No incident</li><li class="minor"><i></i>Minor</li><li class="major"><i></i>Major</li><li class="maintenance"><i></i>Maintenance</li><li class="nd"><i></i>Before the feed’s history</li></ul>
+      <ul class="up-legend" aria-label="Legend"><li class="lg-ok"><i></i>No incident</li><li class="lg-minor"><i></i>Minor</li><li class="lg-major"><i></i>Major</li><li class="lg-maintenance"><i></i>Maintenance</li><li class="lg-nd"><i></i>Before the feed’s history</li></ul>
       <ol class="up-grid">${d.services.map(card).join('')}</ol>
       <div class="up-cols">
         <section class="up-list-wrap">

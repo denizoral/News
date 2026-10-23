@@ -12,6 +12,7 @@ test('chip headlines: what happened, which camp, GPU counts and buyers', () => {
   assert.deepEqual([a.kind, a.camp], ['export', 'nvidia']);
   const b = parseChip('Tencent is renting 100,000 AI chips from Oracle for $7 billion');
   assert.deepEqual([b.kind, b.units, b.buyer], ['deal', 100000, 'Tencent']);
+  assert.equal(parseChip('xAI Colossus Hits 2 GW: 555,000 GPUs, $18B, Largest AI Site').buyer, 'xAI');
   assert.equal(parseChip('ASML Cannot Fill AI Chip-Tool Orders Through 2028').kind, 'shortage');
   assert.equal(parseChip('Cambricon targets 500,000 AI chips in 2026 as China accelerates domestic hardware push').camp, 'china');
   assert.deepEqual(parseChip('Google unveils Ironwood, its seventh-generation TPU').camps, ['custom']);

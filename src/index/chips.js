@@ -47,6 +47,22 @@ const KIND_LABEL = Object.fromEntries(KINDS.map(([k, l]) => [k, l]));
 // "100,000 Blackwell GPUs", "1 million TPUs".
 const UNITS = /\b(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(million|thousand|k|m)?\s+(?:(?:Nvidia|AMD|Blackwell|Rubin|H100|H200|B200|B300|GB200|GB300|Ascend|Trainium\d?|Google|TPU|MI\d{3}\w?|Instinct|more|new|AI|extra|additional)\s+){0,3}(GPUs|TPUs|chips|accelerators|superchips)\b/i;
 
+// A name leading the headline, as its subject: "OpenAI's targets…",
+// "Meta details…", "xAI Colossus hits…".
+const NAME = '(?:[A-Z]|[a-z0-9]+[A-Z])[\\w.&-]*';
+const SUBJECT_VERB = /^(?:details|plans|hits|says|to|will|is|wants|targets|aims|reaches|nears|builds|unveils|scales|expands)$/i;
+export function subjectOf(title) {
+  const pos = new RegExp(`^(${NAME})['’]s\\b`).exec(title);
+  if (pos) return pos[1];
+  const words = title.split(/\s+/);
+  for (let n = 1; n <= 2 && n < words.length; n++) {
+    if (!words.slice(0, n).every((w) => new RegExp(`^${NAME}$`).test(w))) break;
+    if (SUBJECT_VERB.test(words[n])) return words.slice(0, n).join(' ');
+    if (n === 1 && words[2] && SUBJECT_VERB.test(words[2]) && /^(?:Colossus|Prometheus|Stargate|Hyperion)$/.test(words[1])) return words[0];
+  }
+  return null;
+}
+
 export function parseChip(rawTitle) {
   const { title } = splitOutlet(rawTitle);
   if (!CHIP.test(title) || NOT_CHIPS.test(title)) return null;
@@ -69,6 +85,8 @@ export function parseChip(rawTitle) {
       units = v;
       const verb = /\b(?:buys?|buying|orders?|to buy|will buy|deploys?|to deploy|rents?|renting|rented|secures?|gets?|lands?|signs?|adds?|adding|plans?|wants?|targets?)\b/i.exec(title);
       if (verb && verb.index < u.index) buyer = nameBefore(title.slice(0, verb.index)) || null;
+      // Or the headline's subject: "OpenAI's targets…", "Meta details…", "xAI Colossus hits…".
+      buyer ||= subjectOf(title);
     }
   }
   return { title, kind, camp, camps, units, buyer };
@@ -127,11 +145,12 @@ export function computeChips(db, now = Date.now(), days = CHIP_DAYS) {
       same.last = r.at;
       same.outlets.add(source);
       for (const t of toks) same.toks.add(t);
-      if (p.units && (!same.units || p.units > same.units)) { same.units = p.units; same.buyer ||= p.buyer; }
+      // The count comes with the report that names it.
+      if (p.units && (!same.units || p.units > same.units)) Object.assign(same, { units: p.units, buyer: p.buyer || same.buyer, unitsTitle: title, unitsUrl: r.url });
       if (!same.reports.some((x) => overlap(toks, x.toks) >= 0.7)) same.reports.push({ at: r.at, title, url: r.url, source, toks });
       continue;
     }
-    events.push({ ...p, at: r.at, last: r.at, url: r.url, source, outlets: new Set([source]), toks, reports: [{ at: r.at, title, url: r.url, source, toks }] });
+    events.push({ ...p, unitsTitle: p.units ? title : null, unitsUrl: p.units ? r.url : null, at: r.at, last: r.at, url: r.url, source, outlets: new Set([source]), toks, reports: [{ at: r.at, title, url: r.url, source, toks }] });
   }
 
   // Kept: what two outlets carried, any export rule or GPU count, or a camp's shortage, deal or launch.
@@ -143,6 +162,8 @@ export function computeChips(db, now = Date.now(), days = CHIP_DAYS) {
     camp: x.camp,
     units: x.units,
     buyer: x.buyer,
+    unitsTitle: x.unitsTitle,
+    unitsUrl: x.unitsUrl,
     title: x.title,
     url: x.url,
     source: x.source,
@@ -188,7 +209,7 @@ export function computeChips(db, now = Date.now(), days = CHIP_DAYS) {
       export90: ev90.filter((x) => x.kind === 'export').length,
       shortage90: ev90.filter((x) => x.kind === 'shortage').length,
       headlines90: in90,
-      biggestOrder: unitDeals[0] ? { title: unitDeals[0].title, url: unitDeals[0].url, units: unitDeals[0].units, buyer: unitDeals[0].buyer, camp: unitDeals[0].camp } : null,
+      biggestOrder: unitDeals[0] ? { title: unitDeals[0].unitsTitle || unitDeals[0].title, url: unitDeals[0].unitsUrl || unitDeals[0].url, units: unitDeals[0].units, buyer: unitDeals[0].buyer, camp: unitDeals[0].camp } : null,
     },
   };
 }

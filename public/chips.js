@@ -15,7 +15,7 @@ const count = (v) => (v >= 1e6 ? `${+(v / 1e6).toPrecision(3)}M` : v >= 1e3 ? `$
 // Four series and money in grey.
 const SERIES = ['launch', 'deal', 'shortage', 'export', 'money'];
 const color = (k) => (k === 'money' ? 'var(--cp-grey)' : `var(--s${SERIES.indexOf(k) + 1}c)`);
-const SHORT = { nvidia: 'Nvidia', amd: 'AMD', custom: 'Own chips', china: 'China', startups: 'Startups', supply: 'Memory, fabs' };
+const SHORT = { nvidia: 'Nvidia', amd: 'AMD', custom: 'Cloud chips', china: 'Chinese chips', startups: 'Startups', supply: 'Memory, fabs' };
 
 export function createChips({ $, esc, setHtml, state, reducedMotion }) {
   const view = { k: '', c: '', e: '' };
@@ -100,7 +100,7 @@ export function createChips({ $, esc, setHtml, state, reducedMotion }) {
       }).join('');
       const pts = Math.round((c.share90 - c.sharePrev) * 100);
       return `<a class="cp-panel${on ? ' on' : ''}${view.c && !on ? ' dim' : ''}" href="${esc(href({ c: on ? '' : c.key }))}" style="--i:${ci}">
-        <p class="cp-ph"><b>${esc(narrow ? SHORT[c.key] : c.label)}</b><span>${Math.round(c.share90 * 100)}%${c.sharePrev ? ` · ${pts >= 0 ? '+' : '−'}${Math.abs(pts)} pts` : ''}</span></p>
+        <p class="cp-ph"><b>${esc(SHORT[c.key])}</b><span>${Math.round(c.share90 * 100)}%${c.sharePrev ? ` · ${pts >= 0 ? '+' : '−'}${Math.abs(pts)} pts` : ''}</span></p>
         <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${c.label}: ${d.months.map((m) => `${monLong(m.m)} ${Math.round(share(m, c.key) * 100)}%`).join(', ')}`)}">
           <line class="cp-base" x1="0" x2="${W}" y1="${H - B}" y2="${H - B}"/>${bars}
           <text class="lc-xt" x="0" y="${H - 3}">${esc(monFmt(d.months[0].m))}</text><text class="lc-xt" x="${W}" y="${H - 3}" text-anchor="end">${esc(monFmt(d.months.at(-1).m))}</text>
@@ -116,7 +116,7 @@ export function createChips({ $, esc, setHtml, state, reducedMotion }) {
     const lo = Math.log10(Math.min(...rows.map((r) => r.units)) / 2), hi = Math.log10(Math.max(...rows.map((r) => r.units)));
     const w = (v) => Math.max(3, ((Math.log10(v) - lo) / (hi - lo)) * 100);
     return `<section class="cp-units"><h2 class="when">GPU counts<span>chips named in deals and plans, log scale</span></h2><ol>${rows.map((r, i) => `<li style="--i:${i}"><a href="${esc(href({ e: r.id }))}" data-e="${esc(r.id)}">
-      <span class="cp-who">${esc(r.buyer || d.labels.camps[r.camp] || 'A buyer')}</span><span class="cp-bar" style="width:${w(r.units).toFixed(1)}%"></span><small>${esc(count(r.units))}</small></a></li>`).join('')}</ol></section>`;
+      <span class="cp-who">${esc(r.buyer || 'Buyer not named')}</span><span class="cp-bar" style="width:${w(r.units).toFixed(1)}%"></span><small>${esc(count(r.units))}</small></a></li>`).join('')}</ol></section>`;
   }
 
   function exportsList(d) {
@@ -152,7 +152,7 @@ export function createChips({ $, esc, setHtml, state, reducedMotion }) {
         <p><b>${s.n90}</b><span>chip events in the last 90 days (${esc(change(s.n90, s.prev90))})</span></p>
         <p><b>${Math.round((nv?.share90 || 0) * 100)}%</b><span>of chip headlines name Nvidia, ${Math.round((nv?.sharePrev || 0) * 100)}% in the 90 days before</span></p>
         <p><b>${s.export90}</b><span>export-control stories and ${s.shortage90} about shortages in 90 days</span></p>
-        ${s.biggestOrder ? `<p><b>${esc(count(s.biggestOrder.units))}</b><span>chips in the biggest plan named: ${esc(s.biggestOrder.buyer || d.labels.camps[s.biggestOrder.camp] || '')}</span></p>` : ''}
+        ${s.biggestOrder ? `<p><b>${esc(count(s.biggestOrder.units))}</b><span>chips in the biggest plan named${s.biggestOrder.buyer ? `: ${esc(s.biggestOrder.buyer)}` : `: <a href="${esc(s.biggestOrder.url)}" target="_blank" rel="noopener">${esc(s.biggestOrder.title.length > 70 ? `${s.biggestOrder.title.slice(0, 68)}…` : s.biggestOrder.title)}</a>`}</span></p>` : ''}
       </div>
       <div class="cp-top">${columns(d, narrow)}${camps(d, narrow)}</div>
       <div class="cp-grid">${units(d)}${exportsList(d)}</div>
@@ -212,7 +212,7 @@ export function createChips({ $, esc, setHtml, state, reducedMotion }) {
       const r = d.units.find((x) => x.id === un.dataset.e);
       if (r) {
         el = un.querySelector('.cp-bar');
-        html = `<p class="tt-h">${esc(r.units.toLocaleString('en'))} chips</p><p>${esc(r.title)}</p><p><small>${esc(dayFmt(r.at))}</small></p>`;
+        html = `<p class="tt-h">${esc(r.units.toLocaleString('en'))} chips</p><p>${esc(r.unitsTitle || r.title)}</p><p><small>${esc(dayFmt(r.at))}</small></p>`;
       }
     }
     if (!el) { tip.hidden = true; return; }

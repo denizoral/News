@@ -5,6 +5,29 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-23 (00:49 run)
+
+**Talent moves: 40 s → 0.4 s.**
+
+| Step | Before | After | Fix |
+|---|---|---|---|
+| Getting the company and people list | 14 s cold | almost nothing | Read straight from the vocabulary (`vocabNodes()`) instead of running `scanWindow` |
+| Reading a year of headlines | 2.6 s warm, 12 s cold | 0.4 s, about 1k rows | An FTS prefilter on move verbs. Titles sit in rows next to large bodies, so reading them one by one was the cost |
+| Matching headlines | seconds of backtracking | 9 ms | Small verb patterns plus a company lookup by first word, instead of one pattern joining ~100 company names behind a lazy `.+?` |
+
+**Benchmarks.** About 3.5 s in the worker, cached for an hour.
+
+| Endpoint | Payload | Gzipped |
+|---|---|---|
+| `/api/benchmarks` | 80 KB | 21 KB |
+| `/api/talent` | 19 KB | 5 KB |
+
+**Service stop timeout.** One restart in 78 hit systemd's 20 s stop timeout.
+The process was at 2 GB with 440 MB swapped, so the likely cause is a GC
+pause while swapping. `TimeoutStopSec` is now 45 s (drop-in at
+`/etc/systemd/system/frontier-wire.service.d/`), which gives the clean save
+room.
+
 ## 2026-10-22 (22:49 run)
 
 **New names: FTS lookups.** Looking up article bodies for a name with the

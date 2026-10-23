@@ -2,6 +2,83 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · Benchmarks (#benchmarks)
+
+**Backend.** `src/index/benchmarks.js`:
+- **Benchmarks covered:** 15, including SWE-bench Verified and Pro,
+  Terminal-Bench, GPQA Diamond, Humanity's Last Exam, ARC-AGI-2 and -3, AIME,
+  FrontierMath, OSWorld, MMLU-Pro, MMMU, BrowseComp, τ²-bench and
+  LiveCodeBench.
+- **Reading scores.** Articles naming a benchmark (FTS) are split into
+  sentences. Each mention takes the nearest unused percentage: "81.2% on X"
+  comes first, and a score across an "and" or a comma belongs to the next
+  benchmark.
+- **The model** is the nearest model name before the score. Failing that,
+  it's the one model the headline names.
+- **Left out:** research before/after deltas, human baselines, and sentences
+  with no model.
+- **Claims.** The same model, benchmark and score across outlets is one
+  claim. When outlets disagree, the score most of them carried wins and the
+  others are listed.
+- **Leaderboards.** Scores confirmed by 2+ outlets rank first; single-source
+  claims are kept apart. The state of the art over time is every confirmed
+  new best. A benchmark is shown once it has two or more confirmed models.
+- **API:** `GET /api/benchmarks`, from the history worker, cached for an
+  hour.
+
+**UI.** `#benchmarks/<key>`, in the footer and ⌘K:
+- benchmark chips, and what each one measures;
+- the current leader;
+- a chart with every confirmed claim as a dot and the state of the art as a
+  step line, with a hover tooltip;
+- a leaderboard against the full 0–100% scale. Rows open to show the
+  quoted sentence, the source, how many outlets carried it and other
+  reported scores;
+- single-source claims behind a disclosure, as hollow bars.
+
+**Motion.** The step line draws, the dots pop in and the bars sweep out. All
+of it is off under `prefers-reduced-motion`.
+
+**Known limits.** Labs report their own numbers under their own conditions.
+Single-outlet claims are often misreads, which is why they're kept apart.
+
+## 2026-10-23 · Talent moves (#talent)
+
+**Backend.** `src/index/talent.js`:
+- **Finding moves.** FTS picks a year of headlines with a move verb (joins,
+  hires, poaches, leaves, departs, steps down…).
+- **Parsing.** Each headline is parsed into who, from where and to where.
+  Verbs are found with small patterns and companies looked up from the
+  entity graph's vocabulary.
+- **The person** can be:
+  - a known name;
+  - a capitalised name;
+  - a name at the end of a role phrase ("safety leader David Robinson",
+    "Nobel laureate John Jumper");
+  - a role on its own ("data center chief").
+
+  "Former X …", "from X" and "X's …" set where they came from.
+- **Not counted as moves:**
+  - partner deals, products "joining the race", programmes, marketplaces;
+  - board and trust seats;
+  - internal appointments ("Apple names X as CFO"), which are listed but not
+    counted as arrivals.
+- **Merging.** The same person within 45 days is one move, and an unnamed
+  headline folds into the named one.
+- **What it returns:** flows between companies, and arrivals, departures and
+  net per company.
+- **API:** `GET /api/talent`, from the history worker, cached for an hour.
+
+**UI.** `#talent?org=<key>`, in the footer and ⌘K:
+- the headline numbers (moves, who gained most, who lost most);
+- a flow diagram from where people left to where they went;
+- arrivals and departures per company as diverging bars around one zero
+  line. Click a company to filter;
+- the moves: date, kind, person and role, from → to chips, source headline.
+
+**Motion.** Ribbons draw, bars sweep out and cards rise in. All of it is off
+under `prefers-reduced-motion`.
+
 ## 2026-10-23 · Android apps and reader accounts
 
 **Backend.**

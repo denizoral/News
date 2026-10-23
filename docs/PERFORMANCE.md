@@ -21,8 +21,8 @@ to disk too.
 | `/api/storylines`, first request after restart | 10.5–12 s | 6 ms (disk) |
 
 New jobs: `jobs` 120–330 ms (56 KB), `incidents` 290–480 ms (200 KB).
-Main-thread probe (healthz every request for 150 s): mostly <5 ms, a few
-0.2–0.3 s and one 1.5 s stall during ingest; not addressed this run.
+Main-thread probe (healthz back to back for 150 s): 14 responses over 0.2 s,
+most 0.2–0.3 s and one 1.5 s stall during ingest; not addressed this run.
 
 ## 2026-10-23 (04:49 run)
 

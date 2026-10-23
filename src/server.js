@@ -49,6 +49,8 @@ import { scienceQuery } from './index/science.js';
 import { papersQuery } from './index/papers.js';
 import { shippedQuery } from './index/shipped.js';
 import { numbersQuery } from './index/numbers.js';
+import { signalsQuery } from './index/signals.js';
+import { leagueQuery } from './index/league.js';
 import { buildDossier, dossierKeys, DOSSIERS } from './index/dossier.js';
 import { watchFor, normQuery, MAX_WATCHES } from './index/watch.js';
 import { editionIds, isEditionId } from './index/quiz.js';
@@ -682,6 +684,21 @@ export function createApp({ store, spider }) {
       return papersQuery()
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
         .catch((err) => json(req, res, 503, { error: `Research papers are unavailable: ${err.message}` }));
+    }
+    // Early signals: on X, not in the press yet; and when the press caught up.
+    if (p === '/api/signals') {
+      if (limited(req, res)) return;
+      return signalsQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=300' }))
+        .catch((err) => json(req, res, 503, { error: `Signals are unavailable: ${err.message}` }));
+    }
+    // The AI league table: labs ranked by share of the news this week.
+    if (p === '/api/league') {
+      if (limited(req, res)) return;
+      const markets = (store.markets || []).filter((m) => /best AI model/i.test(m.title)).map((m) => ({ id: m.id, title: m.title, url: m.url, outcomes: (m.outcomes || []).map((o) => ({ label: o.label, yes: o.yes })) }));
+      return leagueQuery(markets)
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=900' }))
+        .catch((err) => json(req, res, 503, { error: `The league table is unavailable: ${err.message}` }));
     }
     // AI by the numbers: revenue, run rate, spending, losses, users.
     if (p === '/api/numbers') {

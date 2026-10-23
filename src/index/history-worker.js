@@ -1,4 +1,4 @@
-// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, any-day pages, outlets, quotes, storylines, predictions, catch-up, the news map, head to head, rumors, new names, benchmarks, talent moves, the AI status board, the courtroom, the buildout, AI rules, AI and jobs, AI incidents, robots, the weekly quiz, open weights, AI words, the compute race, watchlists, the mood of coverage, framing, what's coming, AI in science, research papers, product changelogs, AI by the numbers, the entity graph, X accounts, For you) off the main thread
+// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, any-day pages, outlets, quotes, storylines, predictions, catch-up, the news map, head to head, rumors, new names, benchmarks, talent moves, the AI status board, the courtroom, the buildout, AI rules, AI and jobs, AI incidents, robots, the weekly quiz, open weights, AI words, the compute race, watchlists, the mood of coverage, framing, what's coming, AI in science, research papers, product changelogs, AI by the numbers, early signals, the league table, the entity graph, X accounts, For you) off the main thread
 // with its own read-only connection (see offload.js).
 
 import { parentPort, workerData } from 'node:worker_threads';
@@ -47,6 +47,8 @@ import { computeScience } from './science.js';
 import { computePapers } from './papers.js';
 import { computeShipped } from './shipped.js';
 import { computeNumbers } from './numbers.js';
+import { computeSignals } from './signals.js';
+import { computeLeague } from './league.js';
 
 const db = new DatabaseSync(workerData.file, { readOnly: true });
 db.exec('PRAGMA busy_timeout = 5000; PRAGMA cache_size = -32000;');
@@ -102,6 +104,8 @@ const JOBS = {
   papers: () => computePapers(db),
   shipped: () => computeShipped(db),
   numbers: () => computeNumbers(db),
+  signals: () => computeSignals(db, { vi: vectorIndex(db) }),
+  league: ({ markets }) => computeLeague(db, { markets }),
   quiz: ({ id, markets }) => buildQuiz(db, { id, markets }),
   buildout: () => computeBuildout(db),
   rules: () => computeRules(db),

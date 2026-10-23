@@ -38,6 +38,9 @@ import { buildoutQuery } from './index/buildout.js';
 import { rulesQuery } from './index/rules.js';
 import { jobsQuery } from './index/jobs.js';
 import { incidentsQuery } from './index/incidents.js';
+import { robotsQuery } from './index/robots.js';
+import { editionIds, isEditionId } from './index/quiz.js';
+import { quizEdition, publicQuiz, recordAnswer, recordScore, quizStats } from './index/quizbook.js';
 import { talentQuery } from './index/talent.js';
 import { statusHistory, startVitals, noteRequest } from './status.js';
 import { storyPage } from './index/storypage.js';
@@ -228,6 +231,23 @@ export function createApp({ store, spider }) {
       .catch((err) => json(req, res, err.status || 400, { error: err.status === 413 ? 'Too large.' : 'Send the subscription as JSON.' }));
   }
 
+  // The weekly quiz: an answer or a final score, counted anonymously. Same
+  // checks as push subscriptions: same-origin JSON, small, rate limited.
+  function quizRoute(req, res, p) {
+    if (limited(req, res)) return;
+    const site = req.headers['sec-fetch-site'];
+    if ((site && site !== 'same-origin') || !/^application\/json\b/.test(req.headers['content-type'] || '')) return json(req, res, 403, { error: 'Not allowed.' });
+    readJson(req, { limit: 1024 })
+      .then(async (body) => {
+        if (!isEditionId(body?.edition)) return json(req, res, 404, { error: 'No quiz for that week.' });
+        const e = await quizEdition(store, body.edition);
+        const out = p === '/api/quiz/answer' ? recordAnswer(e, body.n, body.choice) : recordScore(e, body.score);
+        if (!out) return json(req, res, 400, { error: 'That is not an answer to this quiz.' });
+        json(req, res, 200, out);
+      })
+      .catch((err) => json(req, res, err.status || 400, { error: err.status === 413 ? 'Too large.' : 'Send the answer as JSON.' }));
+  }
+
   // The palette's index, rebuilt when the feed, the graph or the themes change.
   // Slow inputs are waited on briefly; the index fills in on a later query.
   let jump = { key: null, index: [] };
@@ -303,6 +323,7 @@ export function createApp({ store, spider }) {
     if (req.method === 'POST' && (url.pathname === '/api/push/subscribe' || url.pathname === '/api/push/unsubscribe')) return pushRoute(req, res, url.pathname);
     // Reader accounts and app devices (the Android app).
     if (isAccountPath(url.pathname)) return accountRoute(req, res, url);
+    if (req.method === 'POST' && (url.pathname === '/api/quiz/answer' || url.pathname === '/api/quiz/score')) return quizRoute(req, res, url.pathname);
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { allow: 'GET, HEAD', 'content-type': 'text/plain' });
       return res.end('Method not allowed');
@@ -607,6 +628,23 @@ export function createApp({ store, spider }) {
       return incidentsQuery()
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
         .catch((err) => json(req, res, 503, { error: `AI incidents are unavailable: ${err.message}` }));
+    }
+    // Robots: money, launches, deployments and the race between regions.
+    if (p === '/api/robots') {
+      if (limited(req, res)) return;
+      return robotsQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `Robots are unavailable: ${err.message}` }));
+    }
+    // The week in AI quiz: an edition without its answers, or (stats) how
+    // readers did once you've played.
+    if (p === '/api/quiz' || p === '/api/quiz/stats') {
+      if (limited(req, res)) return;
+      const id = url.searchParams.get('edition') || editionIds()[0];
+      if (!isEditionId(id)) return json(req, res, 404, { error: 'No quiz for that week.' });
+      return quizEdition(store, id)
+        .then((e) => json(req, res, 200, p === '/api/quiz' ? publicQuiz(e) : quizStats(e), { 'cache-control': p === '/api/quiz' ? 'public, max-age=300' : 'no-cache' }))
+        .catch((err) => json(req, res, 503, { error: `The quiz is unavailable: ${err.message}` }));
     }
     // AI bills, laws, orders and regulations, and how far each got.
     if (p === '/api/rules') {

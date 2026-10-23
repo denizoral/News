@@ -370,6 +370,21 @@ CREATE TABLE IF NOT EXISTS status_incidents (
   PRIMARY KEY (service, key)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS status_incidents_started ON status_incidents(started_at);
+-- The weekly quiz (src/index/quizbook.js): how many readers picked each
+-- option, and how many finished with each score. Counts only.
+CREATE TABLE IF NOT EXISTS quiz_answers (
+  edition TEXT NOT NULL,
+  q INTEGER NOT NULL,
+  choice INTEGER NOT NULL,
+  n INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (edition, q, choice)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS quiz_scores (
+  edition TEXT NOT NULL,
+  score INTEGER NOT NULL,
+  n INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (edition, score)
+) WITHOUT ROWID;
 `;
 
 let db = null;

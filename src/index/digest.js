@@ -61,7 +61,7 @@ const weight = (s) => new Set(s.sources.map((x) => x.name)).size;
 const engagement = (s) => s._group.reduce((n, it) => n + (it.engagement.score || 0), 0);
 const rank = (a, b) => b.n - a.n || b.eng - a.eng || b.publishedAt - a.publishedAt;
 
-function storiesIn(db, from, to) {
+export function storiesIn(db, from, to) {
   return clusterItems(weekItems(db, from, to)).map((s) => Object.assign(s, { n: weight(s), eng: engagement(s) }));
 }
 

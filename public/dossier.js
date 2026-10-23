@@ -34,7 +34,9 @@ export function createDossier({ $, esc, setHtml, state, reducedMotion }) {
       const r = await fetch(`/api/co?key=${key}`);
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || r.statusText);
-      cache.set(key, { d, at: Date.now() });
+      cache.set(key, { d, at: Date.now(), tries: (c?.tries || 0) + 1 });
+      // Parts still computing on the server: ask again shortly, a few times.
+      if (d.missing?.length && (c?.tries || 0) < 6) setTimeout(() => { cache.set(key, { ...cache.get(key), at: 0 }); if (state.view === 'co' && view.key === key) load(key); }, 4000);
     } catch (err) {
       cache.set(key, { d: c?.d, error: err.message, at: Date.now() });
     }

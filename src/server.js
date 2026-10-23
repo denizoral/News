@@ -698,10 +698,14 @@ export function createApp({ store, spider }) {
       const c = DOSSIERS[key];
       const markets = (store.markets || []).map((m) => ({ id: m.id, title: m.title, url: m.url, volume: m.volume, endDate: m.endDate, binary: m.binary, outcomes: (m.outcomes || []).map((o) => ({ label: o.label, yes: o.yes })) }));
       const names = ['topic', 'mood', 'deals', 'numbers', 'shipped', 'incidents', 'open', 'court', 'jobs', 'ahead'];
-      return Promise.allSettled([topicHistory(c.topic), moodQuery(), companyDealsQuery(c.deals), numbersQuery(), shippedQuery(), incidentsQuery(), openQuery(), courtQuery(), jobsQuery(), aheadQuery(markets)])
+      // Parts still computing after 2.5 s are left out (and keep computing
+      // into the cache); the page asks again until it has them all.
+      const late = (p) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('still computing')), 2500).unref())]);
+      return Promise.allSettled([topicHistory(c.topic), moodQuery(), companyDealsQuery(c.deals), numbersQuery(), shippedQuery(), incidentsQuery(), openQuery(), courtQuery(), jobsQuery(), aheadQuery(markets)].map(late))
         .then((results) => {
           const parts = Object.fromEntries(results.map((r, i) => [names[i], r.status === 'fulfilled' ? r.value : null]));
-          json(req, res, 200, { ...buildDossier(key, parts), missing: names.filter((n, i) => results[i].status !== 'fulfilled') }, { 'cache-control': 'public, max-age=600' });
+          const missing = names.filter((n, i) => results[i].status !== 'fulfilled');
+          json(req, res, 200, { ...buildDossier(key, parts), missing }, { 'cache-control': missing.length ? 'no-cache' : 'public, max-age=600' });
         })
         .catch((err) => json(req, res, 503, { error: `The dossier is unavailable: ${err.message}` }));
     }

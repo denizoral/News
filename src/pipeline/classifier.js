@@ -1,6 +1,7 @@
 // Client for the local zero-shot classifier (classifier/server.py).
 
 import { TECH_CLASSIFIER } from '../config.js';
+import { cutChars } from './text.js';
 
 const BATCH = TECH_CLASSIFIER.batch;
 
@@ -22,4 +23,4 @@ export async function classifyTexts(texts, labels) {
   return out;
 }
 
-export const itemText = (i) => `${i.title}. ${i.summary || ''}`.trim().slice(0, 400);
+export const itemText = (i) => cutChars(`${i.title}. ${i.summary || ''}`.trim(), 400);

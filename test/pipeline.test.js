@@ -189,3 +189,13 @@ test('Reddit quota wait survives a restart', async () => {
   const { loadRedditWait } = await import('../src/sources/community.js');
   assert.ok(loadRedditWait() > Date.now() + 50e3);
 });
+
+test('cutChars: never leaves half an emoji (a lone surrogate the tokenizer rejects)', async () => {
+  const { cutChars } = await import('../src/pipeline/text.js');
+  const s = `${'a'.repeat(399)}👀 more`;
+  assert.equal(s.slice(0, 400).at(-1).charCodeAt(0) >= 0xd800, true, 'slice cuts the pair');
+  const c = cutChars(s, 400);
+  assert.equal(c.length, 399);
+  assert.equal(cutChars('short', 400), 'short');
+  assert.equal(cutChars(`${'a'.repeat(398)}👀x`, 400), `${'a'.repeat(398)}👀`);
+});

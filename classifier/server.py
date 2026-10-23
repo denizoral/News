@@ -14,6 +14,7 @@ Run: venv/bin/python classifier/server.py  (CLASSIFIER_PORT, CLASSIFIER_MODEL, C
 """
 
 import json
+import sys
 import os
 import threading
 import time
@@ -54,7 +55,7 @@ def embed(texts):
     # background backfill gets the model within ~0.2 s instead of ~1 s.
     for i in range(0, len(order), 16):
         idx = order[i : i + 16]
-        x = embed_tok([texts[j][:MAX_CHARS] for j in idx], padding=True, truncation=True, max_length=64, return_tensors="pt")
+        x = embed_tok([clean(texts[j][:MAX_CHARS]) for j in idx], padding=True, truncation=True, max_length=64, return_tensors="pt")
         with embed_lock, torch.inference_mode():
             v = torch.nn.functional.normalize(embed_model(**x).last_hidden_state[:, 0], dim=-1)
         for j, row in zip(idx, v.tolist()):
@@ -63,9 +64,33 @@ def embed(texts):
     return out
 
 
-def classify(texts, labels):
+def clean(t):
+    # A lone UTF-16 surrogate (half an emoji cut by a client) can't be
+    # tokenized; replace any such character.
+    return t.encode("utf-8", "replace").decode("utf-8")
+
+
+def run_pipe(texts, labels):
     with lock, torch.inference_mode():
-        out = pipe([t[:MAX_CHARS] for t in texts], labels, threshold=0.0, batch_size=16)
+        return pipe([clean(t[:MAX_CHARS]) for t in texts], labels, threshold=0.0, batch_size=16)
+
+
+def classify(texts, labels):
+    # One text the tokenizer can't take used to fail the whole batch, and the
+    # labeler retried that same batch every minute. Now the batch is retried
+    # one text at a time and only the bad text goes unscored (null), with
+    # what it was logged so the cause can be found.
+    try:
+        out = run_pipe(texts, labels)
+    except Exception as e:
+        out = []
+        for t in texts:
+            try:
+                out.extend(run_pipe([t], labels))
+            except Exception as e1:
+                print(f"classify: skipped a text ({type(e1).__name__}: {e1}): {t[:300]!r}", file=sys.stderr, flush=True)
+                out.append([])
+        print(f"classify: batch of {len(texts)} failed ({type(e).__name__}), scored one by one", file=sys.stderr, flush=True)
     best = []
     for r in out:
         ranked = sorted(r, key=lambda x: -x["score"])[:3]

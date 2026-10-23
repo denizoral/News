@@ -7,11 +7,12 @@
 
 import { TECH_CLASSIFIER } from '../config.js';
 import { q, tx } from '../db.js';
+import { cutChars } from '../pipeline/text.js';
 
 export const DIM = 384;
 const BATCH = 64;
 
-export const embedText = (d) => `${d.title}. ${(d.description || '').slice(0, 200)}`.trim();
+export const embedText = (d) => `${d.title}. ${cutChars(d.description || '', 200)}`.trim();
 
 // Unit-length float vector -> Buffer (float32 dequantize scale, then int8s).
 export function quantize(vec) {

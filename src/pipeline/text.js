@@ -24,6 +24,15 @@ export function stripHtml(s = '') {
     .trim();
 }
 
+// The first n characters without cutting an emoji or other astral character
+// in half: String#slice counts UTF-16 units, and a lone half (a surrogate)
+// can't be encoded, which made the classifier's tokenizer fail a whole batch.
+export function cutChars(s = '', n) {
+  if (s.length <= n) return s;
+  const code = s.charCodeAt(n - 1);
+  return s.slice(0, code >= 0xd800 && code <= 0xdbff ? n - 1 : n);
+}
+
 export function clip(s = '', n = 280) {
   if (s.length <= n) return s;
   const cut = s.slice(0, n);

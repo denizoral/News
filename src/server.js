@@ -46,6 +46,8 @@ import { moodQuery } from './index/mood.js';
 import { framingQuery } from './index/framing.js';
 import { aheadQuery, aheadIcs } from './index/ahead.js';
 import { scienceQuery } from './index/science.js';
+import { papersQuery } from './index/papers.js';
+import { shippedQuery } from './index/shipped.js';
 import { watchFor, normQuery, MAX_WATCHES } from './index/watch.js';
 import { editionIds, isEditionId } from './index/quiz.js';
 import { quizEdition, publicQuiz, recordAnswer, recordScore, quizStats } from './index/quizbook.js';
@@ -671,6 +673,20 @@ export function createApp({ store, spider }) {
           res.end(req.method === 'HEAD' ? undefined : body);
         })
         .catch((err) => json(req, res, 503, { error: `What’s coming is unavailable: ${err.message}` }));
+    }
+    // Research papers: themes, rising words, papers that made the news.
+    if (p === '/api/papers') {
+      if (limited(req, res)) return;
+      return papersQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `Research papers are unavailable: ${err.message}` }));
+    }
+    // What each AI product shipped, week by week.
+    if (p === '/api/shipped') {
+      if (limited(req, res)) return;
+      return shippedQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=900' }))
+        .catch((err) => json(req, res, 503, { error: `Shipped is unavailable: ${err.message}` }));
     }
     // AI in science and health: discoveries, studies, tools, concerns.
     if (p === '/api/science') {

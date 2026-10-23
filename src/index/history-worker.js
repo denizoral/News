@@ -1,4 +1,4 @@
-// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, any-day pages, outlets, quotes, storylines, predictions, catch-up, the news map, head to head, rumors, new names, benchmarks, talent moves, the AI status board, the courtroom, the buildout, AI rules, AI and jobs, AI incidents, robots, the weekly quiz, the entity graph, X accounts, For you) off the main thread
+// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, any-day pages, outlets, quotes, storylines, predictions, catch-up, the news map, head to head, rumors, new names, benchmarks, talent moves, the AI status board, the courtroom, the buildout, AI rules, AI and jobs, AI incidents, robots, the weekly quiz, open weights, AI words, the entity graph, X accounts, For you) off the main thread
 // with its own read-only connection (see offload.js).
 
 import { parentPort, workerData } from 'node:worker_threads';
@@ -36,6 +36,8 @@ import { computeRules } from './rules.js';
 import { computeTalent } from './talent.js';
 import { computeRobots } from './robots.js';
 import { buildQuiz } from './quiz.js';
+import { computeOpen } from './openweights.js';
+import { computeTerms } from './terms.js';
 
 const db = new DatabaseSync(workerData.file, { readOnly: true });
 db.exec('PRAGMA busy_timeout = 5000; PRAGMA cache_size = -32000;');
@@ -80,6 +82,8 @@ const JOBS = {
   jobs: () => computeJobs(db),
   incidents: () => computeIncidents(db),
   robots: () => computeRobots(db),
+  open: () => computeOpen(db),
+  terms: () => computeTerms(db),
   quiz: ({ id, markets }) => buildQuiz(db, { id, markets }),
   buildout: () => computeBuildout(db),
   rules: () => computeRules(db),

@@ -39,6 +39,8 @@ import { rulesQuery } from './index/rules.js';
 import { jobsQuery } from './index/jobs.js';
 import { incidentsQuery } from './index/incidents.js';
 import { robotsQuery } from './index/robots.js';
+import { openQuery } from './index/openweights.js';
+import { termsQuery } from './index/terms.js';
 import { editionIds, isEditionId } from './index/quiz.js';
 import { quizEdition, publicQuiz, recordAnswer, recordScore, quizStats } from './index/quizbook.js';
 import { talentQuery } from './index/talent.js';
@@ -635,6 +637,20 @@ export function createApp({ store, spider }) {
       return robotsQuery()
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
         .catch((err) => json(req, res, 503, { error: `Robots are unavailable: ${err.message}` }));
+    }
+    // Open model releases: labs, sizes, licenses, derivatives, the US–China split.
+    if (p === '/api/open') {
+      if (limited(req, res)) return;
+      return openQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `Open weights are unavailable: ${err.message}` }));
+    }
+    // AI words, explained, with how much of the coverage uses each.
+    if (p === '/api/terms') {
+      if (limited(req, res)) return;
+      return termsQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `AI words are unavailable: ${err.message}` }));
     }
     // The week in AI quiz: an edition without its answers, or (stats) how
     // readers did once you've played.

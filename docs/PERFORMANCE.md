@@ -5,6 +5,25 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-23 (16:49 run)
+
+**What's coming (`/api/ahead`):**
+- Reads 45 days of titles from the date index, with no full-text search.
+- The first request after a restart takes 1.6 s, behind the startup jobs.
+- Warm: 15 ms and 8 KB brotli.
+- The `.ics` feed is 4 ms from the same cached result.
+
+**AI in science (`/api/science`):**
+- About 440 ms in the worker.
+- 212 ms on the first request, 7 ms warm.
+- 35 KB brotli.
+
+**Code quality:** the new module first exported `calendarQuery`, a name the
+"Any day" page's module already exports, and `server.js` failed to load
+(caught by `npm test`, before shipping). It's renamed to `ahead` throughout.
+
+**Health:** all sources were OK and every service log was quiet.
+
 ## 2026-10-23 (14:49 run)
 
 **Mood (`/api/mood`), worker time over 26 weeks of articles:**

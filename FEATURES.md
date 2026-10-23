@@ -2,6 +2,77 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · AI in science (#science)
+
+**Backend.** `src/index/science.js`, `/api/science`:
+- **What counts:** a year of English headlines where AI meets research or
+  medicine. Data science, computer science, science fiction, "physical AI",
+  data centers and stock talk are left out.
+- **Fields,** in four groups:
+  - life sciences and drugs (biology, drug discovery);
+  - health and medicine;
+  - maths and physics;
+  - earth, climate and materials.
+- **What happened:** concerns, money and deals, discoveries and results,
+  new tools, or studies. "Cancer risk" is medicine, not a concern.
+- **Lab:** DeepMind, OpenAI, Anthropic, Microsoft, Nvidia and others, when
+  named.
+- **Grouping:** the same thing within five days is one event, and a later
+  report can upgrade a tool or study to a discovery.
+- **Output:** monthly counts by group, labs with their discovery counts,
+  the latest discoveries, and stats.
+
+**UI.** `public/science.js`:
+- Events stacked by field group, with a legend that filters.
+- The latest discoveries as a timeline.
+- Labs as bars, with the discovery share drawn darker.
+- Chips for what happened, and event cards with every report.
+- Hover tooltips on the columns and labs.
+
+**Tests:** `test/science.test.js`.
+
+## 2026-10-23 · What's coming (#ahead)
+
+**Backend.** `src/index/ahead.js`, `/api/ahead`, `/api/ahead.ics`:
+- **Dates read:** future dates named in the last 45 days of headlines:
+  - "on January 14 (2027)";
+  - "in/by/until/starting December";
+  - "next week", "next month";
+  - "Q1 2027";
+  - "on Thursday".
+- **Resolved:** against the day each headline ran.
+- **Kept only when looking ahead:**
+  - a bare month or weekday needs a forward cue (will, set to, expected,
+    scheduled…);
+  - "by", "until" and "starting" count as cues themselves;
+  - headlines looking back are left out ("tried to … in May").
+- **Kinds:** retirements and shutdowns, deadlines and rules, events and
+  earnings, or launches.
+- **Grouping:** outlets reporting the same date for the same thing become
+  one item.
+- **Markets:** the Polymarket markets closing on each day in the next 120
+  days are added from the live feed. Dates are in New York time, so a 04:59
+  UTC close counts as the day before. Each day shows its biggest markets
+  with their leading odds.
+- **Order:** on one date, quarter and month items come before day items,
+  so agenda headings stay together.
+- **Calendar feed:** an iCalendar feed of day-precise dates (folded lines,
+  escaped text), or `?id=` for one date.
+
+**UI.** `public/ahead.js`:
+- Three month grids (Monday first) with a dot per date coloured by kind, a
+  today marker, past days dimmed, and hover listing the titles. Tapping a
+  day filters the agenda.
+- Month and quarter dates are listed above each grid.
+- An agenda under "This week", "Next week", month headings and "Sometime
+  in …".
+- Each item has a date badge, kind, sources and "Add to calendar". Market
+  days show odds bars.
+- "Subscribe in your calendar" (webcal) and "Download .ics".
+- Kind chips.
+
+**Tests:** `test/ahead.test.js`.
+
 ## 2026-10-23 · Framing (#framing)
 
 **Backend.** `src/index/framing.js`, `/api/framing`:

@@ -41,7 +41,8 @@ export function createPapers({ $, esc, setHtml, state, reducedMotion }) {
   function themes(d, narrow) {
     const share = (m, k) => (m.n ? m.themes[k] / m.n : 0);
     const max = Math.max(0.05, ...d.months.flatMap((m) => d.themes.map((t) => share(m, t.key))));
-    const W = narrow ? 170 : 200, H = 74, T = 4, B = 15;
+    // Close to the drawn width, so the month labels stay at their own size.
+    const W = narrow ? 170 : 380, H = 90, T = 4, B = 15;
     const bw = W / d.months.length;
     return `<section class="pp-themes"><h2 class="when">Themes<span>share of each month’s papers, one scale; a paper can have several; tap to filter</span></h2><div class="pp-panels">${d.themes.map((t, ti) => {
       const on = view.t === t.key;

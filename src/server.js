@@ -44,6 +44,8 @@ import { termsQuery } from './index/terms.js';
 import { chipsQuery } from './index/chips.js';
 import { moodQuery } from './index/mood.js';
 import { framingQuery } from './index/framing.js';
+import { aheadQuery, aheadIcs } from './index/ahead.js';
+import { scienceQuery } from './index/science.js';
 import { watchFor, normQuery, MAX_WATCHES } from './index/watch.js';
 import { editionIds, isEditionId } from './index/quiz.js';
 import { quizEdition, publicQuiz, recordAnswer, recordScore, quizStats } from './index/quizbook.js';
@@ -655,6 +657,27 @@ export function createApp({ store, spider }) {
       return moodQuery()
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
         .catch((err) => json(req, res, 503, { error: `The mood of coverage is unavailable: ${err.message}` }));
+    }
+    // What's coming: dates in the news and markets closing; JSON or iCalendar.
+    if (p === '/api/ahead' || p === '/api/ahead.ics') {
+      if (limited(req, res)) return;
+      const markets = (store.markets || []).map((m) => ({ id: m.id, title: m.title, url: m.url, volume: m.volume, endDate: m.endDate, binary: m.binary, outcomes: (m.outcomes || []).map((o) => ({ label: o.label, yes: o.yes })) }));
+      return aheadQuery(markets)
+        .then((d) => {
+          if (p === '/api/ahead') return json(req, res, 200, d, { 'cache-control': 'public, max-age=900' });
+          const ids = url.searchParams.get('id') ? new Set(url.searchParams.getAll('id').slice(0, 50)) : null;
+          const body = aheadIcs(d, { ids, origin: originOf(req) });
+          res.writeHead(200, { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'public, max-age=900', 'content-disposition': `inline; filename="${ids?.size === 1 ? 'frontier-wire-date' : 'frontier-wire'}.ics"` });
+          res.end(req.method === 'HEAD' ? undefined : body);
+        })
+        .catch((err) => json(req, res, 503, { error: `What’s coming is unavailable: ${err.message}` }));
+    }
+    // AI in science and health: discoveries, studies, tools, concerns.
+    if (p === '/api/science') {
+      if (limited(req, res)) return;
+      return scienceQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `AI in science is unavailable: ${err.message}` }));
     }
     // How outlets headline the same story.
     if (p === '/api/framing') {

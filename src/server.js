@@ -31,6 +31,8 @@ import { MAP_WINDOWS, newsMapQuery } from './index/newsmap.js';
 import { VERSUS_WINDOWS, versusQuery } from './index/versus.js';
 import { rumorsQuery } from './index/rumors.js';
 import { newNamesQuery } from './index/newnames.js';
+import { benchmarksQuery } from './index/benchmarks.js';
+import { talentQuery } from './index/talent.js';
 import { statusHistory, startVitals, noteRequest } from './status.js';
 import { storyPage } from './index/storypage.js';
 import { emergingThemes } from './index/emerging.js';
@@ -557,6 +559,20 @@ export function createApp({ store, spider }) {
       return rumorsQuery()
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=900' }))
         .catch((err) => json(req, res, 503, { error: `The rumor tracker is unavailable: ${err.message}` }));
+    }
+    // Benchmark scores read from coverage: leaderboards and state of the art over time.
+    if (p === '/api/benchmarks') {
+      if (limited(req, res)) return;
+      return benchmarksQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `Benchmarks are unavailable: ${err.message}` }));
+    }
+    // Who joined, left or was hired away, and the flows between companies.
+    if (p === '/api/talent') {
+      if (limited(req, res)) return;
+      return talentQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `Talent moves are unavailable: ${err.message}` }));
     }
     // Models, products and projects that entered the news in the last 60 days.
     if (p === '/api/new-names') {

@@ -205,6 +205,9 @@ export function nameMatcher(nodes) {
   };
 }
 
+// The fixed vocabulary as nodes, without scanning anything.
+export const vocabNodes = () => VOCAB.map(([label, type, aliases, topic]) => ({ key: slug(label), label, type, aliases, topic }));
+
 // The scan behind a window, kept in the worker for the detail calls.
 const scans = new Map(); // days -> { at, scan }
 
@@ -219,7 +222,7 @@ export function scanWindow(db, days, now) {
       AND site NOT IN ('huggingface.co', 'openrouter.ai', 'github.com')`).all(from, now + 5 * 60e3);
   const cur = rows.filter((r) => r.at >= since);
   const sources = new Set(db.prepare('SELECT DISTINCT lower(source) AS s FROM docs WHERE source IS NOT NULL AND published_at >= ?').all(since).map((r) => r.s));
-  const vocab = VOCAB.map(([label, type, aliases, topic]) => ({ key: slug(label), label, type, aliases, topic }));
+  const vocab = vocabNodes();
   const extra = discoverNames(cur.map((r) => r.description || ''), { known: vocab.flatMap((v) => v.aliases), sources, min: Math.max(6, Math.round(cur.length / 1500)) })
     .map(({ label }) => ({ key: slug(label), label, type: 'other', aliases: [label], topic: null }));
   const nodes = [...vocab, ...extra.filter((e) => !vocab.some((v) => v.key === e.key))];

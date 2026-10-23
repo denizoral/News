@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.paparazzi)
 }
 // Firebase push is on once app/google-services.json is in place (not in git).
 if (file("google-services.json").exists()) apply(plugin = libs.plugins.google.services.get().pluginId)
@@ -49,4 +50,5 @@ dependencies {
     implementation(libs.androidx.credentials.play)
     implementation(libs.googleid)
     debugImplementation(libs.compose.ui.tooling)
+    testImplementation(libs.junit)
 }

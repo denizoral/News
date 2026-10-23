@@ -45,6 +45,7 @@ class Api(
     suspend fun get(path: String): JsonElement = call("GET", path, null)
     suspend fun post(path: String, body: Any? = emptyMap<String, String>()): JsonElement = call("POST", path, body)
     suspend fun put(path: String, body: Any?): JsonElement = call("PUT", path, body)
+    suspend fun patch(path: String, body: Any?): JsonElement = call("PATCH", path, body)
 
     suspend inline fun <reified T> getAs(path: String): T = json.decodeFromJsonElement(kotlinx.serialization.serializer<T>(), get(path))
     suspend inline fun <reified T> postAs(path: String, body: Any?): T = json.decodeFromJsonElement(kotlinx.serialization.serializer<T>(), post(path, body))

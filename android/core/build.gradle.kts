@@ -39,4 +39,6 @@ dependencies {
     api(libs.kotlinx.coroutines.android)
     api(libs.androidx.browser)
     api(libs.coil.compose)
+    // Firebase brings an old Fragment; ActivityResult needs 1.3+.
+    api(libs.androidx.fragment)
 }

@@ -302,6 +302,16 @@ export function createApp({ store, spider }) {
 
     const p = url.pathname;
     if (p === '/healthz') return json(req, res, 200, { ok: true, version: store.snapshot.version });
+    // The Android apps, built from android/ into data/apps/ (not in git).
+    if (p === '/apps/frontier-wire.apk' || p === '/apps/wire-admin.apk') {
+      const file = path.resolve(process.env.DATA_DIR || 'data', 'apps', p.slice(6));
+      return fs.stat(file, (err, st) => {
+        if (err) return json(req, res, 404, { error: 'That app hasn’t been built yet.' });
+        res.writeHead(200, { 'content-type': 'application/vnd.android.package-archive', 'content-length': st.size, 'content-disposition': `attachment; filename="${p.slice(6)}"`, 'cache-control': 'no-cache' });
+        if (req.method === 'HEAD') return res.end();
+        fs.createReadStream(file).pipe(res);
+      });
+    }
     if (p === '/api/snapshot') {
       const s = snapshot();
       if (req.headers['if-none-match'] === s.etag) return res.writeHead(304, { etag: s.etag }).end();

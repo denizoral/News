@@ -141,7 +141,7 @@ fun ForYouScreen(feed: FeedModel, session: Session, open: (String?, String?) -> 
 @Composable
 fun Header(title: String, sub: String) {
     Column(Modifier.padding(top = 8.dp, bottom = 4.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineMedium)
+        Text(title, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
         Text(sub, style = MaterialTheme.typography.bodyMedium, color = LocalWire.current.muted)
     }
 }

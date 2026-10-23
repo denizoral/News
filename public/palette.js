@@ -49,6 +49,8 @@ const PAGES = [
   ['OpenAI dossier', '#co/openai', 'OpenAI: coverage, mood, money, launches, incidents, lawsuits'],
   ['Anthropic dossier', '#co/anthropic', 'Anthropic: coverage, mood, money, launches, incidents, lawsuits'],
   ['Google dossier', '#co/google', 'Google: coverage, mood, money, launches, incidents, lawsuits'],
+  ['Early signals', '#signals', 'On X before the news: posts no outlet has covered yet'],
+  ['League table', '#league', 'The big labs ranked by share of the news this week, with movement'],
   ['Quiz', '#quiz', 'The week in AI quiz: ten questions from the stories everyone ran'],
   ['AI status', '#uptime', 'Is ChatGPT, Claude or Copilot down? Live status and incident history'],
   ['New names', '#new', 'Models, products and projects new to the news, and what they are'],

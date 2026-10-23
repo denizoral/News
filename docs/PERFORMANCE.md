@@ -5,6 +5,25 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-23 (22:49 run)
+
+**Early signals (`/api/signals`):**
+- 177 posts × 5,470 articles, compared as int8 dot products on rows
+  already in the vector index: 1.1 s in the worker.
+- The first request after a restart took 3.3 s, which includes loading the
+  vector index. 3 ms warm, 21 KB brotli.
+
+**League table (`/api/league`):**
+
+| Run | Time | Why |
+|---|---|---|
+| First test | 13.4 s | cold disk cache |
+| Warm | 0.5–0.6 s | reads 24,000 titles in about 100 ms; computeShipped takes about 0.6 s |
+
+First request after a restart: 1.7 s. Warm: 3 ms, 2 KB.
+
+**Health:** all sources were OK and every service log was quiet.
+
 ## 2026-10-23 (20:49 run)
 
 **Company dossiers (`/api/co`), first request for a company after a

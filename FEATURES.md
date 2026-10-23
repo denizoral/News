@@ -2,6 +2,60 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · The AI league table (#league)
+
+**Backend.** `src/index/league.js`, `/api/league`:
+- **Labs:** the 11 with dossiers, ranked by their share of this week's
+  stored articles. A lab counts when its name is in the headline (Google,
+  Meta, Apple, Amazon and Microsoft need an AI word too), each copy once.
+  Two weeks of titles are read once.
+- **For each lab:**
+  - last week's rank and share;
+  - share of X posts;
+  - mood (good-minus-bad points, as on #mood);
+  - changes shipped this week (#shipped);
+  - 14 days of daily share;
+  - the odds in Polymarket's "best AI model at year end" market, with the
+    change over seven days from the stored odds history.
+- **Summary:** the leader, the biggest riser and the market favourite.
+- **Cost:** about 0.6 s in the worker, 2 KB.
+
+**UI.** `public/league.js`:
+- A table with:
+  - rank and movement arrows;
+  - a share bar with a tick for last week's share;
+  - a 14-day line;
+  - X share, mood (coloured by sign), shipped count, and odds with the
+    change in points.
+- Sort chips for each column.
+- Lab names open dossiers. The table scrolls inside its frame on phones.
+
+## 2026-10-23 · Early signals (#signals)
+
+**Backend.** `src/index/signals.js`, `/api/signals`:
+- **What it compares:** every AI post from the tracked X accounts in the
+  last 48 hours, against every article stored in the last three days, by
+  bge-small cosine (about 180 × 5,500 comparisons, about 1 s in the
+  worker).
+- **A signal:** a post with no article at least 0.8 alike. Signals are
+  grouped by meaning (0.82) with the number of accounts, the other handles,
+  and how close the nearest coverage came.
+- **The press caught up:** stories where an article followed a post. There
+  is one entry per story (posts or matched articles alike), with the lead
+  time.
+- **Also:** the accounts most often ahead. Market accounts count only for
+  their AI posts.
+
+**UI.** `public/signals.js`:
+- Signal cards with avatar, handle, time, a "N accounts" badge, the text,
+  "also" handles, and the closest coverage with its similarity. Filters:
+  several accounts, or leave out market accounts.
+- "The press caught up" as lead-time bars on a log scale (5 minutes to a
+  day and more).
+- Accounts most often ahead, linking to account pages.
+
+**Tests:** `test/signals-league.test.js` (with a fake vector index).
+
 ## 2026-10-23 · Company dossiers (#co, #co/<key>)
 
 **Backend.** `src/index/dossier.js`, `/api/co?key=`:

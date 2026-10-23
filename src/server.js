@@ -36,6 +36,8 @@ import { uptimeQuery } from './index/uptime.js';
 import { courtQuery } from './index/court.js';
 import { buildoutQuery } from './index/buildout.js';
 import { rulesQuery } from './index/rules.js';
+import { jobsQuery } from './index/jobs.js';
+import { incidentsQuery } from './index/incidents.js';
 import { talentQuery } from './index/talent.js';
 import { statusHistory, startVitals, noteRequest } from './status.js';
 import { storyPage } from './index/storypage.js';
@@ -591,6 +593,20 @@ export function createApp({ store, spider }) {
       return buildoutQuery()
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
         .catch((err) => json(req, res, 503, { error: `The buildout is unavailable: ${err.message}` }));
+    }
+    // Layoffs tied to AI, and the argument about whether AI is the reason.
+    if (p === '/api/jobs') {
+      if (limited(req, res)) return;
+      return jobsQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `AI and jobs is unavailable: ${err.message}` }));
+    }
+    // When AI went wrong: rogue agents, hacks, deepfakes, harm, made-up answers.
+    if (p === '/api/incidents') {
+      if (limited(req, res)) return;
+      return incidentsQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `AI incidents are unavailable: ${err.message}` }));
     }
     // AI bills, laws, orders and regulations, and how far each got.
     if (p === '/api/rules') {

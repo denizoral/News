@@ -2,6 +2,50 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · Android apps and reader accounts
+
+**Backend.**
+- **Reader accounts** (`src/accounts/`):
+  - email + password (scrypt) and Google sign-in, with Google ID tokens
+    verified against Google's keys and our client ids;
+  - 30-day sliding bearer sessions, stored hashed;
+  - per-IP and per-email limits, and a growing lock after failures;
+  - follows and alert settings: outlet threshold, daily cap, quiet hours;
+  - password change ends older sessions, and accounts can be deleted.
+- **Endpoints:** `/api/user/*`, plus `/api/devices` for phones (signed in or
+  not).
+- **Firebase sender** (`src/push/fcm.js`): HTTP v1, with a service-account
+  JWT. It stays off until `data/firebase-service-account.json` exists.
+- **What gets pushed** (`src/push/mobile.js`):
+  - breaking news to every phone that wants it;
+  - followed topics, names, X accounts and outlets once enough outlets carry
+    the story, never the same story twice;
+  - to admin phones: new FEATURES.md entries, and sources failing or
+    recovering.
+- **Admin API for the app.** It accepts bearer tokens from the admin app
+  (same passwords and two-factor codes; no cookie, so no CSRF), and adds
+  `/api/admin/changelog`, `/api/admin/devices` and `/api/admin/readers`.
+- **Downloads.** The server offers the latest APKs at `/apps/*.apk`.
+
+**Apps** (`android/`, Kotlin + Jetpack Compose):
+- **Frontier Wire:**
+  - Today: a breaking banner, trending chips you can follow, and story cards;
+  - follow anything from a story's ⋮;
+  - For you;
+  - Alerts: thresholds, daily cap, quiet hours, and your follows;
+  - Account: sign in, sign up, Google, delete.
+
+  Without Firebase it checks every 15 minutes in the background.
+- **Wire Admin:** sign-in with a two-factor code, then:
+  - an overview;
+  - this changelog;
+  - sources, with "run now";
+  - content hide and pin;
+  - readers and push stats;
+  - the audit log.
+- **Shared core:** an API client, a Keystore-encrypted session and the site's
+  palette in light and dark.
+
 ## 2026-10-22 · Rumor mill (#rumors)
 
 **Backend.** `src/index/rumors.js`:

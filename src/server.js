@@ -302,8 +302,8 @@ export function createApp({ store, spider }) {
 
     const p = url.pathname;
     if (p === '/healthz') return json(req, res, 200, { ok: true, version: store.snapshot.version });
-    // The Android apps, built from android/ into data/apps/ (not in git).
-    if (p === '/apps/frontier-wire.apk' || p === '/apps/wire-admin.apk') {
+    // The Android apps, built from android/ (and /root/ProxmoxManager) into data/apps/ (not in git).
+    if (p === '/apps/frontier-wire.apk' || p === '/apps/wire-admin.apk' || p === '/apps/clusterdeck.apk') {
       const file = path.resolve(process.env.DATA_DIR || 'data', 'apps', p.slice(6));
       return fs.stat(file, (err, st) => {
         if (err) return json(req, res, 404, { error: 'That app hasn’t been built yet.' });

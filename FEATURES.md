@@ -2,6 +2,84 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · The week in AI quiz (#quiz)
+
+**Backend.** `src/index/quiz.js`, `src/index/quizbook.js`:
+- **Editions:** a new quiz every Saturday (UTC) from the week that just
+  ended. The latest six weeks are kept.
+- **Questions** (up to ten):
+  - the week's English AI headlines grouped by story and ranked by how many
+    outlets ran them, with a name taken out (company, person, product or
+    place);
+  - an amount from a money headline ("revenue leaps to $___");
+  - where a Polymarket market that moved at least 8 points ended the week.
+- **Wrong options:** names of the same kind that the week's headlines
+  carried, amounts a few times off, or odds ten or more points apart that
+  include where the market started. A blank is skipped when a related name
+  gives it away ("Anthropic" next to "Claude").
+- **Frozen:** an edition is built once in the history worker (about 0.2–1.3 s)
+  and stored in kv, so the answer key never changes and it survives restarts.
+- **Counts only:** `quiz_answers` and `quiz_scores` count how many readers
+  picked each option and finished with each score. Nothing else is stored.
+- **API:**
+  - `GET /api/quiz?edition=` gives the questions without answers;
+  - `GET /api/quiz/stats` gives the answers, the stories behind them and how
+    readers split;
+  - `POST /api/quiz/answer` and `POST /api/quiz/score` accept same-origin
+    JSON only and are rate limited.
+
+**UI.** `public/quiz.js`:
+- One card at a time, with a progress bar and View Transitions between
+  questions.
+- After you answer: the right option and your pick are marked, each option
+  shows a bar of how readers split, then the verdict and the story or
+  market behind it.
+- At the end: your score, how you did against every reader (a histogram with
+  you marked), a copyable 🟩🟥 result, and a review of every answer with its
+  story.
+- Week chips switch editions and show your score on weeks you've played.
+- Answers are kept in this browser.
+
+**Tests:** `test/quiz.test.js` (edition dates, the three kinds of question,
+giveaways, building from the index, no answers before playing, counting).
+
+## 2026-10-23 · Robots (#robots)
+
+**Backend.** `src/index/robots.js`, `/api/robots`:
+- **What it reads:** a year of English robotics headlines. Robotaxis,
+  robots.txt, papers, deals and stock talk are left out.
+- **What happened:** money raised, unveiled, put to work, production, robot
+  brains and data, or a setback.
+- **For each event:** the kind of robot (humanoid, home, delivery, medical,
+  industrial) and the company, from about 60 placed in the US, China, Europe
+  or Japan and Korea. "Ex-DeepMind founders" isn't DeepMind, and investors
+  named in a funding headline aren't the company. A startup that isn't on
+  the list is named from before its verb.
+- **Numbers:**
+  - the round (not the valuation, and not talks);
+  - a price tag;
+  - a unit count with its year.
+- **Grouping:** one company's news of one kind within a week is one event;
+  its funding news within three weeks is one round.
+- **Output:** monthly counts by kind and region, companies, the biggest
+  rounds, prices, production numbers, and 90-day shares for the US and
+  China.
+
+**UI.** `public/robots.js`:
+- **Charts:**
+  - monthly stacked columns by what happened (four series plus setbacks in
+    grey);
+  - the race between regions as small multiples on one scale (tap to
+    filter);
+  - companies with their region, and the biggest rounds, as bars;
+  - price tags on a log scale;
+  - production numbers.
+- **Filters:** what happened and the kind of robot, as chips.
+- **Event cards:** every report. `&e=` opens a card and scrolls to it.
+- **Hover:** tooltips on columns, region bars, prices, companies and rounds.
+
+**Tests:** `test/robots.test.js`.
+
 ## 2026-10-23 · AI and jobs (#jobs)
 
 **Backend.** `src/index/jobs.js`, `/api/jobs`:

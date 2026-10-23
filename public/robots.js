@@ -18,7 +18,7 @@ const DAY = 86400e3;
 // Four series and setbacks in grey: production goes with putting robots to work.
 const SERIES = [['funding', 'Money raised'], ['launch', 'Unveiled'], ['deploy', 'Put to work or built'], ['brain', 'Robot brains and data'], ['setback', 'Setbacks']];
 const slotOf = (k) => (k === 'production' ? 2 : SERIES.findIndex(([s]) => s === k));
-const REGION_SHORT = { us: 'US', china: 'China', europe: 'Europe', asia: 'Japan, Korea' };
+const REGION_SHORT = { us: 'US', china: 'China', europe: 'Europe', asia: 'JP · KR' };
 
 export function createRobots({ $, esc, setHtml, state, reducedMotion }) {
   const view = { k: '', c: '', r: '', f: '', e: '' };

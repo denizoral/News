@@ -5,6 +5,33 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-23 (08:49 run)
+
+**Front-page payload:** checked, no change. `/api/snapshot` is 1.29 MB raw
+and 275 KB brotli, served in 48 ms. Story sources are 290 KB of the raw size
+and are used by the coverage lists, filters and engagement totals. Markets
+and builds were already trimmed to the fields the client reads, so nothing
+was cut.
+
+**New endpoints:**
+
+| Endpoint | First request | After that | Size |
+|---|---|---|---|
+| `/api/robots` | 214 ms (≈360 ms in the worker) | 4 ms | 26 KB brotli, 154 KB raw |
+| `/api/quiz`, latest edition | 448 ms | 1 ms | under 1 KB |
+| `/api/quiz`, an older edition | 220 ms | about 1 ms | under 1 KB |
+
+- `/api/robots` is kept on disk under `data/jobcache/` across restarts.
+- A quiz edition is built once, then served from kv after a restart, with
+  no worker job.
+- The quiz groups about 8,000 headlines a week with an inverted token index
+  rather than pairwise comparison.
+
+**API latency in vitals (last 6 h):**
+- `api_p95` is 50–100 ms in quiet 15-minute windows.
+- The 3–10 s windows line up with cold-endpoint tests during loop runs.
+- `loop_p99` stayed at 35–41 ms.
+
 ## 2026-10-23 (06:49 run)
 
 **Cold views waited behind background refreshes.** Each worker lane ran jobs

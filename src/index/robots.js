@@ -140,7 +140,9 @@ export function parseRobot(rawTitle) {
   if (!company && kind === 'funding') {
     const v = /\b(?:raises|raised|secures|lands|grabs|closes|bags|nabs)\b/i.exec(title);
     const name = v && nameBefore(title.slice(0, v.index));
-    if (name && name.length <= 30 && !/^(?:Robotics?|Humanoid|Startup|AI|Physical AI)$/i.test(name)) company = { key: companyKey(name), label: name, region: null };
+    // A person ("science boss Kevin Weil raises") isn't the company.
+    const person = name && new RegExp(`\\b(?:boss|lead|founder|co-founder|CEO|chief|executive|engineer|alum|veteran|scientist|researcher)s?\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(title);
+    if (name && !person && name.length <= 30 && !/^(?:Robotics?|Humanoid|Startup|AI|Physical AI)$/i.test(name)) company = { key: companyKey(name), label: name, region: null };
   }
   let usd = null;
   // The round, not the valuation, and only once it's done.

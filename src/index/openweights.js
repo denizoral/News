@@ -216,6 +216,14 @@ export function computeOpen(db, now = Date.now(), days = OPEN_DAYS) {
     outlets: x.outlets.size,
     reports: x.reports.slice(0, 8).map(({ toks, ...r }) => r),
   })).sort((a, b) => b.at - a.at);
+  // A size in the model's own name ("Qwen3.6-35B-A3B") beats one merged from another report.
+  for (const x of all) {
+    const m = /(?:^|[-\s])(\d+(?:\.\d+)?)B(?:-A(\d+(?:\.\d+)?)B)?\b/.exec(x.name || '');
+    if (m) {
+      x.total = Number(m[1]);
+      x.active = m[2] ? Number(m[2]) : x.active && x.active < x.total ? x.active : null;
+    }
+  }
   const out = all.filter((x) => !x.builder);
   const derived = all.filter((x) => x.builder);
 

@@ -33,14 +33,17 @@ test('open weights: one release across outlets, regions, sizes and derivatives',
   add('Nvidia Releases Open-Weight Nemotron 3 Ultra: 550B Agent Model', 'nvidia', 3);
   add('Cognition Releases SWE-2: A Kimi K3 Post-Trained Coding Model', 'cognition', 2);
   add('Google pauses open-source bug bounty over AI slop submissions', 'verge', 1);
+  add('Alibaba Releases Qwen3.6-35B-A3B, an Open-Weight Coding Model', 'marktechpost', 20);
   const d = computeOpen(getDb(), now);
   const kimi = d.releases.filter((x) => x.lab.key === 'moonshot');
   assert.equal(kimi.length, 1, 'one release');
   assert.equal(kimi[0].outlets, 2);
   assert.equal(kimi[0].total, 2800);
-  assert.equal(d.regions.find((r) => r.key === 'china').n, 1);
+  assert.equal(d.regions.find((r) => r.key === 'china').n, 2);
   assert.equal(d.stats.biggest.total, 2800);
   assert.equal(d.builtOn[0].key, 'moonshot');
   assert.equal(d.builtOn[0].builders[0].builder, 'Cognition');
   assert.equal(d.months.length, 12);
+  const q = d.releases.find((x) => x.lab.key === 'qwen');
+  assert.deepEqual([q.total, q.active], [35, 3], 'sizes from the name');
 });

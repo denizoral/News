@@ -95,10 +95,19 @@ export function createOpen({ $, esc, setHtml, state, reducedMotion }) {
     const x = (t) => L + ((t - t0) / (t1 - t0)) * (W - L - R);
     const y = (b) => T + (1 - (Math.log10(Math.max(0.1, b)) - lo) / (hi - lo)) * (H - T - B);
     const ticks = [0.1, 1, 10, 100, 1000].filter((v) => Math.log10(v) <= hi);
-    const top = new Set([...list].sort((a, b) => b.total - a.total).slice(0, narrow ? 3 : 5).map((s) => s.id));
+    // Labels for the biggest, skipping any that would collide with one placed.
+    const placed = [];
+    const top = new Set();
+    for (const s of [...list].sort((a, b) => b.total - a.total)) {
+      if (!s.name || top.size >= (narrow ? 3 : 5)) continue;
+      const lx = x(s.at), ly = y(s.total);
+      if (placed.some(([px, py]) => Math.abs(px - lx) < 110 && Math.abs(py - ly) < 14)) continue;
+      placed.push([lx, ly]);
+      top.add(s.id);
+    }
     const dots = list.sort((a, b) => a.total - b.total).map((s, i) => {
       const cx = x(s.at), cy = y(s.total);
-      const label = top.has(s.id) && s.name ? `<text class="ow-lab" x="${(cx + (cx > W - 90 ? -9 : 9)).toFixed(1)}" y="${cy.toFixed(1)}" dy="0.32em" text-anchor="${cx > W - 90 ? 'end' : 'start'}">${esc(s.name.length > 18 ? `${s.name.slice(0, 17)}…` : s.name)}</text>` : '';
+      const label = top.has(s.id) && s.name ? `<text class="ow-lab" x="${(cx + (cx > W - 130 ? -9 : 9)).toFixed(1)}" y="${cy.toFixed(1)}" dy="0.32em" text-anchor="${cx > W - 130 ? 'end' : 'start'}">${esc(s.name.length > 18 ? `${s.name.slice(0, 17)}…` : s.name)}</text>` : '';
       return `<g class="ow-pt s${slot(s.lab.region)}" data-id="${esc(s.id)}" style="--i:${Math.min(i, 30)}">${s.active ? `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${cy.toFixed(1)}" y2="${y(s.active).toFixed(1)}"/><circle class="ow-act" cx="${cx.toFixed(1)}" cy="${y(s.active).toFixed(1)}" r="2.5"/>` : ''}<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="5"/>${label}<circle class="ow-hit" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="11"/></g>`;
     }).join('');
     const guides = [];
@@ -191,7 +200,8 @@ export function createOpen({ $, esc, setHtml, state, reducedMotion }) {
     setHtml(host, `${head}<div class="ow-page${animate ? ' animate' : ''}">${page(d)}</div>`);
     if (view.e && scrolled !== view.e) {
       scrolled = view.e;
-      document.getElementById(`ow-${view.e}`)?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+      // After the router's scroll to the top.
+      requestAnimationFrame(() => document.getElementById(`ow-${view.e}`)?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' }));
     }
   }
 

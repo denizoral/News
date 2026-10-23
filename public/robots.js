@@ -227,7 +227,8 @@ export function createRobots({ $, esc, setHtml, state, reducedMotion }) {
     setHtml(host, `${head}<div class="rb-page${animate ? ' animate' : ''}">${page(d)}</div>`);
     if (view.e && scrolled !== view.e) {
       scrolled = view.e;
-      document.getElementById(`rb-${view.e}`)?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+      // After the router's scroll to the top.
+      requestAnimationFrame(() => document.getElementById(`rb-${view.e}`)?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' }));
     }
   }
 

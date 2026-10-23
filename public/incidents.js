@@ -170,7 +170,8 @@ export function createIncidents({ $, esc, setHtml, state, reducedMotion }) {
     setHtml(host, `${head}<div class="in-page${animate ? ' animate' : ''}">${page(d)}</div>`);
     if (view.i && scrolled !== view.i) {
       scrolled = view.i;
-      document.getElementById(`inc-${view.i}`)?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+      // After the router's scroll to the top.
+      requestAnimationFrame(() => document.getElementById(`inc-${view.i}`)?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' }));
     }
   }
 

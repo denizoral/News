@@ -160,7 +160,8 @@ export function createTerms({ $, esc, setHtml, state, reducedMotion }) {
     setHtml(host, `${head}<div class="tm-page${animate ? ' animate' : ''}">${page(d)}</div>`);
     if (view.t && scrolled !== view.t) {
       scrolled = view.t;
-      document.getElementById(`term-${view.t}`)?.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
+      // After the router's scroll to the top.
+      requestAnimationFrame(() => document.getElementById(`term-${view.t}`)?.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' }));
     }
   }
 

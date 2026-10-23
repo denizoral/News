@@ -39,6 +39,10 @@ import { createAhead } from './ahead.js';
 import { createScience } from './science.js';
 import { createPapers } from './papers.js';
 import { createShipped } from './shipped.js';
+import { createNumbers } from './numbers.js';
+import { createDossier } from './dossier.js';
+// Topics that also have a company dossier (#co/<key>).
+const DOSSIER_KEYS = new Set(['openai', 'anthropic', 'google', 'meta', 'microsoft', 'xai', 'nvidia', 'amazon', 'apple', 'deepseek', 'mistral']);
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -233,6 +237,8 @@ let aheadUi = null;
 let scienceUi = null;
 let papersUi = null;
 let shippedUi = null;
+let numbersUi = null;
+let dossierUi = null;
 
 // ---------- Data ----------
 
@@ -1611,7 +1617,7 @@ function renderTopic() {
       <a class="back" href="#news">← News</a>
       <p class="kicker">Topic</p>
       <div class="head-row"><h1>${esc(label)}</h1>${feedBtn(`/feeds/topic/${encodeURIComponent(key)}.xml`)}${foryouUi.btn('topic', key, label)}</div>
-      <a class="tr-link" href="${trendsUi.href([label])}">Mentions since 2024 in Trends →</a>
+      <a class="tr-link" href="${trendsUi.href([label])}">Mentions since 2024 in Trends →</a>${DOSSIER_KEYS.has(key) ? ` <a class="tr-link" href="#co/${esc(key)}">Full dossier →</a>` : ''}
       <p class="topic-sum">${summary}</p>
     </header>
     ${chart ? `<section class="topic-card"><h2>Share of all coverage <small>last 30 days, every stored story</small></h2>${chart}</section>` : ''}
@@ -2143,6 +2149,8 @@ function render() {
   if (state.view === 'science') scienceUi.render();
   if (state.view === 'papers') papersUi.render();
   if (state.view === 'shipped') shippedUi.render();
+  if (state.view === 'numbers') numbersUi.render();
+  if (state.view === 'co') dossierUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2158,7 +2166,7 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash) || mapUi.route(location.hash) || versusUi.route(location.hash) || rumorsUi.route(location.hash) || newNamesUi.route(location.hash) || benchmarksUi.route(location.hash) || talentUi.route(location.hash) || uptimeUi.route(location.hash) || courtUi.route(location.hash) || buildoutUi.route(location.hash) || rulesUi.route(location.hash) || jobsUi.route(location.hash) || incidentsUi.route(location.hash) || robotsUi.route(location.hash) || quizUi.route(location.hash) || openUi.route(location.hash) || termsUi.route(location.hash) || chipsUi.route(location.hash) || watchUi.route(location.hash) || moodUi.route(location.hash) || framingUi.route(location.hash) || aheadUi.route(location.hash) || scienceUi.route(location.hash) || papersUi.route(location.hash) || shippedUi.route(location.hash);
+  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash) || mapUi.route(location.hash) || versusUi.route(location.hash) || rumorsUi.route(location.hash) || newNamesUi.route(location.hash) || benchmarksUi.route(location.hash) || talentUi.route(location.hash) || uptimeUi.route(location.hash) || courtUi.route(location.hash) || buildoutUi.route(location.hash) || rulesUi.route(location.hash) || jobsUi.route(location.hash) || incidentsUi.route(location.hash) || robotsUi.route(location.hash) || quizUi.route(location.hash) || openUi.route(location.hash) || termsUi.route(location.hash) || chipsUi.route(location.hash) || watchUi.route(location.hash) || moodUi.route(location.hash) || framingUi.route(location.hash) || aheadUi.route(location.hash) || scienceUi.route(location.hash) || papersUi.route(location.hash) || shippedUi.route(location.hash) || numbersUi.route(location.hash) || dossierUi.route(location.hash);
   if (acct) {
     const was = state.view;
     state.view = acct;
@@ -2495,6 +2503,8 @@ aheadUi = createAhead({ $, esc, setHtml, state, reducedMotion });
 scienceUi = createScience({ $, esc, setHtml, state, reducedMotion });
 papersUi = createPapers({ $, esc, setHtml, state, reducedMotion });
 shippedUi = createShipped({ $, esc, setHtml, state, reducedMotion });
+numbersUi = createNumbers({ $, esc, setHtml, state, reducedMotion });
+dossierUi = createDossier({ $, esc, setHtml, state, reducedMotion });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

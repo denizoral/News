@@ -4,8 +4,8 @@
 // Everything is network-first, so a deploy is live on the next load; the
 // cache only answers when the network can't.
 
-const CACHE = 'fw-v22';
-const SHELL = ['./', 'index.html', 'app.js', 'search.js', 'breaking.js', 'palette.js', 'foryou.js', 'accounts.js', 'models.js', 'developers.js', 'charts.js', 'trends.js', 'status.js', 'deals.js', 'ask.js', 'day.js', 'outlets.js', 'quotes.js', 'storylines.js', 'predictions.js', 'catchup.js', 'newsmap.js', 'versus.js', 'rumors.js', 'newnames.js', 'benchmarks.js', 'talent.js', 'uptime.js', 'court.js', 'buildout.js', 'rules.js', 'jobs.js', 'incidents.js', 'robots.js', 'quiz.js', 'open.js', 'terms.js', 'chips.js', 'watch.js', 'mood.js', 'framing.js', 'ahead.js', 'science.js', 'papers.js', 'shipped.js', 'styles.css', 'favicon.svg', 'manifest.webmanifest'];
+const CACHE = 'fw-v23';
+const SHELL = ['./', 'index.html', 'app.js', 'search.js', 'breaking.js', 'palette.js', 'foryou.js', 'accounts.js', 'models.js', 'developers.js', 'charts.js', 'trends.js', 'status.js', 'deals.js', 'ask.js', 'day.js', 'outlets.js', 'quotes.js', 'storylines.js', 'predictions.js', 'catchup.js', 'newsmap.js', 'versus.js', 'rumors.js', 'newnames.js', 'benchmarks.js', 'talent.js', 'uptime.js', 'court.js', 'buildout.js', 'rules.js', 'jobs.js', 'incidents.js', 'robots.js', 'quiz.js', 'open.js', 'terms.js', 'chips.js', 'watch.js', 'mood.js', 'framing.js', 'ahead.js', 'science.js', 'papers.js', 'shipped.js', 'numbers.js', 'dossier.js', 'styles.css', 'favicon.svg', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

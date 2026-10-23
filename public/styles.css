@@ -1595,9 +1595,9 @@ a.hot:hover { text-decoration: underline; }
 .tr-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; list-style: none; margin: -4px 0 10px; padding: 0; font-size: var(--s-1); color: var(--ink-2); font-weight: 600; }
 
 /* ---------- Trends (#trends) ---------- */
-#trendsView, #statusView, #dealsView, #dayView, #outletsView, #quotesView, #storylinesView, #predictionsView, #catchupView, #mapView, #versusView, #rumorsView, #newnamesView, #benchmarksView, #talentView, #uptimeView, #courtView, #buildoutView, #rulesView, #jobsView, #incidentsView, #robotsView, #quizView, #openView, #termsView, #chipsView, #watchView, #moodView, #framingView, #aheadView, #scienceView, #papersView, #shippedView { position: relative; --s1c: #2a78d6; --s2c: #eb6834; --s3c: #1baf7a; --s4c: #eda100; }
-:root[data-theme='dark'] #trendsView, :root[data-theme='dark'] #statusView, :root[data-theme='dark'] #dealsView, :root[data-theme='dark'] #dayView, :root[data-theme='dark'] #outletsView, :root[data-theme='dark'] #quotesView, :root[data-theme='dark'] #storylinesView, :root[data-theme='dark'] #predictionsView, :root[data-theme='dark'] #catchupView, :root[data-theme='dark'] #mapView, :root[data-theme='dark'] #versusView, :root[data-theme='dark'] #rumorsView, :root[data-theme='dark'] #newnamesView, :root[data-theme='dark'] #benchmarksView, :root[data-theme='dark'] #talentView, :root[data-theme='dark'] #uptimeView, :root[data-theme='dark'] #courtView, :root[data-theme='dark'] #buildoutView, :root[data-theme='dark'] #rulesView, :root[data-theme='dark'] #jobsView, :root[data-theme='dark'] #incidentsView, :root[data-theme='dark'] #robotsView, :root[data-theme='dark'] #quizView, :root[data-theme='dark'] #openView, :root[data-theme='dark'] #termsView, :root[data-theme='dark'] #chipsView, :root[data-theme='dark'] #watchView, :root[data-theme='dark'] #moodView, :root[data-theme='dark'] #framingView, :root[data-theme='dark'] #aheadView, :root[data-theme='dark'] #scienceView, :root[data-theme='dark'] #papersView, :root[data-theme='dark'] #shippedView { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) #trendsView, :root:not([data-theme='light']) #statusView, :root:not([data-theme='light']) #dealsView, :root:not([data-theme='light']) #dayView, :root:not([data-theme='light']) #outletsView, :root:not([data-theme='light']) #quotesView, :root:not([data-theme='light']) #storylinesView, :root:not([data-theme='light']) #predictionsView, :root:not([data-theme='light']) #catchupView, :root:not([data-theme='light']) #mapView, :root:not([data-theme='light']) #versusView, :root:not([data-theme='light']) #rumorsView, :root:not([data-theme='light']) #newnamesView, :root:not([data-theme='light']) #benchmarksView, :root:not([data-theme='light']) #talentView, :root:not([data-theme='light']) #uptimeView, :root:not([data-theme='light']) #courtView, :root:not([data-theme='light']) #buildoutView, :root:not([data-theme='light']) #rulesView, :root:not([data-theme='light']) #jobsView, :root:not([data-theme='light']) #incidentsView, :root:not([data-theme='light']) #robotsView, :root:not([data-theme='light']) #quizView, :root:not([data-theme='light']) #openView, :root:not([data-theme='light']) #termsView, :root:not([data-theme='light']) #chipsView, :root:not([data-theme='light']) #watchView, :root:not([data-theme='light']) #moodView, :root:not([data-theme='light']) #framingView, :root:not([data-theme='light']) #aheadView, :root:not([data-theme='light']) #scienceView, :root:not([data-theme='light']) #papersView, :root:not([data-theme='light']) #shippedView { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; } }
+#trendsView, #statusView, #dealsView, #dayView, #outletsView, #quotesView, #storylinesView, #predictionsView, #catchupView, #mapView, #versusView, #rumorsView, #newnamesView, #benchmarksView, #talentView, #uptimeView, #courtView, #buildoutView, #rulesView, #jobsView, #incidentsView, #robotsView, #quizView, #openView, #termsView, #chipsView, #watchView, #moodView, #framingView, #aheadView, #scienceView, #papersView, #shippedView, #numbersView, #coView { position: relative; --s1c: #2a78d6; --s2c: #eb6834; --s3c: #1baf7a; --s4c: #eda100; }
+:root[data-theme='dark'] #trendsView, :root[data-theme='dark'] #statusView, :root[data-theme='dark'] #dealsView, :root[data-theme='dark'] #dayView, :root[data-theme='dark'] #outletsView, :root[data-theme='dark'] #quotesView, :root[data-theme='dark'] #storylinesView, :root[data-theme='dark'] #predictionsView, :root[data-theme='dark'] #catchupView, :root[data-theme='dark'] #mapView, :root[data-theme='dark'] #versusView, :root[data-theme='dark'] #rumorsView, :root[data-theme='dark'] #newnamesView, :root[data-theme='dark'] #benchmarksView, :root[data-theme='dark'] #talentView, :root[data-theme='dark'] #uptimeView, :root[data-theme='dark'] #courtView, :root[data-theme='dark'] #buildoutView, :root[data-theme='dark'] #rulesView, :root[data-theme='dark'] #jobsView, :root[data-theme='dark'] #incidentsView, :root[data-theme='dark'] #robotsView, :root[data-theme='dark'] #quizView, :root[data-theme='dark'] #openView, :root[data-theme='dark'] #termsView, :root[data-theme='dark'] #chipsView, :root[data-theme='dark'] #watchView, :root[data-theme='dark'] #moodView, :root[data-theme='dark'] #framingView, :root[data-theme='dark'] #aheadView, :root[data-theme='dark'] #scienceView, :root[data-theme='dark'] #papersView, :root[data-theme='dark'] #shippedView, :root[data-theme='dark'] #numbersView, :root[data-theme='dark'] #coView { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) #trendsView, :root:not([data-theme='light']) #statusView, :root:not([data-theme='light']) #dealsView, :root:not([data-theme='light']) #dayView, :root:not([data-theme='light']) #outletsView, :root:not([data-theme='light']) #quotesView, :root:not([data-theme='light']) #storylinesView, :root:not([data-theme='light']) #predictionsView, :root:not([data-theme='light']) #catchupView, :root:not([data-theme='light']) #mapView, :root:not([data-theme='light']) #versusView, :root:not([data-theme='light']) #rumorsView, :root:not([data-theme='light']) #newnamesView, :root:not([data-theme='light']) #benchmarksView, :root:not([data-theme='light']) #talentView, :root:not([data-theme='light']) #uptimeView, :root:not([data-theme='light']) #courtView, :root:not([data-theme='light']) #buildoutView, :root:not([data-theme='light']) #rulesView, :root:not([data-theme='light']) #jobsView, :root:not([data-theme='light']) #incidentsView, :root:not([data-theme='light']) #robotsView, :root:not([data-theme='light']) #quizView, :root:not([data-theme='light']) #openView, :root:not([data-theme='light']) #termsView, :root:not([data-theme='light']) #chipsView, :root:not([data-theme='light']) #watchView, :root:not([data-theme='light']) #moodView, :root:not([data-theme='light']) #framingView, :root:not([data-theme='light']) #aheadView, :root:not([data-theme='light']) #scienceView, :root:not([data-theme='light']) #papersView, :root:not([data-theme='light']) #shippedView, :root:not([data-theme='light']) #numbersView, :root:not([data-theme='light']) #coView { --s1c: #3987e5; --s2c: #d95926; --s3c: #199e70; --s4c: #c98500; } }
 .tr-form { display: flex; gap: 8px; margin: 0 0 12px; max-width: 640px; }
 .tr-form input { flex: 1; min-width: 0; font: inherit; font-size: var(--s0); padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); }
 .tr-form input:focus { outline: 2px solid var(--signal); outline-offset: 1px; border-color: transparent; }
@@ -1820,7 +1820,7 @@ a.hot:hover { text-decoration: underline; }
 }
 
 /* ---------- Any day (#day) ---------- */
-#dayView h2.when, #outletsView h2.when, #quotesView h2.when, #storylinesView h2.when, #predictionsView h2.when, #catchupView h2.when, #mapView h2.when, #versusView h2.when, #rumorsView h2.when, #newnamesView h2.when, #benchmarksView h2.when, #talentView h2.when, #uptimeView h2.when, #courtView h2.when, #buildoutView h2.when, #rulesView h2.when, #jobsView h2.when, #incidentsView h2.when, #robotsView h2.when, #quizView h2.when, #openView h2.when, #termsView h2.when, #chipsView h2.when, #watchView h2.when, #moodView h2.when, #framingView h2.when, #aheadView h2.when, #scienceView h2.when, #papersView h2.when, #shippedView h2.when { display: flex; align-items: baseline; gap: 8px; font-size: var(--s-1); font-weight: 700; color: var(--muted); margin: 8px 0 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+#dayView h2.when, #outletsView h2.when, #quotesView h2.when, #storylinesView h2.when, #predictionsView h2.when, #catchupView h2.when, #mapView h2.when, #versusView h2.when, #rumorsView h2.when, #newnamesView h2.when, #benchmarksView h2.when, #talentView h2.when, #uptimeView h2.when, #courtView h2.when, #buildoutView h2.when, #rulesView h2.when, #jobsView h2.when, #incidentsView h2.when, #robotsView h2.when, #quizView h2.when, #openView h2.when, #termsView h2.when, #chipsView h2.when, #watchView h2.when, #moodView h2.when, #framingView h2.when, #aheadView h2.when, #scienceView h2.when, #papersView h2.when, #shippedView h2.when, #numbersView h2.when, #coView h2.when { display: flex; align-items: baseline; gap: 8px; font-size: var(--s-1); font-weight: 700; color: var(--muted); margin: 8px 0 10px; text-transform: uppercase; letter-spacing: 0.05em; }
 #dayView h2.when span { text-transform: none; letter-spacing: 0; font-weight: 600; }
 .dy-cal { padding-bottom: 12px; }
 .dy-scroll { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 4px; }
@@ -2748,8 +2748,8 @@ a.sl-hl:hover { color: var(--signal); }
 }
 
 /* The buildout (#buildout) */
-#buildoutView h2.when, #rulesView h2.when, #jobsView h2.when, #incidentsView h2.when, #robotsView h2.when, #quizView h2.when, #openView h2.when, #termsView h2.when, #chipsView h2.when, #watchView h2.when, #moodView h2.when, #framingView h2.when, #aheadView h2.when, #scienceView h2.when, #papersView h2.when, #shippedView h2.when { flex-wrap: wrap; }
-#buildoutView h2.when span, #rulesView h2.when span, #jobsView h2.when span, #incidentsView h2.when span, #robotsView h2.when span, #quizView h2.when span, #openView h2.when span, #termsView h2.when span, #chipsView h2.when span, #watchView h2.when span, #moodView h2.when span, #framingView h2.when span, #aheadView h2.when span, #scienceView h2.when span, #papersView h2.when span, #shippedView h2.when span { text-transform: none; letter-spacing: 0; font-weight: 600; }
+#buildoutView h2.when, #rulesView h2.when, #jobsView h2.when, #incidentsView h2.when, #robotsView h2.when, #quizView h2.when, #openView h2.when, #termsView h2.when, #chipsView h2.when, #watchView h2.when, #moodView h2.when, #framingView h2.when, #aheadView h2.when, #scienceView h2.when, #papersView h2.when, #shippedView h2.when, #numbersView h2.when, #coView h2.when { flex-wrap: wrap; }
+#buildoutView h2.when span, #rulesView h2.when span, #jobsView h2.when span, #incidentsView h2.when span, #robotsView h2.when span, #quizView h2.when span, #openView h2.when span, #termsView h2.when span, #chipsView h2.when span, #watchView h2.when span, #moodView h2.when span, #framingView h2.when span, #aheadView h2.when span, #scienceView h2.when span, #papersView h2.when span, #shippedView h2.when span, #numbersView h2.when span, #coView h2.when span { text-transform: none; letter-spacing: 0; font-weight: 600; }
 .bo-charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; margin-bottom: 22px; align-items: start; }
 .bo-charts svg { display: block; width: 100%; height: auto; }
 .bo-seg.s1, .ru-seg.s1 { fill: var(--s1c); } .bo-seg.s2, .ru-seg.s2 { fill: var(--s2c); } .bo-seg.s3, .ru-seg.s3 { fill: var(--s3c); } .ru-seg.s4 { fill: var(--s4c); }
@@ -3604,6 +3604,92 @@ a.sl-hl:hover { color: var(--signal); }
 }
 @media (max-width: 520px) {
   .sh-rl { font-size: 10.5px; }
+}
+
+/* AI by the numbers (#numbers) */
+#numbersView svg, #coView svg { display: block; width: 100%; height: auto; }
+.nb-panels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px 32px; margin: 0 0 24px; }
+.nb-panel ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.nb-panel li { display: grid; grid-template-columns: 7.5em minmax(0, 1fr) 7.2em 92px 5.5em; align-items: center; gap: 8px; font-size: var(--s-1); }
+.nb-co { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nb-co a, .nb-meta a { color: var(--ink); }
+.nb-barw { display: block; }
+.nb-bar { display: block; height: 12px; min-width: 3px; border-radius: 3px; background: var(--s1c); transform-origin: left; }
+.nb-bar.out { background: transparent; border: 1.5px dashed var(--s1c); height: 10px; }
+.nb-v { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 5px; font-variant-numeric: tabular-nums; }
+.nb-v b { font-size: var(--s0); }
+.nb-v small { color: var(--muted); font-size: 11px; }
+.nb-tag { font-size: 10.5px !important; font-weight: 700; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 5px; }
+.nb-hist { width: 92px; height: auto; }
+.nb-hist polyline { fill: none; stroke: var(--s1c); stroke-width: 1.5; opacity: 0.6; }
+.nb-hist circle { fill: var(--s1c); }
+.nb-hist circle.out { fill: var(--surface); stroke: var(--s1c); stroke-width: 1.2; }
+.nb-base { stroke: var(--line); stroke-width: 1; }
+.nb-src { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nb-list { max-width: 900px; }
+.nb-list ol { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 10px; }
+.nb-list li { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 12px; align-items: start; }
+.nb-amt { font-size: var(--s1); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; text-align: right; }
+.nb-meta { margin: 0; font-size: 12px; color: var(--muted); }
+.nb-t { margin: 2px 0 0; font-size: var(--s0); line-height: 1.35; overflow-wrap: anywhere; }
+.nb-t a { color: var(--ink); font-weight: 600; }
+.nb-t small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+.nb-page.animate .nb-panel { animation: up-rise 0.4s ease-out both; animation-delay: calc(var(--i) * 70ms); }
+.nb-page.animate .nb-bar { animation: dl-grow 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i) * 40ms + 0.15s); }
+.nb-page.animate .nb-list li { animation: up-rise 0.35s ease-out both; animation-delay: calc(var(--i) * 25ms + 0.25s); }
+
+/* Company dossiers (#co) */
+#coView { --dz-good: #4f63c4; --dz-bad: #b4467a; }
+:root[data-theme='dark'] #coView { --dz-good: #7b8ae0; --dz-bad: #d0629a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) #coView { --dz-good: #7b8ae0; --dz-bad: #d0629a; } }
+.dz-cos { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; }
+.dz-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin: 8px 0 24px; }
+.dz-pick a { padding: 18px 16px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); color: var(--ink); font-weight: 800; font-size: var(--s1); transition: border-color 0.2s, transform 0.2s; animation: up-rise 0.35s ease-out both; animation-delay: calc(var(--i) * 30ms); }
+.dz-pick a:hover { text-decoration: none; border-color: var(--ink-2); transform: translateY(-2px); }
+.dz-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0 0 22px; }
+.dz-card { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); }
+.dz-card h3 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: var(--s0); }
+.dz-card h3 small { font-size: 11px; font-weight: 600; color: var(--muted); }
+.dz-area { fill: color-mix(in oklab, var(--s1c) 16%, transparent); }
+.dz-line { fill: none; stroke: var(--s1c); stroke-width: 2; stroke-linejoin: round; }
+.dz-zero { stroke: var(--muted); stroke-width: 1; }
+.dz-good { fill: var(--dz-good); } .dz-bad { fill: var(--dz-bad); }
+.dz-step { fill: none; stroke: var(--s2c); stroke-width: 2; }
+.dz-dot { fill: var(--s2c); stroke: var(--surface); stroke-width: 1.5; }
+.dz-last { fill: var(--ink); font-size: 12px; font-weight: 800; }
+.dz-note { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.dz-note b { color: var(--ink); }
+.dz-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; margin: 0 0 22px; align-items: start; }
+.dz-figs ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.dz-figs li { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.dz-figs small { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.dz-figs b { font-size: var(--s2); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.dz-figs span { font-size: 11px; color: var(--muted); }
+.dz-ahead ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.dz-ahead li { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 10px; font-size: var(--s-1); line-height: 1.35; }
+.dz-ahead time { font-weight: 800; color: var(--signal); }
+.dz-ahead a { color: var(--ink); overflow-wrap: anywhere; }
+.dz-tl { max-width: 900px; }
+.dz-tl > ol { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 8px; }
+.dz-h h3 { margin: 12px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.dz-ev { display: grid; grid-template-columns: 7.5em minmax(0, 1fr); gap: 10px; align-items: start; }
+.dz-type { justify-self: start; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--track); color: var(--ink-2); }
+.dz-ev.t-incident .dz-type, .dz-ev.t-court .dz-type { background: color-mix(in oklab, var(--dz-bad) 20%, var(--surface)); }
+.dz-ev.t-shipped .dz-type, .dz-ev.t-open .dz-type { background: color-mix(in oklab, var(--dz-good) 18%, var(--surface)); }
+.dz-ev a { color: var(--ink); font-weight: 600; font-size: var(--s0); line-height: 1.35; overflow-wrap: anywhere; }
+.dz-ev small { display: block; color: var(--muted); font-size: 12px; }
+.dz-page.animate .dz-card { animation: up-rise 0.4s ease-out both; }
+.dz-page.animate .dz-card:nth-child(2) { animation-delay: 0.06s; } .dz-page.animate .dz-card:nth-child(3) { animation-delay: 0.12s; }
+.dz-page.animate .dz-line { stroke-dasharray: 700; animation: tm-draw 1s ease-out both; }
+.dz-page.animate .dz-ev { animation: up-rise 0.35s ease-out both; animation-delay: calc(var(--i) * 25ms + 0.2s); }
+@media (max-width: 900px) {
+  .nb-panels, .dz-grid { grid-template-columns: minmax(0, 1fr); }
+  .dz-cards { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .nb-panel li { grid-template-columns: 6em minmax(0, 1fr) 6.4em; }
+  .nb-hist, .nb-src { display: none; }
+  .dz-ev { grid-template-columns: minmax(0, 1fr); gap: 3px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

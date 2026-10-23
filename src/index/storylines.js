@@ -16,7 +16,7 @@ import { clusterItems } from '../pipeline/cluster.js';
 import { tokens } from '../pipeline/text.js';
 import { topicLabel } from './topics.js';
 import { centralHeadline, dayItems, dayOf, outletsOf } from './day.js';
-import { runJob } from './offload.js';
+import { fromDisk, runJob, toDisk } from './offload.js';
 
 const DAY = 86400e3;
 export const WINDOW_DAYS = 60;
@@ -199,16 +199,26 @@ export function computeStorylines(index, { chapters, now = Date.now(), days = WI
 
 const TTL = 30 * 60e3;
 let memo = { at: 0, data: null, pending: null };
+let triedDisk = false;
 
 // The window's chapters from the history worker, chained in the vectors
 // worker (which holds the embeddings); the list and every storyline page
 // come from one result.
+// The last result is kept on disk too, so a restart doesn't make the first
+// visitor wait ten seconds.
 export function storylinesData() {
+  if (!memo.data && !triedDisk) {
+    triedDisk = true;
+    const hit = fromDisk('storylines');
+    if (hit) memo = { ...hit, pending: null };
+  }
   if (memo.data && Date.now() - memo.at < TTL) return Promise.resolve(memo.data);
-  memo.pending ||= runJob({ kind: 'storyDays' })
-    .then(({ chapters }) => runJob({ kind: 'storylines', chapters }))
+  const background = !!memo.data;
+  memo.pending ||= runJob({ kind: 'storyDays' }, { background })
+    .then(({ chapters }) => runJob({ kind: 'storylines', chapters }, { background }))
     .then((data) => {
       memo = { at: Date.now(), data, pending: null };
+      toDisk('storylines', data);
       return data;
     })
     .catch((err) => {

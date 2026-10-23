@@ -42,6 +42,8 @@ import { robotsQuery } from './index/robots.js';
 import { openQuery } from './index/openweights.js';
 import { termsQuery } from './index/terms.js';
 import { chipsQuery } from './index/chips.js';
+import { moodQuery } from './index/mood.js';
+import { framingQuery } from './index/framing.js';
 import { watchFor, normQuery, MAX_WATCHES } from './index/watch.js';
 import { editionIds, isEditionId } from './index/quiz.js';
 import { quizEdition, publicQuiz, recordAnswer, recordScore, quizStats } from './index/quizbook.js';
@@ -646,6 +648,20 @@ export function createApp({ store, spider }) {
       return openQuery()
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
         .catch((err) => json(req, res, 503, { error: `Open weights are unavailable: ${err.message}` }));
+    }
+    // The mood of AI coverage, by week, company and outlet.
+    if (p === '/api/mood') {
+      if (limited(req, res)) return;
+      return moodQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `The mood of coverage is unavailable: ${err.message}` }));
+    }
+    // How outlets headline the same story.
+    if (p === '/api/framing') {
+      if (limited(req, res)) return;
+      return framingQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=600' }))
+        .catch((err) => json(req, res, 503, { error: `Framing is unavailable: ${err.message}` }));
     }
     // The compute race: chips, export controls, deals, shortages.
     if (p === '/api/chips') {

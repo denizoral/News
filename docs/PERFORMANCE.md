@@ -5,6 +5,25 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-23 (06:49 run)
+
+**Cold views waited behind background refreshes.** Each worker lane ran jobs
+in arrival order. A page nobody had opened yet queued behind every stale
+result being refreshed in the background, so it could take half a minute.
+Each lane now keeps its own queue: a job someone is waiting on goes ahead of
+background refreshes. Storylines (built outside the job cache) are now saved
+to disk too.
+
+| Case | Before | After |
+|---|---|---|
+| Cold `/api/deals` behind 10 stale refreshes after restart | 33.9 s | 1.9 s |
+| `/api/storylines`, cold, same conditions | 12.1 s | 6.9 s |
+| `/api/storylines`, first request after restart | 10.5–12 s | 6 ms (disk) |
+
+New jobs: `jobs` 120–330 ms (56 KB), `incidents` 290–480 ms (200 KB).
+Main-thread probe (healthz every request for 150 s): mostly <5 ms, a few
+0.2–0.3 s and one 1.5 s stall during ingest; not addressed this run.
+
 ## 2026-10-23 (04:49 run)
 
 **Cold job results after a restart: seconds → milliseconds.** The job cache

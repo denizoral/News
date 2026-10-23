@@ -2,6 +2,59 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · AI and jobs (#jobs)
+
+**Backend.** `src/index/jobs.js`, `/api/jobs`:
+- **What it reads:** a year of English headlines about layoffs, job cuts,
+  headcount and work that also mention AI, automation or agents. Other
+  senses ("Steve Jobs", long-running GPU jobs, how-tos) are left out.
+- **A round of cuts:** a company named with a layoff verb. Bosses named in
+  place of the company map back to it (Jack Dorsey → Block). Each round has:
+  - a headcount (the figure most reports give) or a share of staff;
+  - why AI comes into it: AI does the work, to pay for AI, a refocus on AI,
+    says it isn't AI, or just AI in the picture;
+  - planned or announced.
+  Reports of the same company's cuts within three weeks are one round.
+- **The argument:** other headlines are read as "AI is taking jobs" or "it's
+  an excuse / overstated", deduped across outlets. Kinds of work named
+  (customer service, engineers, entry-level, HR, creative, back office,
+  managers, white-collar) are collected too.
+- **Output:** cuts, 12 months of rounds by reason with jobs named and both
+  sides of the argument, companies by jobs named, roles, stats.
+
+**UI.** `public/jobs.js`: stat tiles, monthly rounds stacked by reason,
+the argument as diverging bars (worry above the line, scepticism below, one
+scale), companies by jobs named (tap to filter), cut cards with every
+report, both sides side by side, and kind-of-work chips. Hover tooltips on
+all charts.
+
+## 2026-10-23 · AI incidents (#incidents)
+
+**Backend.** `src/index/incidents.js`, `/api/incidents`:
+- **What it reads:** a year of English headlines with failure words and an
+  AI product word. Advice, detection and defence tools, funding, market talk,
+  outages (on #uptime) and AI finding someone else's bug are left out.
+- **Each headline gives:** a kind (agents gone wrong, robotaxis, harm to
+  people, scams, deepfakes, hacks and leaks, propaganda, made-up answers,
+  bias), the product involved, what was done (paused, banned, patched,
+  apology, investigation, lawsuit), and whether it was in a lab or study.
+- **Incidents:** same kind and product within five days and about the same
+  thing (or, without a product, the same story within two days).
+- **Output:** incidents, months by kind, kinds with 90-day counts, products,
+  responses, stats (90 days vs the 90 before, agent incidents, share with a
+  response).
+
+**UI.** `public/incidents.js`: stat tiles, a year as one lane per kind with
+dots sized by outlets (hover for the headline, tap to open its card),
+products and responses as bars that filter, kind and lab/world chips, and
+incident cards with every report. Short lane names on phones.
+
+## 2026-10-23 · Job lanes and storylines on disk
+
+Jobs a visitor is waiting on now run before background refreshes in each
+worker lane. Storylines are kept on disk across restarts like the other
+default views.
+
 ## 2026-10-23 · The buildout (#buildout)
 
 **Backend.** `src/index/buildout.js`:

@@ -1,4 +1,4 @@
-// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, any-day pages, outlets, quotes, storylines, predictions, catch-up, the news map, head to head, rumors, new names, benchmarks, talent moves, the AI status board, the courtroom, the buildout, AI rules, AI and jobs, AI incidents, robots, the weekly quiz, open weights, AI words, the compute race, watchlists, the mood of coverage, framing, what's coming, AI in science, research papers, product changelogs, the entity graph, X accounts, For you) off the main thread
+// Runs history queries (topic pages, the weekly digest, release coverage, model comparison, trends, deals, vector search, market moves, any-day pages, outlets, quotes, storylines, predictions, catch-up, the news map, head to head, rumors, new names, benchmarks, talent moves, the AI status board, the courtroom, the buildout, AI rules, AI and jobs, AI incidents, robots, the weekly quiz, open weights, AI words, the compute race, watchlists, the mood of coverage, framing, what's coming, AI in science, research papers, product changelogs, AI by the numbers, the entity graph, X accounts, For you) off the main thread
 // with its own read-only connection (see offload.js).
 
 import { parentPort, workerData } from 'node:worker_threads';
@@ -46,6 +46,7 @@ import { computeAhead } from './ahead.js';
 import { computeScience } from './science.js';
 import { computePapers } from './papers.js';
 import { computeShipped } from './shipped.js';
+import { computeNumbers } from './numbers.js';
 
 const db = new DatabaseSync(workerData.file, { readOnly: true });
 db.exec('PRAGMA busy_timeout = 5000; PRAGMA cache_size = -32000;');
@@ -100,6 +101,7 @@ const JOBS = {
   science: () => computeScience(db),
   papers: () => computePapers(db),
   shipped: () => computeShipped(db),
+  numbers: () => computeNumbers(db),
   quiz: ({ id, markets }) => buildQuiz(db, { id, markets }),
   buildout: () => computeBuildout(db),
   rules: () => computeRules(db),

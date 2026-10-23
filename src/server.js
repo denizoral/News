@@ -48,6 +48,8 @@ import { aheadQuery, aheadIcs } from './index/ahead.js';
 import { scienceQuery } from './index/science.js';
 import { papersQuery } from './index/papers.js';
 import { shippedQuery } from './index/shipped.js';
+import { numbersQuery } from './index/numbers.js';
+import { buildDossier, dossierKeys, DOSSIERS } from './index/dossier.js';
 import { watchFor, normQuery, MAX_WATCHES } from './index/watch.js';
 import { editionIds, isEditionId } from './index/quiz.js';
 import { quizEdition, publicQuiz, recordAnswer, recordScore, quizStats } from './index/quizbook.js';
@@ -680,6 +682,28 @@ export function createApp({ store, spider }) {
       return papersQuery()
         .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
         .catch((err) => json(req, res, 503, { error: `Research papers are unavailable: ${err.message}` }));
+    }
+    // AI by the numbers: revenue, run rate, spending, losses, users.
+    if (p === '/api/numbers') {
+      if (limited(req, res)) return;
+      return numbersQuery()
+        .then((d) => json(req, res, 200, d, { 'cache-control': 'public, max-age=1800' }))
+        .catch((err) => json(req, res, 503, { error: `The numbers are unavailable: ${err.message}` }));
+    }
+    // A company dossier: other pages' cached results filtered to one company.
+    if (p === '/api/co') {
+      if (limited(req, res)) return;
+      const key = url.searchParams.get('key') || '';
+      if (!dossierKeys().includes(key)) return json(req, res, 404, { error: 'No dossier for that company.' });
+      const c = DOSSIERS[key];
+      const markets = (store.markets || []).map((m) => ({ id: m.id, title: m.title, url: m.url, volume: m.volume, endDate: m.endDate, binary: m.binary, outcomes: (m.outcomes || []).map((o) => ({ label: o.label, yes: o.yes })) }));
+      const names = ['topic', 'mood', 'deals', 'numbers', 'shipped', 'incidents', 'open', 'court', 'jobs', 'ahead'];
+      return Promise.allSettled([topicHistory(c.topic), moodQuery(), companyDealsQuery(c.deals), numbersQuery(), shippedQuery(), incidentsQuery(), openQuery(), courtQuery(), jobsQuery(), aheadQuery(markets)])
+        .then((results) => {
+          const parts = Object.fromEntries(results.map((r, i) => [names[i], r.status === 'fulfilled' ? r.value : null]));
+          json(req, res, 200, { ...buildDossier(key, parts), missing: names.filter((n, i) => results[i].status !== 'fulfilled') }, { 'cache-control': 'public, max-age=600' });
+        })
+        .catch((err) => json(req, res, 503, { error: `The dossier is unavailable: ${err.message}` }));
     }
     // What each AI product shipped, week by week.
     if (p === '/api/shipped') {

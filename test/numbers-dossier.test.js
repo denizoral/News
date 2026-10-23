@@ -65,3 +65,9 @@ test('numbers: a figure for one product is marked part and doesn’t stand for t
   assert.equal(parseNumber('Anthropic’s Claude Code hits a $2.5B run rate').part, true);
   assert.equal(parseNumber('Anthropic boasts revenue run rate of $30 billion').part, false);
 });
+
+test('numbers: a later mention of a unit doesn’t make the figure partial', async () => {
+  const { parseNumber } = await import('../src/index/numbers.js');
+  assert.equal(parseNumber('Alphabet tops $100 billion quarterly revenue for first time, cloud grows 34%').part, false);
+  assert.equal(parseNumber('Microsoft Azure tops $100B in annual revenue').part, true);
+});

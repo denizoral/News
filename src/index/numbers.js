@@ -123,7 +123,8 @@ export function parseNumber(rawTitle, { only = null, used = new Set() } = {}) {
       });
     const a = nearest(amounts.filter((x) => !used.has(x.at)), m.index, end);
     if (!a) continue;
-    return { title, at: a.at, company: co[0], metric: key, value: a.v, unit: 'usd', part: PART.test(title), period: periodOf(title), outlook: OUTLOOK.test(title), reported: REPORTED.test(title) };
+    // Part of the business when its word comes before the amount or right after.
+    return { title, at: a.at, company: co[0], metric: key, value: a.v, unit: 'usd', part: PART.test(title.slice(0, a.end + 25)), period: periodOf(title), outlook: OUTLOOK.test(title), reported: REPORTED.test(title) };
   }
   return null;
 }

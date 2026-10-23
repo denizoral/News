@@ -5,6 +5,22 @@ Measured numbers from the scheduled maintenance runs, newest first. Benchmarks:
 paths on the items in `data/state.json` (a real crawl). Server numbers come from
 a keep-alive HTTP client against `NODE_ENV=production SPIDER=off AGGREGATOR=off`.
 
+## 2026-10-23 (02:49 run)
+
+- **AI status (`/api/uptime`):**
+  - Compute takes 230–290 ms in the history worker. Coverage is one FTS
+    `id IN (SELECT rowid …)` query per service, scoped to titles.
+  - Payload is 185 KB raw (about 30 KB gzipped).
+  - Polling all 12 feeds takes about 4.4 s, with four at a time. Unchanged
+    feeds return 304.
+  - incident.io pages (about 500 KB each) skip the conditional cache, so
+    they aren't held in memory.
+- **Courtroom (`/api/court`):**
+  - Compute is 84 ms over 418 legal headlines.
+  - Parties are looked up by first word, as in talent.js, rather than with
+    one alternation over every alias.
+  - Payload is 100 KB raw.
+
 ## 2026-10-23 (00:49 run)
 
 **Talent moves: 40 s → 0.4 s.**

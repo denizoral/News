@@ -279,7 +279,8 @@ export function computeCourt(db, now = Date.now(), days = COURT_DAYS) {
       cases: out.length,
       filed30: out.reduce((s, c) => s + c.events.filter((e) => e.kind === 'filed' && e.at >= now - 30 * DAY).length, 0),
       settled: out.filter((c) => c.status === 'settled').length,
-      biggest: out.filter((c) => c.amount).sort((a, b) => b.amount - a.amount)[0] || null,
+      // One outlet's figure is often about something else.
+      biggest: out.filter((c) => c.amount && c.outlets >= 2).sort((a, b) => b.amount - a.amount)[0] || null,
     },
   };
 }

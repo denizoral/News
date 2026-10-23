@@ -2,6 +2,75 @@
 
 Full-stack features from the scheduled maintenance runs, newest first.
 
+## 2026-10-23 · AI status (#uptime)
+
+**Backend.** `src/sources/uptime.js` (a new source, every 10 minutes) and
+`src/index/uptime.js`:
+- **Where incidents come from:** the public history feeds on the status
+  pages of OpenAI, Claude, GitHub (Copilot incidents only), Cursor,
+  Perplexity, DeepSeek, Hugging Face, Groq, Together AI, Runway, Cohere and
+  Cloudflare (Workers AI and AI Gateway only). Several hosts disallow `/api/`
+  in robots.txt, so only the feeds are read, with conditional GET. Mistral's
+  page sits behind a Cloudflare challenge and is skipped.
+- **Feed shapes:** Statuspage (every update in the entry), incident.io and
+  Flashduty (latest status only) and Instatus (one item per update) are all
+  reduced to incidents with timed updates.
+- **Start times:** incident.io pages are read once per incident, four per
+  poll, to get each update's time.
+- **Storage:** polls merge into a new `status_incidents` table, so history
+  grows beyond what the feeds keep.
+- **Severity:** judged from the wording ("outage", "unavailable" is major;
+  "degraded", "elevated errors" is minor; maintenance is its own kind).
+- **Per service:** the current state, a 90-day strip of each day's worst
+  severity, incidents in 30 and 90 days, and median time to fix.
+- **Start-hour heatmap:** incident starts by weekday and UTC hour.
+- **Coverage:** headlines and X posts naming the service and an outage
+  ("is down", "outage"; not "shut down" or "hands-down"), each attached to
+  its nearest incident, with how many minutes before or after the status
+  page they came.
+- `/api/uptime`.
+
+**UI.** `public/uptime.js`:
+- an "open right now" banner with a pulsing dot;
+- service cards with an icon and label for each state;
+- 90-day day strips that grow in, with a hover tooltip per day;
+- filter by service, and a maintenance toggle;
+- incident cards with update timelines, components and the reports around
+  them;
+- the start-hour heatmap;
+- refreshes every two minutes while open.
+
+## 2026-10-23 · Courtroom (#court)
+
+**Backend.** `src/index/court.js`:
+- **Reading headlines:** a year of English legal headlines (FTS prefilter),
+  each parsed for:
+  - the defendant (an AI lab, or big tech when the headline has an AI word);
+  - the plaintiff ("X sues Y", "sued by", "v.", a name beside "case", or
+    groups such as authors, news publishers, music labels, US states,
+    families);
+  - the kind of claim (copyright, child safety, deepfakes, privacy, trade
+    secrets, antitrust, defamation, government, governance, criminal, labour);
+  - the event (filed, ruling, dismissed, settled, verdict).
+- **Not counted:** figures of speech ("settle for", "courting", "AI judges")
+  and bills.
+- **Cases:** the same parties make one case. Without a plaintiff, the same
+  defendant and kind of claim do. A plaintiff-less case joins the one
+  matching case that names a plaintiff.
+- **Events:** the same news from several outlets within two days is one
+  event.
+- **Status:** the latest decisive event. Amounts are kept from settlements
+  and verdicts.
+- **Also returned:** 12 months of filings, rulings and outcomes, and
+  defendants by kind of claim.
+- `/api/court`.
+
+**UI.** `public/court.js`:
+- stacked monthly columns with hover;
+- a who-is-sued-over-what dot matrix that filters;
+- chips for each kind of claim;
+- case cards with status, amount and an event timeline.
+
 ## 2026-10-23 · Benchmarks (#benchmarks)
 
 **Backend.** `src/index/benchmarks.js`:

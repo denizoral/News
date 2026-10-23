@@ -62,6 +62,8 @@ export function makeParser(orgs, people = []) {
   };
 
   function person(raw) {
+    // Board and trust seats aren't jobs: "appoints X to its Long-Term Benefit Trust".
+    if (/\bto (?:its|the) (?:[\w-]+\s){0,3}(?:board|trust|council|committee)\b/i.test(raw)) return null;
     // Headline lead-ins: "Google's AI reshuffle: …", "Amazon says …", "reportedly".
     let who = raw.replace(/^.*?:\s+/, '').replace(/^(?:says|confirms|announces)\s+/i, '').replace(/\s+reportedly$/i, '').trim().replace(/[,:]$/, '');
     if (OWNED.test(who) || / for (?:more|its|a|an|the)\b/i.test(who)) return null; // "Elon Musk's SpaceX for compute"

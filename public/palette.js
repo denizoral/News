@@ -26,6 +26,8 @@ const PAGES = [
   ['News map', '#map', 'Every story laid out by meaning'],
   ['Head to head', '#vs', 'Two labs, people or products side by side'],
   ['Rumor mill', '#rumors', 'What was reported before it was announced, and whether it came true'],
+  ['Benchmarks', '#benchmarks', 'Who leads SWE-bench, GPQA, ARC-AGI and more, and since when'],
+  ['Talent moves', '#talent', 'Who joined, left or was hired away between AI labs'],
   ['New names', '#new', 'Models, products and projects new to the news, and what they are'],
   ['Who said what', '#quotes', 'Who is being quoted about AI, and the lines every outlet carried'],
   ['Any day', '#day', 'The front page of any day in the last year'],

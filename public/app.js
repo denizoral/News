@@ -31,6 +31,8 @@ import { createRobots } from './robots.js';
 import { createQuiz } from './quiz.js';
 import { createOpen } from './open.js';
 import { createTerms } from './terms.js';
+import { createChips } from './chips.js';
+import { createWatch } from './watch.js';
 
 // Frontier Wire client. Loads the snapshot, renders three views, and keeps
 // itself current over Server-Sent Events (or polling when hosted statically).
@@ -217,6 +219,8 @@ let robotsUi = null;
 let quizUi = null;
 let openUi = null;
 let termsUi = null;
+let chipsUi = null;
+let watchUi = null;
 
 // ---------- Data ----------
 
@@ -2119,6 +2123,8 @@ function render() {
   if (state.view === 'quiz') quizUi.render();
   if (state.view === 'open') openUi.render();
   if (state.view === 'terms') termsUi.render();
+  if (state.view === 'chips') chipsUi.render();
+  if (state.view === 'watch') watchUi.render();
   breakingUi.renderBanner();
   renderFoot();
   updateLive();
@@ -2134,7 +2140,7 @@ function route() {
     return;
   }
   const v = location.hash.replace('#', '');
-  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash) || mapUi.route(location.hash) || versusUi.route(location.hash) || rumorsUi.route(location.hash) || newNamesUi.route(location.hash) || benchmarksUi.route(location.hash) || talentUi.route(location.hash) || uptimeUi.route(location.hash) || courtUi.route(location.hash) || buildoutUi.route(location.hash) || rulesUi.route(location.hash) || jobsUi.route(location.hash) || incidentsUi.route(location.hash) || robotsUi.route(location.hash) || quizUi.route(location.hash) || openUi.route(location.hash) || termsUi.route(location.hash);
+  const acct = accountsUi.route(location.hash) || modelsUi.route(location.hash) || trendsUi.route(location.hash) || statusUi.route(location.hash) || dealsUi.route(location.hash) || askUi.route(location.hash) || dayUi.route(location.hash) || outletsUi.route(location.hash) || quotesUi.route(location.hash) || storylinesUi.route(location.hash) || predictionsUi.route(location.hash) || catchupUi.route(location.hash) || mapUi.route(location.hash) || versusUi.route(location.hash) || rumorsUi.route(location.hash) || newNamesUi.route(location.hash) || benchmarksUi.route(location.hash) || talentUi.route(location.hash) || uptimeUi.route(location.hash) || courtUi.route(location.hash) || buildoutUi.route(location.hash) || rulesUi.route(location.hash) || jobsUi.route(location.hash) || incidentsUi.route(location.hash) || robotsUi.route(location.hash) || quizUi.route(location.hash) || openUi.route(location.hash) || termsUi.route(location.hash) || chipsUi.route(location.hash) || watchUi.route(location.hash);
   if (acct) {
     const was = state.view;
     state.view = acct;
@@ -2258,7 +2264,7 @@ $('#trendsView').addEventListener('pointerleave', (e) => trendsUi.hover(e), true
 $('#trendsView').addEventListener('click', (e) => trendsUi.onPlotClick(e));
 $('#statusView').addEventListener('pointermove', (e) => statusUi.hover(e));
 $('#statusView').addEventListener('pointerleave', (e) => statusUi.hover(e), true);
-document.addEventListener('submit', (e) => trendsUi.onSubmit(e) || askUi.onSubmit(e));
+document.addEventListener('submit', (e) => trendsUi.onSubmit(e) || askUi.onSubmit(e) || watchUi.onSubmit(e));
 $('#dealsView').addEventListener('pointermove', (e) => dealsUi.hover(e));
 $('#dealsView').addEventListener('pointerleave', (e) => dealsUi.hover(e), true);
 $('#dealsView').addEventListener('input', (e) => dealsUi.onInput(e));
@@ -2310,6 +2316,11 @@ $('#openView').addEventListener('pointerover', (e) => openUi.hover(e));
 $('#openView').addEventListener('pointerleave', (e) => openUi.hover(e), true);
 $('#termsView').addEventListener('pointerover', (e) => termsUi.hover(e));
 $('#termsView').addEventListener('pointerleave', (e) => termsUi.hover(e), true);
+$('#chipsView').addEventListener('pointerover', (e) => chipsUi.hover(e));
+$('#chipsView').addEventListener('pointerleave', (e) => chipsUi.hover(e), true);
+$('#watchView').addEventListener('pointerover', (e) => watchUi.hover(e));
+$('#watchView').addEventListener('pointerleave', (e) => watchUi.hover(e), true);
+$('#watchView').addEventListener('click', (e) => watchUi.onClick(e));
 $('#storylinesView').addEventListener('pointerleave', (e) => storylinesUi.hover(e), true);
 $('#askView').addEventListener('pointerover', (e) => askUi.hover(e));
 $('#askView').addEventListener('focusin', (e) => askUi.hover(e));
@@ -2448,6 +2459,8 @@ robotsUi = createRobots({ $, esc, setHtml, state, reducedMotion });
 quizUi = createQuiz({ $, esc, setHtml, state, reducedMotion });
 openUi = createOpen({ $, esc, setHtml, state, reducedMotion });
 termsUi = createTerms({ $, esc, setHtml, state, reducedMotion });
+chipsUi = createChips({ $, esc, setHtml, state, reducedMotion });
+watchUi = createWatch({ $, esc, setHtml, state, reducedMotion });
 // Offline copy and push alerts. Browsers only allow service workers on
 // HTTPS and localhost.
 if ('serviceWorker' in navigator && window.isSecureContext && state.mode === 'api') navigator.serviceWorker.register('sw.js').catch(() => {});

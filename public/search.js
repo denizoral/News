@@ -160,7 +160,7 @@ export function createSearch({ esc, ago, time, fav, pct, compact }) {
     if (d.error) notes.push(esc(d.error));
     const trend = s.q && looksLikeQuestion(s.q) ? ` <a class="tr-link" href="#ask?q=${encodeURIComponent(s.q)}">Answer it from the coverage →</a>`
       : s.q && s.mode !== 'meaning' && s.q.length <= 60 && !/\w+:/.test(s.q) ? ` <a class="tr-link" href="#trends?q=${encodeURIComponent(s.q.replace(/,/g, ' '))}">How often it comes up →</a>` : '';
-    $('#searchHead').innerHTML = `<h1>${s.q ? esc(s.q) : 'Everything in the index'}</h1><p>${count} <span class="took">(${d.tookMs} ms)</span>${notes.length ? ` ${notes.join(' ')}` : ''}${trend}</p>`;
+    $('#searchHead').innerHTML = `<h1>${s.q ? esc(s.q) : 'Everything in the index'}</h1><p>${count} <span class="took">(${d.tookMs} ms)</span>${notes.length ? ` ${notes.join(' ')}` : ''}${trend}${s.q && s.mode !== 'meaning' ? ` <a class="tr-link" href="#watch?add=${encodeURIComponent(s.q)}">Watch this search →</a>` : ''}</p>`;
     const facets = s.data.facets || {};
     const all = Object.values(facets).reduce((a, b) => a + b, 0);
     $('#searchTabs').innerHTML = TABS.filter(([k]) => s.mode !== 'meaning' || MEANING_TABS.has(k)).map(([k, label, t]) => {

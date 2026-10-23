@@ -36,6 +36,8 @@ const PAGES = [
   ['Robots', '#robots', 'Humanoids and robot brains: money raised, launches, deployments, prices, and the US–China race'],
   ['Open weights', '#open', 'Open model releases: labs, sizes, licenses, who builds on whom, and the US–China race'],
   ['AI words', '#terms', 'The jargon in AI news explained, and which words are rising'],
+  ['The compute race', '#chips', 'AI chips: Nvidia and challengers, GPU orders, shortages and export controls'],
+  ['Watchlist', '#watch', 'Searches you keep, and what’s new since you last looked'],
   ['Quiz', '#quiz', 'The week in AI quiz: ten questions from the stories everyone ran'],
   ['AI status', '#uptime', 'Is ChatGPT, Claude or Copilot down? Live status and incident history'],
   ['New names', '#new', 'Models, products and projects new to the news, and what they are'],
